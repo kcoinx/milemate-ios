@@ -1,26 +1,40 @@
 import SwiftUI
 
 struct InsightsView: View {
-    @State private var viewModel = InsightsViewModel()
+    @State private var viewModel: InsightsViewModel
     @State private var ringProgress = 0.0
+
+    init(repository: any MileageRepository) {
+        _viewModel = State(initialValue: InsightsViewModel(repository: repository))
+    }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xLarge) {
-                weeklyHero
-                comparison
-                SectionHeader(title: "Your driving")
-                insightGrid
-                destinationCard
-                progressCard
+            if viewModel.hasData {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xLarge) {
+                    weeklyHero
+                    comparison
+                    SectionHeader(title: "Your driving")
+                    insightGrid
+                    destinationCard
+                    progressCard
+                }
+                .padding(.horizontal, AppTheme.Spacing.large)
+                .padding(.bottom, AppTheme.Spacing.xxLarge)
+            } else {
+                ContentUnavailableView {
+                    Label("Not Enough Trip Data", systemImage: "chart.xyaxis.line")
+                } description: {
+                    Text("Complete and save a few trips to unlock mileage insights.")
+                }
+                .padding(.top, 100)
             }
-            .padding(.horizontal, AppTheme.Spacing.large)
-            .padding(.bottom, AppTheme.Spacing.xxLarge)
         }
         .background(AppTheme.Color.canvas)
         .navigationTitle("Insights")
         .onAppear {
-            withAnimation(.smooth(duration: 0.9)) { ringProgress = 0.76 }
+            Task { await viewModel.load() }
+            withAnimation(.smooth(duration: 0.9)) { ringProgress = 1 }
         }
     }
 
@@ -32,7 +46,7 @@ struct InsightsView: View {
                     .tracking(1.4)
                     .foregroundStyle(AppTheme.Color.textSecondary)
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("486")
+                    Text(viewModel.weeklyBusinessMiles.formatted(.number.precision(.fractionLength(1))))
                         .font(.system(size: 64, weight: .bold, design: .rounded))
                         .contentTransition(.numericText())
                     Text("mi")
@@ -41,34 +55,36 @@ struct InsightsView: View {
                 }
                 Text("Business miles this week")
                     .font(.title3.weight(.semibold))
-                HStack(spacing: 7) {
-                    Image(systemName: "arrow.up.right")
-                    Text("18% compared to last week")
+                if let change = viewModel.weekChangePercentage {
+                    HStack(spacing: 7) {
+                        Image(systemName: change >= 0 ? "arrow.up.right" : "arrow.down.right")
+                        Text("\(abs(change).formatted(.number.precision(.fractionLength(0))))% compared to last week")
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(change >= 0 ? AppTheme.Color.positive : AppTheme.Color.warning)
+                    .padding(.top, AppTheme.Spacing.small)
                 }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(AppTheme.Color.positive)
-                .padding(.top, AppTheme.Spacing.small)
             }
         }
     }
 
     private var comparison: some View {
         HStack(spacing: AppTheme.Spacing.medium) {
-            categoryCard("Business", value: "78%", progress: 0.78, tint: AppTheme.Color.brand)
-            categoryCard("Personal", value: "22%", progress: 0.22, tint: AppTheme.Color.warning)
+            categoryCard("Business", value: viewModel.businessPercentage, tint: AppTheme.Color.brand)
+            categoryCard("Personal", value: viewModel.personalPercentage, tint: AppTheme.Color.warning)
         }
     }
 
-    private func categoryCard(_ title: String, value: String, progress: Double, tint: Color) -> some View {
+    private func categoryCard(_ title: String, value: Double, tint: Color) -> some View {
         AppCard {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
                 ZStack {
                     Circle().stroke(tint.opacity(0.12), lineWidth: 8)
                     Circle()
-                        .trim(from: 0, to: ringProgress * progress)
+                        .trim(from: 0, to: ringProgress * value)
                         .stroke(tint, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                         .rotationEffect(.degrees(-90))
-                    Text(value).font(.headline)
+                    Text(value.formatted(.percent.precision(.fractionLength(0)))).font(.headline)
                 }
                 .frame(width: 76, height: 76)
                 Text(title).font(.appHeadline)
@@ -78,10 +94,10 @@ struct InsightsView: View {
 
     private var insightGrid: some View {
         LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], spacing: AppTheme.Spacing.medium) {
-            compactInsight("Most driven day", value: "Tuesday", detail: "127 miles", icon: "calendar")
-            compactInsight("Longest trip", value: "64.8 mi", detail: "1 hr 42 min", icon: "road.lanes")
-            compactInsight("Daily average", value: "69.4 mi", detail: "+8.2 this month", icon: "chart.line.uptrend.xyaxis")
-            compactInsight("Trips", value: "18", detail: "4 more than last week", icon: "car.side.fill")
+            compactInsight("Most driven day", value: viewModel.mostDrivenDay, detail: "By recorded mileage", icon: "calendar")
+            compactInsight("Longest trip", value: viewModel.longestTrip?.distanceMiles.milesFormatted ?? "-", detail: viewModel.longestTrip?.duration.formattedDuration ?? "Not enough data", icon: "road.lanes")
+            compactInsight("Daily average", value: viewModel.averageDailyMiles.milesFormatted, detail: "Across recorded days", icon: "chart.line.uptrend.xyaxis")
+            compactInsight("Trips", value: "\(viewModel.trips.count)", detail: "All saved trips", icon: "car.side.fill")
         }
     }
 
@@ -118,9 +134,9 @@ struct InsightsView: View {
                     Text("Most visited destination")
                         .font(.caption)
                         .foregroundStyle(AppTheme.Color.textSecondary)
-                    Text("Downtown Client Office")
+                    Text(viewModel.mostVisitedDestination?.name ?? "Not enough data")
                         .font(.appHeadline)
-                    Text("12 visits this month")
+                    Text("\(viewModel.mostVisitedDestination?.count ?? 0) recorded visits")
                         .font(.caption)
                         .foregroundStyle(AppTheme.Color.positive)
                 }
@@ -134,17 +150,13 @@ struct InsightsView: View {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
                 SectionHeader(title: "Monthly progress")
                 HStack(alignment: .lastTextBaseline) {
-                    Text("1,103")
+                    Text(viewModel.monthlyBusinessMiles.formatted(.number.precision(.fractionLength(1))))
                         .font(.system(size: 38, weight: .bold, design: .rounded))
-                    Text("/ 1,400 mi")
+                    Text("business miles")
                         .foregroundStyle(AppTheme.Color.textSecondary)
                     Spacer()
-                    Text("79%").font(.headline).foregroundStyle(AppTheme.Color.brand)
                 }
-                ProgressView(value: 0.79)
-                    .tint(AppTheme.Color.brand)
-                    .scaleEffect(x: 1, y: 2)
-                Text("297 miles to your July goal")
+                Text("Calculated from saved Business trips this month")
                     .font(.subheadline)
                     .foregroundStyle(AppTheme.Color.textSecondary)
             }

@@ -1,8 +1,17 @@
 import SwiftUI
 
 struct TripDetailView: View {
-    let trip: Trip
+    private let repository: any MileageRepository
+    @State private var trip: Trip
+    @State private var isEditing = false
     @State private var showingDeleteConfirmation = false
+    @State private var saveError: String?
+    @Environment(\.dismiss) private var dismiss
+
+    init(trip: Trip, repository: any MileageRepository) {
+        self.repository = repository
+        _trip = State(initialValue: trip)
+    }
 
     private var averageSpeed: Double {
         guard trip.duration > 0 else { return 0 }
@@ -15,12 +24,19 @@ struct TripDetailView: View {
                 RouteMapView(
                     origin: trip.originName,
                     destination: trip.destinationName,
+                    route: trip.route,
                     height: 330
                 )
 
                 routeTimeline
                 tripMetrics
                 notesCard
+
+                if let saveError {
+                    Text(saveError)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
 
                 Button(role: .destructive) {
                     showingDeleteConfirmation = true
@@ -36,9 +52,14 @@ struct TripDetailView: View {
         .background(AppTheme.Color.canvas)
         .navigationTitle("Trip Details")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { Button("Edit") {} }
+        .toolbar {
+            Button(isEditing ? "Done" : "Edit") {
+                if isEditing { persistChanges() }
+                isEditing.toggle()
+            }
+        }
         .confirmationDialog("Delete this trip?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
-            Button("Delete Trip", role: .destructive) {}
+            Button("Delete Trip", role: .destructive) { deleteTrip() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This trip will be removed from your mileage records.")
@@ -63,7 +84,16 @@ struct TripDetailView: View {
                         .font(.caption).foregroundStyle(AppTheme.Color.textSecondary)
                 }
                 Spacer()
-                ClassificationBadge(classification: trip.classification)
+                if isEditing {
+                    Picker("Classification", selection: $trip.classification) {
+                        ForEach(Trip.Classification.allCases, id: \.self) {
+                            Text($0.rawValue).tag($0)
+                        }
+                    }
+                    .labelsHidden()
+                } else {
+                    ClassificationBadge(classification: trip.classification)
+                }
             }
         }
     }
@@ -96,23 +126,46 @@ struct TripDetailView: View {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
                 Label("Trip notes", systemImage: "note.text")
                     .font(.appHeadline)
-                Text(trip.purpose)
-                    .foregroundStyle(AppTheme.Color.textSecondary)
+                if isEditing {
+                    TextField("Optional trip notes", text: $trip.purpose, axis: .vertical)
+                        .lineLimit(3...6)
+                } else {
+                    Text(trip.purpose.isEmpty ? "No notes" : trip.purpose)
+                        .foregroundStyle(AppTheme.Color.textSecondary)
+                }
             }
         }
     }
 
     private func metric(_ title: String, value: String, icon: String) -> some View {
         VStack(spacing: 8) {
-            Image(systemName: icon)
-                .foregroundStyle(AppTheme.Color.brand)
-            Text(value)
-                .font(.subheadline.weight(.bold))
-                .monospacedDigit()
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(AppTheme.Color.textSecondary)
+            Image(systemName: icon).foregroundStyle(AppTheme.Color.brand)
+            Text(value).font(.subheadline.weight(.bold)).monospacedDigit()
+            Text(title).font(.caption).foregroundStyle(AppTheme.Color.textSecondary)
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private func persistChanges() {
+        trip.updatedAt = .now
+        Task {
+            do {
+                try await repository.update(trip)
+                saveError = nil
+            } catch {
+                saveError = "Changes could not be saved."
+            }
+        }
+    }
+
+    private func deleteTrip() {
+        Task {
+            do {
+                try await repository.delete(trip)
+                dismiss()
+            } catch {
+                saveError = "The trip could not be deleted."
+            }
+        }
     }
 }

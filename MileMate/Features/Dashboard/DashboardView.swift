@@ -1,12 +1,16 @@
 import SwiftUI
 
 struct DashboardView: View {
+    private let repository: any MileageRepository
     @State private var viewModel: DashboardViewModel
+    @Bindable private var tripCoordinator: ManualTripCoordinator
     @State private var isPulsing = false
     @State private var hasAppeared = false
 
-    init(repository: any MileageRepository) {
+    init(repository: any MileageRepository, tripCoordinator: ManualTripCoordinator) {
+        self.repository = repository
         _viewModel = State(initialValue: DashboardViewModel(repository: repository))
+        _tripCoordinator = Bindable(wrappedValue: tripCoordinator)
     }
 
     var body: some View {
@@ -23,8 +27,14 @@ struct DashboardView: View {
         }
         .background(AppTheme.Color.canvas)
         .toolbar(.hidden, for: .navigationBar)
-        .task { await viewModel.load() }
+        .sheet(item: $tripCoordinator.pendingTrip) { trip in
+            TripReviewView(trip: trip, coordinator: tripCoordinator) {
+                Task { await viewModel.load() }
+            }
+            .interactiveDismissDisabled()
+        }
         .onAppear {
+            Task { await viewModel.load() }
             withAnimation(.easeOut(duration: 0.55)) { hasAppeared = true }
             withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
                 isPulsing = true
@@ -67,12 +77,12 @@ struct DashboardView: View {
                     Circle()
                         .fill(Color.white.opacity(0.2))
                         .frame(width: 22, height: 22)
-                        .scaleEffect(isPulsing ? 1.35 : 0.9)
+                        .scaleEffect(tripCoordinator.state == .tracking && isPulsing ? 1.35 : 0.9)
                     Circle()
                         .fill(Color.white)
                         .frame(width: 8, height: 8)
                 }
-                Text("TRACKING ACTIVE")
+                Text(tripCoordinator.state == .tracking ? "MANUAL TRACKING ACTIVE" : "READY TO TRACK")
                     .font(.caption.weight(.bold))
                     .tracking(1.2)
                 Spacer()
@@ -80,7 +90,7 @@ struct DashboardView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("ESTIMATED IRS DEDUCTION")
+                Text("YEAR-TO-DATE ESTIMATED IRS DEDUCTION")
                     .font(.caption.weight(.semibold))
                     .tracking(0.8)
                     .foregroundStyle(.white.opacity(0.72))
@@ -91,11 +101,61 @@ struct DashboardView: View {
             }
 
             HStack(spacing: AppTheme.Spacing.xLarge) {
-                heroMetric("Today's miles", value: "42.6 mi")
+                heroMetric(
+                    tripCoordinator.state == .tracking ? "Live distance" : "Today's business miles",
+                    value: (tripCoordinator.state == .tracking ? tripCoordinator.distanceMiles : viewModel.todayBusinessMiles).milesFormatted
+                )
                 Divider().overlay(.white.opacity(0.25))
-                heroMetric("Est. tax savings", value: viewModel.summary.estimatedTaxSavings.currencyFormatted)
+                heroMetric(
+                    tripCoordinator.state == .tracking ? "Elapsed time" : "Est. tax savings",
+                    value: tripCoordinator.state == .tracking
+                        ? tripCoordinator.elapsedTime.formattedDuration
+                        : viewModel.summary.estimatedTaxSavings.currencyFormatted
+                )
             }
             .frame(height: 48)
+
+            HStack {
+                Text(tripCoordinator.state == .tracking ? "Current estimated deduction" : "Year-to-date business miles")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.72))
+                Spacer()
+                Text(
+                    tripCoordinator.state == .tracking
+                        ? tripCoordinator.currentDeduction.currencyFormatted
+                        : viewModel.summary.businessMiles.milesFormatted
+                )
+                .font(.subheadline.weight(.bold))
+            }
+
+            Button {
+                if tripCoordinator.state == .tracking {
+                    tripCoordinator.stopTrip()
+                } else {
+                    tripCoordinator.startTrip()
+                }
+            } label: {
+                Label(
+                    tripCoordinator.state == .tracking ? "Stop Trip" : "Start Trip",
+                    systemImage: tripCoordinator.state == .tracking ? "stop.fill" : "play.fill"
+                )
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 50)
+                .background(.white, in: Capsule())
+                .foregroundStyle(tripCoordinator.state == .tracking ? Color.red : AppTheme.Color.brand)
+            }
+            .disabled(tripCoordinator.state == .requestingPermission || tripCoordinator.state == .reviewing)
+
+            if tripCoordinator.state == .permissionDenied {
+                Text("Location access is denied. Enable it in iPhone Settings to record a trip.")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.82))
+            } else if case .failed(let message) = tripCoordinator.state {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.82))
+            }
         }
         .foregroundStyle(.white)
         .padding(AppTheme.Spacing.xLarge)
@@ -131,7 +191,14 @@ struct DashboardView: View {
     private var lastTrip: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
             SectionHeader(title: "Last trip")
-            if let trip = viewModel.recentTrips.first {
+            if tripCoordinator.state == .tracking {
+                RouteMapView(
+                    origin: "Trip start",
+                    destination: "Current location",
+                    route: tripCoordinator.currentRoute,
+                    height: 260
+                )
+            } else if let trip = viewModel.recentTrips.first {
                 NavigationLink(value: trip) {
                     AppCard {
                         HStack(spacing: AppTheme.Spacing.large) {
@@ -156,9 +223,23 @@ struct DashboardView: View {
                     }
                 }
                 .buttonStyle(.plain)
+            } else {
+                AppCard {
+                    Label {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("No completed trips").font(.appHeadline)
+                            Text("Start a manual trip to create your first mileage record.")
+                                .font(.subheadline)
+                                .foregroundStyle(AppTheme.Color.textSecondary)
+                        }
+                    } icon: {
+                        Image(systemName: "car.side")
+                            .foregroundStyle(AppTheme.Color.brand)
+                    }
+                }
             }
         }
-        .navigationDestination(for: Trip.self) { TripDetailView(trip: $0) }
+        .navigationDestination(for: Trip.self) { TripDetailView(trip: $0, repository: repository) }
     }
 
     private var mapSection: some View {
@@ -170,7 +251,16 @@ struct DashboardView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(AppTheme.Color.brand)
             }
-            RouteMapView(origin: "Current location", destination: "Next stop", height: 260)
+            if let trip = viewModel.recentTrips.first {
+                RouteMapView(
+                    origin: trip.originName,
+                    destination: trip.destinationName,
+                    route: trip.route,
+                    height: 260
+                )
+            } else {
+                RouteMapView(origin: "Start", destination: "Finish", height: 260)
+            }
         }
     }
 
@@ -179,16 +269,30 @@ struct DashboardView: View {
             SectionHeader(title: "This week")
             AppCard {
                 HStack(alignment: .top, spacing: AppTheme.Spacing.medium) {
-                    ProgressRing(progress: 0.72, value: "486", label: "Business\nmiles")
-                    ProgressRing(progress: 0.58, value: "18", label: "Trips", tint: AppTheme.Color.positive)
-                    ProgressRing(progress: 0.64, value: "$340", label: "IRS\ndeduction", tint: AppTheme.Color.warning)
+                    ProgressRing(
+                        progress: min(viewModel.weeklyBusinessMiles / 500, 1),
+                        value: viewModel.weeklyBusinessMiles.formatted(.number.precision(.fractionLength(0))),
+                        label: "Business\nmiles"
+                    )
+                    ProgressRing(
+                        progress: min(Double(viewModel.weeklyTrips.count) / 20, 1),
+                        value: "\(viewModel.weeklyTrips.count)",
+                        label: "Trips",
+                        tint: AppTheme.Color.positive
+                    )
+                    ProgressRing(
+                        progress: min(viewModel.weeklyDeduction / 350, 1),
+                        value: viewModel.weeklyDeduction.currencyFormatted,
+                        label: "IRS\ndeduction",
+                        tint: AppTheme.Color.warning
+                    )
                 }
                 Divider().padding(.vertical, AppTheme.Spacing.large)
                 HStack {
                     Label("Estimated tax savings", systemImage: "arrow.up.right")
                         .foregroundStyle(AppTheme.Color.textSecondary)
                     Spacer()
-                    Text("$95")
+                    Text(MileageDeductionService.estimatedTaxSavings(deduction: viewModel.weeklyDeduction).currencyFormatted)
                         .font(.appTitle)
                         .foregroundStyle(AppTheme.Color.positive)
                 }

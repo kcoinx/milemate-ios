@@ -12,6 +12,10 @@ struct MockMileageRepository: MileageRepository {
     func fetchProfile() async throws -> UserProfile {
         MockData.profile
     }
+
+    func save(_ trip: Trip) async throws {}
+    func update(_ trip: Trip) async throws {}
+    func delete(_ trip: Trip) async throws {}
 }
 
 enum MockData {
@@ -75,4 +79,3 @@ enum MockData {
         )
     }
 }
-

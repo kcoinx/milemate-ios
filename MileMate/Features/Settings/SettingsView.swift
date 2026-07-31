@@ -208,8 +208,8 @@ private struct AddressSettingsView: View {
 }
 
 private struct TaxSettingsView: View {
-    @State private var deductionRate = 0.70
-    @State private var taxRate = 28.0
+    @AppStorage(MileageSettings.rateKey) private var deductionRate = MileageSettings.defaultMileageRate
+    @AppStorage(MileageSettings.taxRateKey) private var taxRate = MileageSettings.defaultTaxRate
 
     var body: some View {
         Form {

@@ -24,5 +24,7 @@ The application uses feature-oriented MVVM:
 repository, an intentionally inactive location service, and a SwiftData model
 container. Feature view models depend on protocols rather than concrete storage.
 
-Automatic trip detection and background location tracking are intentionally
-deferred. No location permission is requested in this milestone.
+Automatic trip detection and background always-on tracking are intentionally
+deferred. Manual trips use foreground When In Use location updates only. An
+active trip survives ordinary tab navigation, but force-quit restoration is
+not implemented yet; an interrupted unsaved trip is not persisted.

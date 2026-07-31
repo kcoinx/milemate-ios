@@ -1,10 +1,12 @@
 import SwiftUI
 
 struct TripsView: View {
+    private let repository: any MileageRepository
     @State private var viewModel: TripsViewModel
     @State private var hasAppeared = false
 
     init(repository: any MileageRepository) {
+        self.repository = repository
         _viewModel = State(initialValue: TripsViewModel(repository: repository))
     }
 
@@ -33,10 +35,12 @@ struct TripsView: View {
         }
         .background(AppTheme.Color.canvas)
         .navigationTitle("Trips")
-        .task { await viewModel.load() }
-        .onAppear { hasAppeared = true }
+        .onAppear {
+            hasAppeared = true
+            Task { await viewModel.load() }
+        }
         .searchable(text: $viewModel.searchText, prompt: "Search destinations")
-        .navigationDestination(for: Trip.self) { TripDetailView(trip: $0) }
+        .navigationDestination(for: Trip.self) { TripDetailView(trip: $0, repository: repository) }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(action: {}) {
@@ -86,12 +90,15 @@ struct TripsView: View {
     private func premiumTripCard(_ trip: Trip) -> some View {
         AppCard {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
-                RouteMapView(
-                    origin: trip.originName,
-                    destination: trip.destinationName,
-                    height: 148,
-                    interactive: false
-                )
+                if !trip.route.isEmpty {
+                    RouteMapView(
+                        origin: trip.originName,
+                        destination: trip.destinationName,
+                        route: trip.route,
+                        height: 148,
+                        interactive: false
+                    )
+                }
 
                 HStack(alignment: .top, spacing: AppTheme.Spacing.medium) {
                     VStack(spacing: 3) {

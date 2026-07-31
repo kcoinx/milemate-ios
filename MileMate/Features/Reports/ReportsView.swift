@@ -36,7 +36,7 @@ struct ReportsView: View {
         }
         .background(AppTheme.Color.canvas)
         .navigationTitle("Reports")
-        .task { await viewModel.load() }
+        .onAppear { Task { await viewModel.load() } }
         .confirmationDialog("Export \(selectedExport)", isPresented: $showingExport) {
             Button("Save to Files") {}
             Button("Share") {}
@@ -48,7 +48,7 @@ struct ReportsView: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xLarge) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("JULY 2026")
+                    Text(Date.now.formatted(.dateTime.month(.wide).year()).uppercased())
                         .font(.caption.weight(.bold))
                         .tracking(1.2)
                         .foregroundStyle(.white.opacity(0.7))
@@ -106,6 +106,10 @@ struct ReportsView: View {
                         .font(.appHeadline)
                         .foregroundStyle(AppTheme.Color.textPrimary)
                         .multilineTextAlignment(.leading)
+                    Text("COMING SOON")
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.7)
+                        .foregroundStyle(AppTheme.Color.textSecondary)
                     Image(systemName: "arrow.up.right")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(AppTheme.Color.textSecondary)
@@ -124,7 +128,7 @@ struct ReportsView: View {
                 Divider()
                 summaryRow("Recorded trips", value: "\(viewModel.summary.tripCount)")
                 Divider()
-                summaryRow("Deduction rate", value: "$0.70 / mile")
+                summaryRow("Deduction rate", value: MileageSettings.mileageRate.formatted(.currency(code: "USD")) + " / mile")
                 Divider()
                 summaryRow("Estimated savings", value: viewModel.summary.estimatedTaxSavings.currencyFormatted, emphasized: true)
             }

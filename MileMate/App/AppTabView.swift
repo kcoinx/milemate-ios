@@ -2,19 +2,30 @@ import SwiftUI
 
 struct AppTabView: View {
     let dependencies: AppDependencies
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selection: AppTab = .dashboard
     @AppStorage("appAppearance") private var appearance = AppAppearance.system.rawValue
 
     var body: some View {
         TabView(selection: $selection) {
-            tab(.dashboard) { DashboardView(repository: dependencies.mileageRepository) }
+            tab(.dashboard) {
+                DashboardView(
+                    repository: dependencies.mileageRepository,
+                    tripCoordinator: dependencies.tripCoordinator
+                )
+            }
             tab(.trips) { TripsView(repository: dependencies.mileageRepository) }
             tab(.reports) { ReportsView(repository: dependencies.mileageRepository) }
-            tab(.insights) { InsightsView() }
+            tab(.insights) { InsightsView(repository: dependencies.mileageRepository) }
             tab(.settings) { SettingsView() }
         }
         .tint(AppTheme.Color.brand)
         .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .background {
+                dependencies.tripCoordinator.appDidEnterBackground()
+            }
+        }
     }
 
     @ViewBuilder

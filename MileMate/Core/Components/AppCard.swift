@@ -70,22 +70,43 @@ struct ProgressRing: View {
 struct RouteMapView: View {
     let origin: String
     let destination: String
+    var route: [TripCoordinate] = []
     var height: CGFloat = 220
     var interactive = true
 
-    var body: some View {
-        Map(
-            initialPosition: .region(
+    private var coordinates: [CLLocationCoordinate2D] {
+        route.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+    }
+
+    private var initialPosition: MapCameraPosition {
+        coordinates.isEmpty
+            ? .region(
                 MKCoordinateRegion(
                     center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
                     span: MKCoordinateSpan(latitudeDelta: 0.16, longitudeDelta: 0.16)
                 )
-            ),
+            )
+            : .automatic
+    }
+
+    var body: some View {
+        Map(
+            initialPosition: initialPosition,
             interactionModes: interactive ? .all : []
         ) {
-            Marker(origin, coordinate: CLLocationCoordinate2D(latitude: 37.735, longitude: -122.445))
+            if coordinates.count > 1 {
+                MapPolyline(coordinates: coordinates)
+                    .stroke(AppTheme.Color.brand, lineWidth: 5)
+            }
+            Marker(
+                origin,
+                coordinate: coordinates.first ?? CLLocationCoordinate2D(latitude: 37.735, longitude: -122.445)
+            )
                 .tint(AppTheme.Color.textSecondary)
-            Marker(destination, coordinate: CLLocationCoordinate2D(latitude: 37.805, longitude: -122.392))
+            Marker(
+                destination,
+                coordinate: coordinates.last ?? CLLocationCoordinate2D(latitude: 37.805, longitude: -122.392)
+            )
                 .tint(AppTheme.Color.brand)
         }
         .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
