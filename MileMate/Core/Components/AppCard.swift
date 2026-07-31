@@ -2,6 +2,7 @@ import MapKit
 import SwiftUI
 
 struct AppCard<Content: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
     private let content: Content
 
     init(@ViewBuilder content: () -> Content) {
@@ -15,12 +16,15 @@ struct AppCard<Content: View>: View {
             .background(AppTheme.Color.surface, in: RoundedRectangle(cornerRadius: AppTheme.Radius.large))
             .overlay {
                 RoundedRectangle(cornerRadius: AppTheme.Radius.large)
-                    .stroke(AppTheme.Color.divider.opacity(0.18), lineWidth: 0.5)
+                    .stroke(
+                        colorScheme == .dark ? Color.white.opacity(0.07) : AppTheme.Color.divider.opacity(0.14),
+                        lineWidth: 0.5
+                    )
             }
             .shadow(
-                color: AppTheme.Shadow.color,
-                radius: AppTheme.Shadow.radius,
-                y: AppTheme.Shadow.y
+                color: colorScheme == .dark ? Color.black.opacity(0.32) : Color.black.opacity(0.07),
+                radius: colorScheme == .dark ? 14 : AppTheme.Shadow.radius,
+                y: colorScheme == .dark ? 8 : AppTheme.Shadow.y
             )
     }
 }
@@ -53,6 +57,7 @@ struct ProgressRing: View {
                 .foregroundStyle(AppTheme.Color.textSecondary)
                 .multilineTextAlignment(.center)
         }
+        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
         .onAppear {
             withAnimation(.smooth(duration: 0.8)) {

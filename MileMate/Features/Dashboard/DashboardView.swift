@@ -178,11 +178,9 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
             SectionHeader(title: "This week")
             AppCard {
-                HStack {
+                HStack(alignment: .top, spacing: AppTheme.Spacing.medium) {
                     ProgressRing(progress: 0.72, value: "486", label: "Business\nmiles")
-                    Spacer()
                     ProgressRing(progress: 0.58, value: "18", label: "Trips", tint: AppTheme.Color.positive)
-                    Spacer()
                     ProgressRing(progress: 0.64, value: "$340", label: "IRS\ndeduction", tint: AppTheme.Color.warning)
                 }
                 Divider().padding(.vertical, AppTheme.Spacing.large)

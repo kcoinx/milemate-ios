@@ -22,6 +22,8 @@ struct AppTabView: View {
         NavigationStack {
             content()
         }
+        .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+        .toolbarBackground(.visible, for: .tabBar)
         .tabItem {
             Label(tab.title, systemImage: tab.systemImage)
         }
@@ -45,10 +47,10 @@ private enum AppTab: Hashable {
     var systemImage: String {
         switch self {
         case .dashboard: "gauge.with.dots.needle.67percent"
-        case .trips: "car.fill"
-        case .reports: "doc.text.fill"
+        case .trips: "car"
+        case .reports: "doc.text"
         case .insights: "chart.xyaxis.line"
-        case .settings: "gearshape.fill"
+        case .settings: "gearshape"
         }
     }
 }
