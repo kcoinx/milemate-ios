@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @State private var viewModel = SettingsViewModel()
+    @AppStorage("appAppearance") private var appearance = AppAppearance.system.rawValue
 
     var body: some View {
         List {
@@ -18,7 +19,6 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
-        .preferredColorScheme(viewModel.colorScheme)
     }
 
     private var profileSection: some View {
@@ -53,8 +53,8 @@ struct SettingsView: View {
 
     private var appearanceSection: some View {
         Section("Appearance") {
-            Picker("Theme", selection: $viewModel.appearance) {
-                ForEach(SettingsViewModel.Appearance.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            Picker("Theme", selection: $appearance) {
+                ForEach(AppAppearance.allCases, id: \.self) { Text($0.rawValue).tag($0.rawValue) }
             }
         }
     }

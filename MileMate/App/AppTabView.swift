@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AppTabView: View {
     @State private var selection: AppTab = .dashboard
+    @AppStorage("appAppearance") private var appearance = AppAppearance.system.rawValue
 
     var body: some View {
         TabView(selection: $selection) {
@@ -12,6 +13,7 @@ struct AppTabView: View {
             tab(.settings) { SettingsView() }
         }
         .tint(AppTheme.Color.brand)
+        .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
     }
 
     @ViewBuilder

@@ -1,5 +1,19 @@
 import SwiftUI
 
+enum AppAppearance: String, CaseIterable {
+    case system = "System"
+    case light = "Light"
+    case dark = "Dark"
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+}
+
 enum AppTheme {
     enum Color {
         static let brand = SwiftUI.Color("BrandColor")
@@ -43,4 +57,3 @@ extension Font {
     static let appMetric = Font.system(size: 28, weight: .bold, design: .rounded)
     static let appCaption = Font.system(.caption, design: .rounded, weight: .medium)
 }
-
