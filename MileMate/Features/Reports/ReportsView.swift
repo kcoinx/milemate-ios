@@ -19,16 +19,12 @@ struct ReportsView: View {
                 }
                 .pickerStyle(.segmented)
 
-                if viewModel.summary.businessMiles > 0 {
-                    monthlySummary
+                monthlySummary
 
-                    SectionHeader(title: "Quick actions")
-                    quickActions
+                SectionHeader(title: "Quick actions")
+                quickActions
 
-                    yearSummary
-                } else {
-                    reportEmptyState
-                }
+                yearSummary
             }
             .padding(.horizontal, AppTheme.Spacing.large)
             .padding(.bottom, AppTheme.Spacing.xxLarge)
@@ -41,25 +37,6 @@ struct ReportsView: View {
             Button("Share") {}
             Button("Cancel", role: .cancel) {}
         }
-    }
-
-    private var reportEmptyState: some View {
-        AppCard {
-            VStack(spacing: AppTheme.Spacing.large) {
-                Image(systemName: "doc.text.magnifyingglass")
-                    .font(.largeTitle)
-                    .foregroundStyle(AppTheme.Color.brand)
-                Text("No business mileage to report")
-                    .font(.appTitle)
-                Text("Classify completed trips as Business to see mileage, deductions, and estimated tax savings for this period.")
-                    .font(.subheadline)
-                    .foregroundStyle(AppTheme.Color.textSecondary)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, AppTheme.Spacing.xLarge)
-        }
-        .accessibilityElement(children: .combine)
     }
 
     private var monthlySummary: some View {
@@ -92,6 +69,18 @@ struct ReportsView: View {
                 reportMetric("BUSINESS MILES", value: viewModel.summary.businessMiles.milesFormatted)
                 Spacer()
                 reportMetric("EST. TAX SAVINGS", value: viewModel.summary.estimatedTaxSavings.currencyFormatted)
+            }
+
+            if viewModel.summary.businessMiles <= 0 {
+                Divider()
+                    .overlay(.white.opacity(0.2))
+
+                Label(
+                    "Classify trips as Business to include them in your deduction.",
+                    systemImage: "info.circle"
+                )
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.85))
             }
         }
         .foregroundStyle(.white)

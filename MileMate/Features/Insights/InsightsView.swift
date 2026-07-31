@@ -11,26 +11,25 @@ struct InsightsView: View {
 
     var body: some View {
         ScrollView {
-            if viewModel.hasMeaningfulData {
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
-                    weeklyHero
-                    mileageSplit
-                    yourDriving
-                    destinationCard
-                    progressCard
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
+                weeklyHero
+                if !viewModel.hasMeaningfulData {
+                    Label(
+                        "Complete a few trips to unlock richer insights.",
+                        systemImage: "sparkles"
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(AppTheme.Color.textSecondary)
                 }
-                .padding(.horizontal, AppTheme.Spacing.large)
-                .padding(.bottom, AppTheme.Spacing.xxLarge)
-                .opacity(ringProgress > 0 ? 1 : 0)
-                .offset(y: ringProgress > 0 ? 0 : 8)
-            } else {
-                ContentUnavailableView {
-                    Label("Not enough driving data yet", systemImage: "chart.xyaxis.line")
-                } description: {
-                    Text("Complete and save a few meaningful trips to unlock mileage insights.")
-                }
-                .padding(.top, 100)
+                mileageSplit
+                yourDriving
+                destinationCard
+                progressCard
             }
+            .padding(.horizontal, AppTheme.Spacing.large)
+            .padding(.bottom, AppTheme.Spacing.xxLarge)
+            .opacity(ringProgress > 0 ? 1 : 0)
+            .offset(y: ringProgress > 0 ? 0 : 8)
         }
         .background(AppTheme.Color.canvas)
         .navigationTitle("Insights")
@@ -110,9 +109,9 @@ struct InsightsView: View {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
                 SectionHeader(title: "Your Driving")
                 HStack(alignment: .top, spacing: AppTheme.Spacing.large) {
-                    compactInsight("Most driven day", value: viewModel.mostDrivenDay, detail: "By recorded mileage", icon: "calendar")
+                    compactInsight("Most driven day", value: viewModel.hasMeaningfulData ? viewModel.mostDrivenDay : "\u{2014}", detail: "By recorded mileage", icon: "calendar")
                     Divider()
-                    compactInsight("Longest trip", value: viewModel.longestTrip?.distanceMiles.milesFormatted ?? "-", detail: viewModel.longestTrip?.duration.formattedDuration ?? "Not enough data", icon: "road.lanes")
+                    compactInsight("Longest trip", value: viewModel.longestTrip?.distanceMiles.milesFormatted ?? Double.zero.milesFormatted, detail: viewModel.longestTrip?.duration.formattedDuration ?? "Not enough data", icon: "road.lanes")
                 }
                 Divider()
                 HStack(alignment: .top, spacing: AppTheme.Spacing.large) {
@@ -179,7 +178,12 @@ struct InsightsView: View {
                     Text("business miles")
                         .foregroundStyle(AppTheme.Color.textSecondary)
                     Spacer()
+                    Text(viewModel.monthlyProgress.formatted(.percent.precision(.fractionLength(0))))
+                        .font(.headline)
+                        .foregroundStyle(AppTheme.Color.brand)
                 }
+                ProgressView(value: viewModel.monthlyProgress)
+                    .tint(AppTheme.Color.brand)
                 Text("Calculated from saved Business trips this month")
                     .font(.subheadline)
                     .foregroundStyle(AppTheme.Color.textSecondary)

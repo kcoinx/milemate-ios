@@ -265,17 +265,7 @@ struct DashboardView: View {
                     height: 260
                 )
             } else {
-                AppCard {
-                    Label {
-                        Text("Your recorded route will appear here after your first completed trip.")
-                            .font(.subheadline)
-                            .foregroundStyle(AppTheme.Color.textSecondary)
-                    } icon: {
-                        Image(systemName: "map")
-                            .font(.title3)
-                            .foregroundStyle(AppTheme.Color.brand)
-                    }
-                }
+                RouteMapView(origin: "", destination: "", height: 260)
             }
         }
     }
@@ -284,33 +274,35 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
             SectionHeader(title: "This week")
             AppCard {
-                HStack(alignment: .top, spacing: AppTheme.Spacing.medium) {
-                    ProgressRing(
-                        progress: min(viewModel.weeklyBusinessMiles / 500, 1),
-                        value: viewModel.weeklyBusinessMiles.formatted(.number.precision(.fractionLength(0))),
-                        label: "Business\nmiles"
-                    )
-                    ProgressRing(
-                        progress: min(Double(viewModel.weeklyTrips.count) / 20, 1),
-                        value: "\(viewModel.weeklyTrips.count)",
-                        label: "Trips",
-                        tint: AppTheme.Color.positive
-                    )
-                    ProgressRing(
-                        progress: min(viewModel.weeklyDeduction / 350, 1),
-                        value: viewModel.weeklyDeduction.currencyFormatted,
-                        label: "IRS\ndeduction",
-                        tint: AppTheme.Color.warning
-                    )
-                }
-                Divider().padding(.vertical, AppTheme.Spacing.large)
-                HStack {
-                    Label("Estimated tax savings", systemImage: "arrow.up.right")
-                        .foregroundStyle(AppTheme.Color.textSecondary)
-                    Spacer()
-                    Text(MileageDeductionService.estimatedTaxSavings(deduction: viewModel.weeklyDeduction).currencyFormatted)
-                        .font(.appTitle)
-                        .foregroundStyle(AppTheme.Color.positive)
+                VStack(spacing: AppTheme.Spacing.large) {
+                    HStack(alignment: .top, spacing: AppTheme.Spacing.medium) {
+                        ProgressRing(
+                            progress: min(viewModel.weeklyBusinessMiles / 500, 1),
+                            value: viewModel.weeklyBusinessMiles.formatted(.number.precision(.fractionLength(0))),
+                            label: "Business\nmiles"
+                        )
+                        ProgressRing(
+                            progress: min(Double(viewModel.weeklyTrips.count) / 20, 1),
+                            value: "\(viewModel.weeklyTrips.count)",
+                            label: "Trips",
+                            tint: AppTheme.Color.positive
+                        )
+                        ProgressRing(
+                            progress: min(viewModel.weeklyDeduction / 350, 1),
+                            value: viewModel.weeklyDeduction.currencyFormatted,
+                            label: "IRS\ndeduction",
+                            tint: AppTheme.Color.warning
+                        )
+                    }
+                    Divider()
+                    HStack {
+                        Label("Estimated tax savings", systemImage: "arrow.up.right")
+                            .foregroundStyle(AppTheme.Color.textSecondary)
+                        Spacer()
+                        Text(MileageDeductionService.estimatedTaxSavings(deduction: viewModel.weeklyDeduction).currencyFormatted)
+                            .font(.appTitle)
+                            .foregroundStyle(AppTheme.Color.positive)
+                    }
                 }
             }
         }

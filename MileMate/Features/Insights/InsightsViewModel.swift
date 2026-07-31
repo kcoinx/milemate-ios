@@ -16,7 +16,8 @@ final class InsightsViewModel {
     }
 
     var hasMeaningfulData: Bool {
-        trips.count >= 2 && trips.reduce(0) { $0 + $1.distanceMiles } >= 0.2
+        meaningfulTrips.count >= 2 &&
+        meaningfulTrips.reduce(0) { $0 + $1.distanceMiles } >= 0.2
     }
 
     var weekTrips: [Trip] {
@@ -50,17 +51,17 @@ final class InsightsViewModel {
     }
 
     var longestTrip: Trip? {
-        trips.max { $0.distanceMiles < $1.distanceMiles }
+        meaningfulTrips.max { $0.distanceMiles < $1.distanceMiles }
     }
 
     var averageDailyMiles: Double {
-        let days = Set(trips.map { Calendar.current.startOfDay(for: $0.startedAt) })
+        let days = Set(meaningfulTrips.map { Calendar.current.startOfDay(for: $0.startedAt) })
         guard !days.isEmpty else { return 0 }
-        return trips.reduce(0) { $0 + $1.distanceMiles } / Double(days.count)
+        return meaningfulTrips.reduce(0) { $0 + $1.distanceMiles } / Double(days.count)
     }
 
     var mostDrivenDay: String {
-        let grouped = Dictionary(grouping: trips) {
+        let grouped = Dictionary(grouping: meaningfulTrips) {
             $0.startedAt.formatted(.dateTime.weekday(.wide))
         }
         return grouped.max { left, right in
@@ -70,13 +71,21 @@ final class InsightsViewModel {
     }
 
     var mostVisitedDestination: (name: String, count: Int)? {
-        let grouped = Dictionary(grouping: trips, by: \.destinationName)
+        let grouped = Dictionary(grouping: meaningfulTrips, by: \.destinationName)
         guard let result = grouped.max(by: { $0.value.count < $1.value.count }) else { return nil }
         return (result.key, result.value.count)
     }
 
     var monthlyBusinessMiles: Double {
         businessMiles(in: trips(in: Calendar.current.dateInterval(of: .month, for: .now)))
+    }
+
+    var monthlyProgress: Double {
+        min(max(monthlyBusinessMiles / 1_400, 0), 1)
+    }
+
+    private var meaningfulTrips: [Trip] {
+        trips.filter { $0.distanceMiles >= 0.10 }
     }
 
     private func trips(in interval: DateInterval?) -> [Trip] {
@@ -89,8 +98,12 @@ final class InsightsViewModel {
     }
 
     private func percentage(for classification: Trip.Classification) -> Double {
-        let classified = trips.filter { $0.classification != .unclassified }
-        guard !classified.isEmpty else { return 0 }
-        return Double(classified.filter { $0.classification == classification }.count) / Double(classified.count)
+        let classified = meaningfulTrips.filter { $0.classification != .unclassified }
+        let totalMiles = classified.reduce(0) { $0 + $1.distanceMiles }
+        guard totalMiles > 0 else { return 0 }
+        let miles = classified
+            .filter { $0.classification == classification }
+            .reduce(0) { $0 + $1.distanceMiles }
+        return miles / totalMiles
     }
 }
