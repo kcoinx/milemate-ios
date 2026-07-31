@@ -3,6 +3,7 @@ import SwiftUI
 struct InsightsView: View {
     @State private var viewModel: InsightsViewModel
     @State private var ringProgress = 0.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(repository: any MileageRepository) {
         _viewModel = State(initialValue: InsightsViewModel(repository: repository))
@@ -10,22 +11,23 @@ struct InsightsView: View {
 
     var body: some View {
         ScrollView {
-            if viewModel.hasData {
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.xLarge) {
+            if viewModel.hasMeaningfulData {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
                     weeklyHero
-                    comparison
-                    SectionHeader(title: "Your driving")
-                    insightGrid
+                    mileageSplit
+                    yourDriving
                     destinationCard
                     progressCard
                 }
                 .padding(.horizontal, AppTheme.Spacing.large)
                 .padding(.bottom, AppTheme.Spacing.xxLarge)
+                .opacity(ringProgress > 0 ? 1 : 0)
+                .offset(y: ringProgress > 0 ? 0 : 8)
             } else {
                 ContentUnavailableView {
-                    Label("Not Enough Trip Data", systemImage: "chart.xyaxis.line")
+                    Label("Not enough driving data yet", systemImage: "chart.xyaxis.line")
                 } description: {
-                    Text("Complete and save a few trips to unlock mileage insights.")
+                    Text("Complete and save a few meaningful trips to unlock mileage insights.")
                 }
                 .padding(.top, 100)
             }
@@ -34,7 +36,11 @@ struct InsightsView: View {
         .navigationTitle("Insights")
         .onAppear {
             Task { await viewModel.load() }
-            withAnimation(.smooth(duration: 0.9)) { ringProgress = 1 }
+            if reduceMotion {
+                ringProgress = 1
+            } else {
+                withAnimation(.smooth(duration: 0.55)) { ringProgress = 1 }
+            }
         }
     }
 
@@ -68,58 +74,76 @@ struct InsightsView: View {
         }
     }
 
-    private var comparison: some View {
-        HStack(spacing: AppTheme.Spacing.medium) {
-            categoryCard("Business", value: viewModel.businessPercentage, tint: AppTheme.Color.brand)
-            categoryCard("Personal", value: viewModel.personalPercentage, tint: AppTheme.Color.warning)
-        }
-    }
-
-    private func categoryCard(_ title: String, value: Double, tint: Color) -> some View {
+    private var mileageSplit: some View {
         AppCard {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
-                ZStack {
-                    Circle().stroke(tint.opacity(0.12), lineWidth: 8)
-                    Circle()
-                        .trim(from: 0, to: ringProgress * value)
-                        .stroke(tint, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                    Text(value.formatted(.percent.precision(.fractionLength(0)))).font(.headline)
+                SectionHeader(title: "Mileage Split")
+                HStack(spacing: AppTheme.Spacing.large) {
+                    categoryMetric("Business", value: viewModel.businessPercentage, tint: AppTheme.Color.brand)
+                    Divider()
+                    categoryMetric("Personal", value: viewModel.personalPercentage, tint: AppTheme.Color.warning)
                 }
-                .frame(width: 76, height: 76)
-                Text(title).font(.appHeadline)
             }
         }
     }
 
-    private var insightGrid: some View {
-        LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], spacing: AppTheme.Spacing.medium) {
-            compactInsight("Most driven day", value: viewModel.mostDrivenDay, detail: "By recorded mileage", icon: "calendar")
-            compactInsight("Longest trip", value: viewModel.longestTrip?.distanceMiles.milesFormatted ?? "-", detail: viewModel.longestTrip?.duration.formattedDuration ?? "Not enough data", icon: "road.lanes")
-            compactInsight("Daily average", value: viewModel.averageDailyMiles.milesFormatted, detail: "Across recorded days", icon: "chart.line.uptrend.xyaxis")
-            compactInsight("Trips", value: "\(viewModel.trips.count)", detail: "All saved trips", icon: "car.side.fill")
+    private func categoryMetric(_ title: String, value: Double, tint: Color) -> some View {
+        VStack(spacing: AppTheme.Spacing.medium) {
+            ZStack {
+                Circle().stroke(tint.opacity(0.12), lineWidth: 8)
+                Circle()
+                    .trim(from: 0, to: ringProgress * value)
+                    .stroke(tint, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Text(value.formatted(.percent.precision(.fractionLength(0))))
+                    .font(.headline)
+            }
+            .frame(width: 76, height: 76)
+            Text(title).font(.appHeadline)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var yourDriving: some View {
+        AppCard {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
+                SectionHeader(title: "Your Driving")
+                HStack(alignment: .top, spacing: AppTheme.Spacing.large) {
+                    compactInsight("Most driven day", value: viewModel.mostDrivenDay, detail: "By recorded mileage", icon: "calendar")
+                    Divider()
+                    compactInsight("Longest trip", value: viewModel.longestTrip?.distanceMiles.milesFormatted ?? "-", detail: viewModel.longestTrip?.duration.formattedDuration ?? "Not enough data", icon: "road.lanes")
+                }
+                Divider()
+                HStack(alignment: .top, spacing: AppTheme.Spacing.large) {
+                    compactInsight("Daily average", value: viewModel.averageDailyMiles.milesFormatted, detail: "Across recorded days", icon: "chart.line.uptrend.xyaxis")
+                    Divider()
+                    compactInsight("Trips", value: "\(viewModel.trips.count)", detail: "All saved trips", icon: "car.side.fill")
+                }
+            }
         }
     }
 
     private func compactInsight(_ title: String, value: String, detail: String, icon: String) -> some View {
-        AppCard {
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
-                Image(systemName: icon)
-                    .foregroundStyle(AppTheme.Color.brand)
-                    .frame(width: 40, height: 40)
-                    .background(AppTheme.Color.brand.opacity(0.1), in: Circle())
-                Text(title)
-                    .font(.caption)
-                    .foregroundStyle(AppTheme.Color.textSecondary)
-                Text(value)
-                    .font(.appTitle)
-                    .minimumScaleFactor(0.8)
-                Text(detail)
-                    .font(.caption2)
-                    .foregroundStyle(AppTheme.Color.positive)
-                    .lineLimit(2)
-            }
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.small) {
+            Image(systemName: icon)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(AppTheme.Color.brand)
+                .frame(width: 36, height: 36)
+                .background(AppTheme.Color.brand.opacity(0.1), in: Circle())
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(AppTheme.Color.textSecondary)
+            Text(value)
+                .font(.appTitle)
+                .minimumScaleFactor(0.75)
+            Text(detail)
+                .font(.caption2)
+                .foregroundStyle(AppTheme.Color.positive)
+                .lineLimit(2)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 
     private var destinationCard: some View {

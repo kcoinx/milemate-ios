@@ -11,7 +11,7 @@ struct ReportsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xLarge) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
                 Picker("Reporting period", selection: $viewModel.period) {
                     ForEach(ReportsViewModel.Period.allCases, id: \.self) {
                         Text($0.rawValue).tag($0)
@@ -19,17 +19,16 @@ struct ReportsView: View {
                 }
                 .pickerStyle(.segmented)
 
-                monthlySummary
+                if viewModel.summary.businessMiles > 0 {
+                    monthlySummary
 
-                SectionHeader(title: "Quick actions")
-                LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], spacing: AppTheme.Spacing.medium) {
-                    actionCard("Export PDF", icon: "doc.richtext", tint: AppTheme.Color.brand)
-                    actionCard("Export CSV", icon: "tablecells", tint: AppTheme.Color.positive)
-                    actionCard("IRS Mileage Report", icon: "building.columns", tint: AppTheme.Color.warning)
-                    actionCard("Year Summary", icon: "calendar", tint: AppTheme.Color.textPrimary)
+                    SectionHeader(title: "Quick actions")
+                    quickActions
+
+                    yearSummary
+                } else {
+                    reportEmptyState
                 }
-
-                yearSummary
             }
             .padding(.horizontal, AppTheme.Spacing.large)
             .padding(.bottom, AppTheme.Spacing.xxLarge)
@@ -42,6 +41,25 @@ struct ReportsView: View {
             Button("Share") {}
             Button("Cancel", role: .cancel) {}
         }
+    }
+
+    private var reportEmptyState: some View {
+        AppCard {
+            VStack(spacing: AppTheme.Spacing.large) {
+                Image(systemName: "doc.text.magnifyingglass")
+                    .font(.largeTitle)
+                    .foregroundStyle(AppTheme.Color.brand)
+                Text("No business mileage to report")
+                    .font(.appTitle)
+                Text("Classify completed trips as Business to see mileage, deductions, and estimated tax savings for this period.")
+                    .font(.subheadline)
+                    .foregroundStyle(AppTheme.Color.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, AppTheme.Spacing.xLarge)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private var monthlySummary: some View {
@@ -90,34 +108,50 @@ struct ReportsView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func actionCard(_ title: String, icon: String, tint: Color) -> some View {
+    private var quickActions: some View {
+        AppCard {
+            VStack(spacing: AppTheme.Spacing.large) {
+                HStack(alignment: .top, spacing: AppTheme.Spacing.large) {
+                    actionCell("Export PDF", icon: "doc.richtext", tint: AppTheme.Color.brand)
+                    Divider()
+                    actionCell("Export CSV", icon: "tablecells", tint: AppTheme.Color.positive)
+                }
+                Divider()
+                HStack(alignment: .top, spacing: AppTheme.Spacing.large) {
+                    actionCell("IRS Mileage Report", icon: "building.columns", tint: AppTheme.Color.warning)
+                    Divider()
+                    actionCell("Year Summary", icon: "calendar", tint: AppTheme.Color.textPrimary)
+                }
+            }
+        }
+    }
+
+    private func actionCell(_ title: String, icon: String, tint: Color) -> some View {
         Button {
             selectedExport = title
             showingExport = true
         } label: {
-            AppCard {
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.xLarge) {
-                    Image(systemName: icon)
-                        .font(.title2)
-                        .foregroundStyle(tint)
-                        .frame(width: 48, height: 48)
-                        .background(tint.opacity(0.12), in: Circle())
-                    Text(title)
-                        .font(.appHeadline)
-                        .foregroundStyle(AppTheme.Color.textPrimary)
-                        .multilineTextAlignment(.leading)
-                    Text("COMING SOON")
-                        .font(.caption2.weight(.bold))
-                        .tracking(0.7)
-                        .foregroundStyle(AppTheme.Color.textSecondary)
-                    Image(systemName: "arrow.up.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(AppTheme.Color.textSecondary)
-                }
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
+                Image(systemName: icon)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 40, height: 40)
+                    .background(tint.opacity(0.12), in: Circle())
+                Text(title)
+                    .font(.appHeadline)
+                    .foregroundStyle(AppTheme.Color.textPrimary)
+                    .multilineTextAlignment(.leading)
+                Text("COMING SOON")
+                    .font(.caption2.weight(.bold))
+                    .tracking(0.7)
+                    .foregroundStyle(AppTheme.Color.textSecondary)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
+        .accessibilityHint("Coming soon")
     }
 
     private var yearSummary: some View {

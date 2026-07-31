@@ -20,7 +20,7 @@ struct TripDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: AppTheme.Spacing.xLarge) {
+            VStack(spacing: AppTheme.Spacing.large) {
                 RouteMapView(
                     origin: trip.originName,
                     destination: trip.destinationName,

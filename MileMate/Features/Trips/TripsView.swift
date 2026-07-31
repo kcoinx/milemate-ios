@@ -12,7 +12,7 @@ struct TripsView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.xLarge) {
+            LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
                 overview
                 filters
 
@@ -146,7 +146,7 @@ struct TripsView: View {
         ContentUnavailableView {
             Label("No Trips Yet", systemImage: "car.side")
         } description: {
-            Text("Start driving and MileMate will automatically detect your first trip.")
+            Text("Start your first manual trip to begin tracking mileage and estimated tax deductions.")
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 70)

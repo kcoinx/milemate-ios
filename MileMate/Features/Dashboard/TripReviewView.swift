@@ -9,6 +9,7 @@ struct TripReviewView: View {
     @State private var notes: String
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var showingShortTripConfirmation = false
 
     init(trip: Trip, coordinator: ManualTripCoordinator, onSaved: @escaping () -> Void) {
         self.trip = trip
@@ -55,7 +56,11 @@ struct TripReviewView: View {
 
                 Section {
                     Button {
-                        save()
+                        if trip.distanceMiles < 0.10 {
+                            showingShortTripConfirmation = true
+                        } else {
+                            save()
+                        }
                     } label: {
                         HStack {
                             Spacer()
@@ -72,6 +77,16 @@ struct TripReviewView: View {
             }
             .navigationTitle("Review Trip")
             .navigationBarTitleDisplayMode(.inline)
+            .confirmationDialog(
+                "This trip is very short. Save anyway?",
+                isPresented: $showingShortTripConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Save") { save() }
+                Button("Discard", role: .destructive) {
+                    coordinator.discardPendingTrip()
+                }
+            }
         }
     }
 

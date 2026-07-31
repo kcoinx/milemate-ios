@@ -6,6 +6,7 @@ struct DashboardView: View {
     @Bindable private var tripCoordinator: ManualTripCoordinator
     @State private var isPulsing = false
     @State private var hasAppeared = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(repository: any MileageRepository, tripCoordinator: ManualTripCoordinator) {
         self.repository = repository
@@ -15,7 +16,7 @@ struct DashboardView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.xLarge) {
+            LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
                 greeting
                 deductionHero
                 lastTrip
@@ -35,9 +36,13 @@ struct DashboardView: View {
         }
         .onAppear {
             Task { await viewModel.load() }
-            withAnimation(.easeOut(duration: 0.55)) { hasAppeared = true }
-            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-                isPulsing = true
+            if reduceMotion {
+                hasAppeared = true
+            } else {
+                withAnimation(.easeOut(duration: 0.55)) { hasAppeared = true }
+                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                    isPulsing = true
+                }
             }
         }
     }
@@ -90,7 +95,7 @@ struct DashboardView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("YEAR-TO-DATE ESTIMATED IRS DEDUCTION")
+                Text("YEAR-TO-DATE DEDUCTION")
                     .font(.caption.weight(.semibold))
                     .tracking(0.8)
                     .foregroundStyle(.white.opacity(0.72))
@@ -102,7 +107,7 @@ struct DashboardView: View {
 
             HStack(spacing: AppTheme.Spacing.xLarge) {
                 heroMetric(
-                    tripCoordinator.state == .tracking ? "Live distance" : "Today's business miles",
+                    tripCoordinator.state == .tracking ? "Live distance" : "Today's miles",
                     value: (tripCoordinator.state == .tracking ? tripCoordinator.distanceMiles : viewModel.todayBusinessMiles).milesFormatted
                 )
                 Divider().overlay(.white.opacity(0.25))
@@ -116,7 +121,7 @@ struct DashboardView: View {
             .frame(height: 48)
 
             HStack {
-                Text(tripCoordinator.state == .tracking ? "Current estimated deduction" : "Year-to-date business miles")
+                Text(tripCoordinator.state == .tracking ? "Estimated deduction" : "Year-to-date business miles")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.72))
                 Spacer()
@@ -174,6 +179,7 @@ struct DashboardView: View {
         .shadow(color: AppTheme.Color.brand.opacity(0.28), radius: 28, y: 16)
         .scaleEffect(hasAppeared ? 1 : 0.97)
         .opacity(hasAppeared ? 1 : 0)
+        .animation(.snappy(duration: 0.35), value: tripCoordinator.state)
         .accessibilityElement(children: .combine)
     }
 
@@ -227,8 +233,8 @@ struct DashboardView: View {
                 AppCard {
                     Label {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("No completed trips").font(.appHeadline)
-                            Text("Start a manual trip to create your first mileage record.")
+                            Text("Start your first trip").font(.appHeadline)
+                            Text("Begin tracking mileage and estimated tax deductions with your first completed trip.")
                                 .font(.subheadline)
                                 .foregroundStyle(AppTheme.Color.textSecondary)
                         }
@@ -259,7 +265,17 @@ struct DashboardView: View {
                     height: 260
                 )
             } else {
-                RouteMapView(origin: "Start", destination: "Finish", height: 260)
+                AppCard {
+                    Label {
+                        Text("Your recorded route will appear here after your first completed trip.")
+                            .font(.subheadline)
+                            .foregroundStyle(AppTheme.Color.textSecondary)
+                    } icon: {
+                        Image(systemName: "map")
+                            .font(.title3)
+                            .foregroundStyle(AppTheme.Color.brand)
+                    }
+                }
             }
         }
     }

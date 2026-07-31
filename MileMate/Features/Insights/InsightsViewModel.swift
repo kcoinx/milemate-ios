@@ -15,7 +15,9 @@ final class InsightsViewModel {
         trips = (try? await repository.fetchTrips()) ?? []
     }
 
-    var hasData: Bool { !trips.isEmpty }
+    var hasMeaningfulData: Bool {
+        trips.count >= 2 && trips.reduce(0) { $0 + $1.distanceMiles } >= 0.2
+    }
 
     var weekTrips: [Trip] {
         trips(in: Calendar.current.dateInterval(of: .weekOfYear, for: .now))

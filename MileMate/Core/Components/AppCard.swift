@@ -36,6 +36,7 @@ struct ProgressRing: View {
     var tint = AppTheme.Color.brand
 
     @State private var animatedProgress = 0.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: AppTheme.Spacing.medium) {
@@ -60,8 +61,12 @@ struct ProgressRing: View {
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
         .onAppear {
-            withAnimation(.smooth(duration: 0.8)) {
+            if reduceMotion {
                 animatedProgress = min(max(progress, 0), 1)
+            } else {
+                withAnimation(.smooth(duration: 0.8)) {
+                    animatedProgress = min(max(progress, 0), 1)
+                }
             }
         }
     }
@@ -78,48 +83,53 @@ struct RouteMapView: View {
         route.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
     }
 
-    private var initialPosition: MapCameraPosition {
-        coordinates.isEmpty
-            ? .region(
-                MKCoordinateRegion(
-                    center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
-                    span: MKCoordinateSpan(latitudeDelta: 0.16, longitudeDelta: 0.16)
-                )
-            )
-            : .automatic
-    }
-
+    @ViewBuilder
     var body: some View {
-        Map(
-            initialPosition: initialPosition,
-            interactionModes: interactive ? .all : []
-        ) {
-            if coordinates.count > 1 {
-                MapPolyline(coordinates: coordinates)
-                    .stroke(AppTheme.Color.brand, lineWidth: 5)
+        if coordinates.isEmpty {
+            VStack(spacing: AppTheme.Spacing.medium) {
+                Image(systemName: "map")
+                    .font(.title2)
+                    .foregroundStyle(AppTheme.Color.brand)
+                Text("Your recorded route will appear here after your first completed trip.")
+                    .font(.subheadline)
+                    .foregroundStyle(AppTheme.Color.textSecondary)
+                    .multilineTextAlignment(.center)
             }
-            Marker(
-                origin,
-                coordinate: coordinates.first ?? CLLocationCoordinate2D(latitude: 37.735, longitude: -122.445)
-            )
-                .tint(AppTheme.Color.textSecondary)
-            Marker(
-                destination,
-                coordinate: coordinates.last ?? CLLocationCoordinate2D(latitude: 37.805, longitude: -122.392)
-            )
-                .tint(AppTheme.Color.brand)
+            .padding(AppTheme.Spacing.xLarge)
+            .frame(maxWidth: .infinity)
+            .frame(height: height)
+            .background(AppTheme.Color.elevated, in: RoundedRectangle(cornerRadius: AppTheme.Radius.large))
+            .accessibilityElement(children: .combine)
+        } else {
+            Map(
+                initialPosition: .automatic,
+                interactionModes: interactive ? .all : []
+            ) {
+                if coordinates.count > 1 {
+                    MapPolyline(coordinates: coordinates)
+                        .stroke(AppTheme.Color.brand, lineWidth: 5)
+                }
+                if let start = coordinates.first {
+                    Marker(origin, coordinate: start)
+                        .tint(AppTheme.Color.textSecondary)
+                }
+                if let end = coordinates.last {
+                    Marker(destination, coordinate: end)
+                        .tint(AppTheme.Color.brand)
+                }
+            }
+            .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
+            .frame(height: height)
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.large))
+            .overlay(alignment: .bottomLeading) {
+                Label("Route preview", systemImage: "location.fill")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(12)
+            }
+            .accessibilityLabel("Map preview from \(origin) to \(destination)")
         }
-        .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
-        .frame(height: height)
-        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.large))
-        .overlay(alignment: .bottomLeading) {
-            Label("Route preview", systemImage: "location.fill")
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(.regularMaterial, in: Capsule())
-                .padding(12)
-        }
-        .accessibilityLabel("Map preview from \(origin) to \(destination)")
     }
 }
