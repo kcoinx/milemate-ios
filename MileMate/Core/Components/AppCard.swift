@@ -9,12 +9,12 @@ struct AppCard<Content: View>: View {
 
     var body: some View {
         content
-            .padding(AppTheme.Spacing.large)
+            .padding(AppTheme.Spacing.xLarge)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(AppTheme.Color.surface, in: RoundedRectangle(cornerRadius: AppTheme.Radius.large))
             .overlay {
                 RoundedRectangle(cornerRadius: AppTheme.Radius.large)
-                    .stroke(AppTheme.Color.divider.opacity(0.28), lineWidth: 0.5)
+                    .stroke(AppTheme.Color.divider.opacity(0.18), lineWidth: 0.5)
             }
             .shadow(
                 color: AppTheme.Shadow.color,
@@ -23,4 +23,3 @@ struct AppCard<Content: View>: View {
             )
     }
 }
-

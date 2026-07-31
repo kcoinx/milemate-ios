@@ -1,8 +1,9 @@
-import Charts
 import SwiftUI
 
 struct DashboardView: View {
     @State private var viewModel: DashboardViewModel
+    @State private var isPulsing = false
+    @State private var hasAppeared = false
 
     init(repository: any MileageRepository) {
         _viewModel = State(initialValue: DashboardViewModel(repository: repository))
@@ -13,135 +14,187 @@ struct DashboardView: View {
             LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.xLarge) {
                 greeting
                 deductionHero
-                metrics
-                mileageChart
-                recentTrips
+                lastTrip
+                mapSection
+                weeklySummary
             }
             .padding(.horizontal, AppTheme.Spacing.large)
             .padding(.bottom, AppTheme.Spacing.xxLarge)
         }
         .background(AppTheme.Color.canvas)
-        .navigationTitle("MileMate")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: {}) {
-                    Image(systemName: "bell")
-                }
-                .accessibilityLabel("Notifications")
+        .toolbar(.hidden, for: .navigationBar)
+        .task { await viewModel.load() }
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.55)) { hasAppeared = true }
+            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                isPulsing = true
             }
         }
-        .task { await viewModel.load() }
     }
 
     private var greeting: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Good morning, \(viewModel.profile.firstName)")
-                .font(.appLargeTitle)
-            Text("Your driving is working for you.")
-                .foregroundStyle(AppTheme.Color.textSecondary)
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("\(greetingText), \(viewModel.profile.firstName)")
+                    .font(.appLargeTitle)
+                Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
+                    .foregroundStyle(AppTheme.Color.textSecondary)
+            }
+            Spacer()
+            Button(action: {}) {
+                Image(systemName: "bell")
+                    .font(.headline)
+                    .frame(width: 44, height: 44)
+                    .background(AppTheme.Color.surface, in: Circle())
+            }
+            .accessibilityLabel("Notifications")
         }
-        .padding(.top, AppTheme.Spacing.small)
+        .padding(.top, AppTheme.Spacing.xLarge)
+    }
+
+    private var greetingText: String {
+        switch Calendar.current.component(.hour, from: .now) {
+        case 5..<12: "Good morning"
+        case 12..<17: "Good afternoon"
+        default: "Good evening"
+        }
     }
 
     private var deductionHero: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
-            HStack {
-                Label("2026 estimated deduction", systemImage: "sparkles")
-                    .font(.appHeadline)
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xLarge) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.2))
+                        .frame(width: 22, height: 22)
+                        .scaleEffect(isPulsing ? 1.35 : 0.9)
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 8, height: 8)
+                }
+                Text("TRACKING ACTIVE")
+                    .font(.caption.weight(.bold))
+                    .tracking(1.2)
                 Spacer()
-                Text("YTD")
-                    .font(.appCaption)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(.white.opacity(0.16), in: Capsule())
+                Image(systemName: "location.fill")
             }
 
-            Text(viewModel.summary.estimatedDeduction.currencyFormatted)
-                .font(.system(size: 44, weight: .bold, design: .rounded))
-                .contentTransition(.numericText())
-
-            HStack {
-                Label(
-                    "\(viewModel.summary.estimatedTaxSavings.currencyFormatted) estimated tax savings",
-                    systemImage: "arrow.up.right"
-                )
-                .font(.subheadline.weight(.semibold))
-                Spacer()
+            VStack(alignment: .leading, spacing: 6) {
+                Text("ESTIMATED IRS DEDUCTION")
+                    .font(.caption.weight(.semibold))
+                    .tracking(0.8)
+                    .foregroundStyle(.white.opacity(0.72))
+                Text(viewModel.summary.estimatedDeduction.currencyFormatted)
+                    .font(.system(size: 54, weight: .bold, design: .rounded))
+                    .minimumScaleFactor(0.72)
+                    .contentTransition(.numericText())
             }
+
+            HStack(spacing: AppTheme.Spacing.xLarge) {
+                heroMetric("Today's miles", value: "42.6 mi")
+                Divider().overlay(.white.opacity(0.25))
+                heroMetric("Est. tax savings", value: viewModel.summary.estimatedTaxSavings.currencyFormatted)
+            }
+            .frame(height: 48)
         }
         .foregroundStyle(.white)
         .padding(AppTheme.Spacing.xLarge)
         .background {
             LinearGradient(
-                colors: [AppTheme.Color.brand, AppTheme.Color.brand.opacity(0.72)],
+                colors: [Color(red: 0.03, green: 0.33, blue: 0.22), AppTheme.Color.brand],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.large))
+            .clipShape(RoundedRectangle(cornerRadius: 30))
         }
-        .shadow(color: AppTheme.Color.brand.opacity(0.22), radius: 18, y: 10)
+        .overlay {
+            RoundedRectangle(cornerRadius: 30)
+                .stroke(.white.opacity(0.12), lineWidth: 1)
+        }
+        .shadow(color: AppTheme.Color.brand.opacity(0.28), radius: 28, y: 16)
+        .scaleEffect(hasAppeared ? 1 : 0.97)
+        .opacity(hasAppeared ? 1 : 0)
         .accessibilityElement(children: .combine)
     }
 
-    private var metrics: some View {
-        LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], spacing: AppTheme.Spacing.medium) {
-            MetricCard(
-                title: "Business Miles",
-                value: viewModel.summary.businessMiles.formatted(.number.precision(.fractionLength(0))),
-                systemImage: "road.lanes",
-                tint: AppTheme.Color.brand,
-                detail: "78% of all miles"
-            )
-            MetricCard(
-                title: "Trips",
-                value: "\(viewModel.summary.tripCount)",
-                systemImage: "car.side.fill",
-                tint: AppTheme.Color.accent,
-                detail: "12 this week"
-            )
+    private func heroMetric(_ title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.72))
+            Text(value)
+                .font(.headline.monospacedDigit())
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var mileageChart: some View {
-        AppCard {
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
-                SectionHeader(title: "Business mileage")
-                Chart(viewModel.summary.monthlyMiles) { item in
-                    BarMark(
-                        x: .value("Month", item.month),
-                        y: .value("Miles", item.miles)
-                    )
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [AppTheme.Color.brand, AppTheme.Color.accent],
-                            startPoint: .bottom,
-                            endPoint: .top
-                        )
-                    )
-                    .cornerRadius(5)
-                }
-                .chartYAxis(.hidden)
-                .frame(height: 150)
-                .accessibilityLabel("Monthly business mileage chart")
-            }
-        }
-    }
-
-    private var recentTrips: some View {
+    private var lastTrip: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
-            SectionHeader(title: "Recent trips")
-            AppCard {
-                ForEach(Array(viewModel.recentTrips.enumerated()), id: \.element.id) { index, trip in
-                    NavigationLink(value: trip) {
-                        TripRow(trip: trip)
-                    }
-                    .buttonStyle(.plain)
-                    if index < viewModel.recentTrips.count - 1 {
-                        Divider()
+            SectionHeader(title: "Last trip")
+            if let trip = viewModel.recentTrips.first {
+                NavigationLink(value: trip) {
+                    AppCard {
+                        HStack(spacing: AppTheme.Spacing.large) {
+                            VStack(spacing: 3) {
+                                Circle().fill(AppTheme.Color.textSecondary).frame(width: 8, height: 8)
+                                Rectangle().fill(AppTheme.Color.divider).frame(width: 1, height: 25)
+                                Circle().fill(AppTheme.Color.brand).frame(width: 8, height: 8)
+                            }
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(trip.originName).font(.subheadline.weight(.medium))
+                                Text(trip.destinationName).font(.appHeadline)
+                                Text("Completed at \(trip.endedAt.formatted(date: .omitted, time: .shortened))")
+                                    .font(.caption)
+                                    .foregroundStyle(AppTheme.Color.textSecondary)
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 5) {
+                                Text(trip.distanceMiles.milesFormatted).font(.appHeadline)
+                                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
+                .buttonStyle(.plain)
             }
         }
         .navigationDestination(for: Trip.self) { TripDetailView(trip: $0) }
+    }
+
+    private var mapSection: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
+            HStack {
+                SectionHeader(title: "Live route")
+                Spacer()
+                Text("Preview")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppTheme.Color.brand)
+            }
+            RouteMapView(origin: "Current location", destination: "Next stop", height: 260)
+        }
+    }
+
+    private var weeklySummary: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
+            SectionHeader(title: "This week")
+            AppCard {
+                HStack {
+                    ProgressRing(progress: 0.72, value: "486", label: "Business\nmiles")
+                    Spacer()
+                    ProgressRing(progress: 0.58, value: "18", label: "Trips", tint: AppTheme.Color.positive)
+                    Spacer()
+                    ProgressRing(progress: 0.64, value: "$340", label: "IRS\ndeduction", tint: AppTheme.Color.warning)
+                }
+                Divider().padding(.vertical, AppTheme.Spacing.large)
+                HStack {
+                    Label("Estimated tax savings", systemImage: "arrow.up.right")
+                        .foregroundStyle(AppTheme.Color.textSecondary)
+                    Spacer()
+                    Text("$95")
+                        .font(.appTitle)
+                        .foregroundStyle(AppTheme.Color.positive)
+                }
+            }
+        }
     }
 }

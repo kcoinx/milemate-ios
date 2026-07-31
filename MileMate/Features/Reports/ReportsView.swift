@@ -1,9 +1,9 @@
-import Charts
 import SwiftUI
 
 struct ReportsView: View {
     @State private var viewModel: ReportsViewModel
     @State private var showingExport = false
+    @State private var selectedExport = "PDF"
 
     init(repository: any MileageRepository) {
         _viewModel = State(initialValue: ReportsViewModel(repository: repository))
@@ -13,71 +13,138 @@ struct ReportsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xLarge) {
                 Picker("Reporting period", selection: $viewModel.period) {
-                    ForEach(ReportsViewModel.Period.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    ForEach(ReportsViewModel.Period.allCases, id: \.self) {
+                        Text($0.rawValue).tag($0)
+                    }
                 }
                 .pickerStyle(.segmented)
 
-                AppCard {
-                    VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
-                        Label("2026 mileage report", systemImage: "doc.text.fill")
-                            .font(.appHeadline)
-                            .foregroundStyle(AppTheme.Color.brand)
-                        Text(viewModel.summary.estimatedDeduction.currencyFormatted)
-                            .font(.system(size: 40, weight: .bold, design: .rounded))
-                        Text("Potential business mileage deduction")
-                            .foregroundStyle(AppTheme.Color.textSecondary)
-                        Divider()
-                        HStack {
-                            reportMetric("Business", value: viewModel.summary.businessMiles.milesFormatted)
-                            Spacer()
-                            reportMetric("Personal", value: viewModel.summary.personalMiles.milesFormatted)
-                            Spacer()
-                            reportMetric("Trips", value: "\(viewModel.summary.tripCount)")
-                        }
-                    }
+                monthlySummary
+
+                SectionHeader(title: "Quick actions")
+                LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], spacing: AppTheme.Spacing.medium) {
+                    actionCard("Export PDF", icon: "doc.richtext", tint: AppTheme.Color.brand)
+                    actionCard("Export CSV", icon: "tablecells", tint: AppTheme.Color.positive)
+                    actionCard("IRS Mileage Report", icon: "building.columns", tint: AppTheme.Color.warning)
+                    actionCard("Year Summary", icon: "calendar", tint: AppTheme.Color.textPrimary)
                 }
 
-                AppCard {
-                    VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
-                        SectionHeader(title: "Mileage by month")
-                        Chart(viewModel.summary.monthlyMiles) { item in
-                            AreaMark(x: .value("Month", item.month), y: .value("Miles", item.miles))
-                                .foregroundStyle(AppTheme.Color.brand.opacity(0.16))
-                            LineMark(x: .value("Month", item.month), y: .value("Miles", item.miles))
-                                .foregroundStyle(AppTheme.Color.brand)
-                                .lineStyle(.init(lineWidth: 3, lineCap: .round))
-                            PointMark(x: .value("Month", item.month), y: .value("Miles", item.miles))
-                                .foregroundStyle(AppTheme.Color.brand)
-                        }
-                        .frame(height: 210)
-                    }
-                }
-
-                Button { showingExport = true } label: {
-                    Label("Export tax-ready report", systemImage: "square.and.arrow.up")
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .font(.headline)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(AppTheme.Color.brand)
+                yearSummary
             }
-            .padding(AppTheme.Spacing.large)
+            .padding(.horizontal, AppTheme.Spacing.large)
+            .padding(.bottom, AppTheme.Spacing.xxLarge)
         }
         .background(AppTheme.Color.canvas)
         .navigationTitle("Reports")
         .task { await viewModel.load() }
-        .confirmationDialog("Export report", isPresented: $showingExport) {
-            Button("PDF summary") {}
-            Button("CSV trip log") {}
-            Button("Share with accountant") {}
+        .confirmationDialog("Export \(selectedExport)", isPresented: $showingExport) {
+            Button("Save to Files") {}
+            Button("Share") {}
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private var monthlySummary: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xLarge) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("JULY 2026")
+                        .font(.caption.weight(.bold))
+                        .tracking(1.2)
+                        .foregroundStyle(.white.opacity(0.7))
+                    Text("Tax summary")
+                        .font(.title2.weight(.bold))
+                }
+                Spacer()
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.title2)
+                    .foregroundStyle(.white)
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("ESTIMATED IRS DEDUCTION")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.7))
+                Text(viewModel.summary.estimatedDeduction.currencyFormatted)
+                    .font(.system(size: 48, weight: .bold, design: .rounded))
+                    .minimumScaleFactor(0.75)
+            }
+
+            HStack {
+                reportMetric("BUSINESS MILES", value: viewModel.summary.businessMiles.milesFormatted)
+                Spacer()
+                reportMetric("EST. TAX SAVINGS", value: viewModel.summary.estimatedTaxSavings.currencyFormatted)
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(AppTheme.Spacing.xLarge)
+        .background {
+            LinearGradient(
+                colors: [Color(red: 0.04, green: 0.30, blue: 0.20), AppTheme.Color.brand],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 30))
+        }
+        .shadow(color: AppTheme.Color.brand.opacity(0.22), radius: 24, y: 14)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func actionCard(_ title: String, icon: String, tint: Color) -> some View {
+        Button {
+            selectedExport = title
+            showingExport = true
+        } label: {
+            AppCard {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xLarge) {
+                    Image(systemName: icon)
+                        .font(.title2)
+                        .foregroundStyle(tint)
+                        .frame(width: 48, height: 48)
+                        .background(tint.opacity(0.12), in: Circle())
+                    Text(title)
+                        .font(.appHeadline)
+                        .foregroundStyle(AppTheme.Color.textPrimary)
+                        .multilineTextAlignment(.leading)
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(AppTheme.Color.textSecondary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+
+    private var yearSummary: some View {
+        AppCard {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
+                SectionHeader(title: "2026 at a glance")
+                summaryRow("Business mileage", value: viewModel.summary.businessMiles.milesFormatted)
+                Divider()
+                summaryRow("Recorded trips", value: "\(viewModel.summary.tripCount)")
+                Divider()
+                summaryRow("Deduction rate", value: "$0.70 / mile")
+                Divider()
+                summaryRow("Estimated savings", value: viewModel.summary.estimatedTaxSavings.currencyFormatted, emphasized: true)
+            }
         }
     }
 
     private func reportMetric(_ title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.caption2.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
             Text(value).font(.headline.monospacedDigit())
-            Text(title).font(.caption).foregroundStyle(AppTheme.Color.textSecondary)
+        }
+    }
+
+    private func summaryRow(_ title: String, value: String, emphasized: Bool = false) -> some View {
+        HStack {
+            Text(title).foregroundStyle(AppTheme.Color.textSecondary)
+            Spacer()
+            Text(value)
+                .font(.headline.monospacedDigit())
+                .foregroundStyle(emphasized ? AppTheme.Color.positive : AppTheme.Color.textPrimary)
         }
     }
 }

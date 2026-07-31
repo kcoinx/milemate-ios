@@ -20,3 +20,11 @@ extension Date {
     }
 }
 
+extension TimeInterval {
+    var formattedDuration: String {
+        let totalMinutes = max(Int(self) / 60, 0)
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+        return hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
+    }
+}
