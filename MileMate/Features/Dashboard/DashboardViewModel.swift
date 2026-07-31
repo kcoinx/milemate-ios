@@ -9,7 +9,7 @@ final class DashboardViewModel {
     private(set) var recentTrips = Array(MockData.trips.prefix(3))
     private(set) var profile = MockData.profile
 
-    init(repository: any MileageRepository = MockMileageRepository()) {
+    init(repository: any MileageRepository) {
         self.repository = repository
     }
 

@@ -2,7 +2,11 @@ import Charts
 import SwiftUI
 
 struct DashboardView: View {
-    @State private var viewModel = DashboardViewModel()
+    @State private var viewModel: DashboardViewModel
+
+    init(repository: any MileageRepository) {
+        _viewModel = State(initialValue: DashboardViewModel(repository: repository))
+    }
 
     var body: some View {
         ScrollView {
@@ -141,4 +145,3 @@ struct DashboardView: View {
         .navigationDestination(for: Trip.self) { TripDetailView(trip: $0) }
     }
 }
-

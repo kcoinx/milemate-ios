@@ -1,7 +1,11 @@
 import SwiftUI
 
 struct TripsView: View {
-    @State private var viewModel = TripsViewModel()
+    @State private var viewModel: TripsViewModel
+
+    init(repository: any MileageRepository) {
+        _viewModel = State(initialValue: TripsViewModel(repository: repository))
+    }
 
     var body: some View {
         ScrollView {
@@ -22,6 +26,7 @@ struct TripsView: View {
         }
         .background(AppTheme.Color.canvas)
         .navigationTitle("Trips")
+        .task { await viewModel.load() }
         .searchable(text: $viewModel.searchText, prompt: "Search trips")
         .navigationDestination(for: Trip.self) { TripDetailView(trip: $0) }
         .toolbar {
@@ -70,4 +75,3 @@ struct TripsView: View {
             .background(isSelected ? AppTheme.Color.brand : AppTheme.Color.surface, in: Capsule())
     }
 }
-

@@ -20,3 +20,9 @@ The application uses feature-oriented MVVM:
 - `Data`: mock repositories (replaceable by Firebase-backed implementations)
 - `Features`: views and view models grouped by product feature
 
+`AppDependencies` is the composition root. The first milestone injects a mock
+repository, an intentionally inactive location service, and a SwiftData model
+container. Feature view models depend on protocols rather than concrete storage.
+
+Automatic trip detection and background location tracking are intentionally
+deferred. No location permission is requested in this milestone.

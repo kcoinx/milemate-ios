@@ -2,8 +2,12 @@ import Charts
 import SwiftUI
 
 struct ReportsView: View {
-    @State private var viewModel = ReportsViewModel()
+    @State private var viewModel: ReportsViewModel
     @State private var showingExport = false
+
+    init(repository: any MileageRepository) {
+        _viewModel = State(initialValue: ReportsViewModel(repository: repository))
+    }
 
     var body: some View {
         ScrollView {
@@ -62,6 +66,7 @@ struct ReportsView: View {
         }
         .background(AppTheme.Color.canvas)
         .navigationTitle("Reports")
+        .task { await viewModel.load() }
         .confirmationDialog("Export report", isPresented: $showingExport) {
             Button("PDF summary") {}
             Button("CSV trip log") {}
@@ -76,4 +81,3 @@ struct ReportsView: View {
         }
     }
 }
-

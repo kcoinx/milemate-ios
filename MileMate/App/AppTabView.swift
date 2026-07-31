@@ -1,14 +1,15 @@
 import SwiftUI
 
 struct AppTabView: View {
+    let dependencies: AppDependencies
     @State private var selection: AppTab = .dashboard
     @AppStorage("appAppearance") private var appearance = AppAppearance.system.rawValue
 
     var body: some View {
         TabView(selection: $selection) {
-            tab(.dashboard) { DashboardView() }
-            tab(.trips) { TripsView() }
-            tab(.reports) { ReportsView() }
+            tab(.dashboard) { DashboardView(repository: dependencies.mileageRepository) }
+            tab(.trips) { TripsView(repository: dependencies.mileageRepository) }
+            tab(.reports) { ReportsView(repository: dependencies.mileageRepository) }
             tab(.insights) { InsightsView() }
             tab(.settings) { SettingsView() }
         }
