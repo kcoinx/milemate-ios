@@ -76,7 +76,7 @@ struct InsightsView: View {
 
     private var weeklyPattern: some View {
         let days = Array(zip(["M", "T", "W", "T", "F", "S", "S"], [64, 100, 78, 92, 55, 24, 12]))
-        AppCard {
+        return AppCard {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
                 SectionHeader(title: "Weekly rhythm")
                 HStack(alignment: .bottom, spacing: 12) {
