@@ -120,20 +120,22 @@ struct VehicleManagementView: View {
         }
         .task { await viewModel.load() }
         .sheet(isPresented: $showingAddVehicle) {
-            VehicleEditorView(vehicle: nil) {
-                Task { await viewModel.save($0) }
+            VehicleEditorView(vehicle: nil) { vehicle in
+                Task { await viewModel.save(vehicle) }
             }
         }
         .sheet(item: $viewModel.editingVehicle) { vehicle in
-            VehicleEditorView(vehicle: vehicle) {
-                Task { await viewModel.save($0) }
+            VehicleEditorView(vehicle: vehicle) { editedVehicle in
+                Task { await viewModel.save(editedVehicle) }
             }
         }
         .confirmationDialog(
             "Delete this vehicle?",
             isPresented: Binding(
                 get: { viewModel.deletingVehicle != nil },
-                set: { if !$0 { viewModel.deletingVehicle = nil } }
+                set: { isPresented in
+                    if !isPresented { viewModel.deletingVehicle = nil }
+                }
             ),
             titleVisibility: .visible
         ) {
@@ -142,7 +144,9 @@ struct VehicleManagementView: View {
                     viewModel.deletingVehicle = nil
                     Task { await viewModel.delete(deleting, reassignTo: nil) }
                 }
-                ForEach(viewModel.vehicles.filter { $0.id != deleting.id }) { replacement in
+                ForEach(
+                    viewModel.vehicles.filter { vehicle in vehicle.id != deleting.id }
+                ) { replacement in
                     Button("Reassign to \(replacement.nickname)") {
                         viewModel.deletingVehicle = nil
                         Task { await viewModel.delete(deleting, reassignTo: replacement) }
@@ -171,7 +175,7 @@ private struct VehicleEditorView: View {
         original = vehicle
         self.onSave = onSave
         _nickname = State(initialValue: vehicle?.nickname ?? "")
-        _year = State(initialValue: vehicle?.year.map { String($0) } ?? "")
+        _year = State(initialValue: vehicle?.year.map { year in String(year) } ?? "")
         _make = State(initialValue: vehicle?.make ?? "")
         _model = State(initialValue: vehicle?.model ?? "")
         _plate = State(initialValue: vehicle?.licensePlateNickname ?? "")
@@ -307,13 +311,16 @@ struct FrequentPlacesManagementView: View {
         }
         .task { await viewModel.load() }
         .sheet(isPresented: $showingAdd) {
-            PlaceEditorView(place: nil, suggestedCoordinate: suggestedCoordinate) {
-                Task { await viewModel.save(place: $0) }
+            PlaceEditorView(
+                place: nil,
+                suggestedCoordinate: suggestedCoordinate
+            ) { place in
+                Task { await viewModel.save(place: place) }
             }
         }
         .sheet(item: $editingPlace) { place in
-            PlaceEditorView(place: place, suggestedCoordinate: nil) {
-                Task { await viewModel.save(place: $0) }
+            PlaceEditorView(place: place, suggestedCoordinate: nil) { editedPlace in
+                Task { await viewModel.save(place: editedPlace) }
             }
         }
     }
@@ -447,8 +454,8 @@ struct ClassificationRulesView: View {
         }
         .task { await viewModel.load() }
         .sheet(isPresented: $showingAdd) {
-            RuleEditorView(places: viewModel.places) {
-                Task { await viewModel.save(rule: $0) }
+            RuleEditorView(places: viewModel.places) { rule in
+                Task { await viewModel.save(rule: rule) }
             }
         }
     }
@@ -467,11 +474,15 @@ private struct RuleEditorView: View {
             Form {
                 Picker("Start place", selection: $startID) {
                     Text("Select").tag(UUID?.none)
-                    ForEach(places) { Text($0.label).tag(Optional($0.id)) }
+                    ForEach(places) { place in
+                        Text(place.label).tag(Optional(place.id))
+                    }
                 }
                 Picker("End place", selection: $endID) {
                     Text("Select").tag(UUID?.none)
-                    ForEach(places) { Text($0.label).tag(Optional($0.id)) }
+                    ForEach(places) { place in
+                        Text(place.label).tag(Optional(place.id))
+                    }
                 }
                 Picker("Classification", selection: $classification) {
                     Text("Business").tag(Trip.Classification.business)
@@ -489,8 +500,14 @@ private struct RuleEditorView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        guard let start = places.first(where: { $0.id == startID }),
-                              let end = places.first(where: { $0.id == endID }) else { return }
+                        guard let start = places.first(where: { place in
+                            place.id == startID
+                        }),
+                        let end = places.first(where: { place in
+                            place.id == endID
+                        }) else {
+                            return
+                        }
                         onSave(
                             ClassificationRule(
                                 startPlaceID: start.id,
