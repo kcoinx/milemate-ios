@@ -4,6 +4,13 @@ import Observation
 @MainActor
 @Observable
 final class ReportsViewModel {
+    struct WeeklyMileage: Identifiable {
+        let weekStart: Date
+        let miles: Double
+
+        var id: Date { weekStart }
+    }
+
     enum Period: String, CaseIterable {
         case month = "Month"
         case quarter = "Quarter"
@@ -20,6 +27,24 @@ final class ReportsViewModel {
 
     var summary: MileageSummary {
         MileageSummaryCalculator.summary(for: trips.filter { selectedInterval.contains($0.startedAt) })
+    }
+
+    var weeklyMileage: [WeeklyMileage] {
+        let calendar = Calendar.current
+        let businessTrips = trips.filter {
+            selectedInterval.contains($0.startedAt) && $0.classification == .business
+        }
+        let grouped = Dictionary(grouping: businessTrips) {
+            calendar.dateInterval(of: .weekOfYear, for: $0.startedAt)?.start
+                ?? calendar.startOfDay(for: $0.startedAt)
+        }
+        return grouped.map { weekStart, trips in
+            WeeklyMileage(
+                weekStart: weekStart,
+                miles: trips.reduce(0) { $0 + $1.distanceMiles }
+            )
+        }
+        .sorted { $0.weekStart < $1.weekStart }
     }
 
     func load() async {

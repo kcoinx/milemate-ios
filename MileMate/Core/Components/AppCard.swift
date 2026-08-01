@@ -11,7 +11,7 @@ struct AppCard<Content: View>: View {
 
     var body: some View {
         content
-            .padding(AppTheme.Spacing.xLarge)
+            .padding(AppTheme.Spacing.card)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(AppTheme.Color.surface, in: RoundedRectangle(cornerRadius: AppTheme.Radius.large))
             .overlay {
@@ -78,6 +78,10 @@ struct RouteMapView: View {
     var route: [TripCoordinate] = []
     var height: CGFloat = 220
     var interactive = true
+    var showsUserLocation = false
+    var showsEndMarker = true
+
+    @State private var position: MapCameraPosition = .automatic
 
     private var coordinates: [CLLocationCoordinate2D] {
         route.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
@@ -85,7 +89,7 @@ struct RouteMapView: View {
 
     @ViewBuilder
     var body: some View {
-        if coordinates.isEmpty {
+        if coordinates.isEmpty && !showsUserLocation {
             VStack(spacing: AppTheme.Spacing.medium) {
                 Image(systemName: "map")
                     .font(.title2)
@@ -101,10 +105,7 @@ struct RouteMapView: View {
             .background(AppTheme.Color.elevated, in: RoundedRectangle(cornerRadius: AppTheme.Radius.large))
             .accessibilityElement(children: .combine)
         } else {
-            Map(
-                initialPosition: .automatic,
-                interactionModes: interactive ? .all : []
-            ) {
+            Map(position: $position, interactionModes: interactive ? .all : []) {
                 if coordinates.count > 1 {
                     MapPolyline(coordinates: coordinates)
                         .stroke(AppTheme.Color.brand, lineWidth: 5)
@@ -113,16 +114,19 @@ struct RouteMapView: View {
                     Marker(origin, coordinate: start)
                         .tint(AppTheme.Color.textSecondary)
                 }
-                if let end = coordinates.last {
+                if showsEndMarker, let end = coordinates.last {
                     Marker(destination, coordinate: end)
                         .tint(AppTheme.Color.brand)
+                }
+                if showsUserLocation {
+                    UserAnnotation()
                 }
             }
             .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
             .frame(height: height)
             .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.large))
             .overlay(alignment: .bottomLeading) {
-                Label("Route preview", systemImage: "location.fill")
+                Label(showsUserLocation ? "Live route" : "Route preview", systemImage: "location.fill")
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -130,6 +134,34 @@ struct RouteMapView: View {
                     .padding(12)
             }
             .accessibilityLabel("Map preview from \(origin) to \(destination)")
+            .onAppear { fitRoute() }
+            .onChange(of: route) { _, _ in fitRoute() }
         }
+    }
+
+    private func fitRoute() {
+        guard !coordinates.isEmpty else {
+            position = .automatic
+            return
+        }
+
+        var mapRect = MKMapRect.null
+        for coordinate in coordinates {
+            let point = MKMapPoint(coordinate)
+            let pointRect = MKMapRect(x: point.x, y: point.y, width: 1, height: 1)
+            mapRect = mapRect.union(pointRect)
+        }
+
+        let minimumSpan = 1_500.0
+        if mapRect.width < minimumSpan || mapRect.height < minimumSpan {
+            let center = MKMapPoint(coordinates[coordinates.count / 2])
+            mapRect = MKMapRect(
+                x: center.x - minimumSpan / 2,
+                y: center.y - minimumSpan / 2,
+                width: minimumSpan,
+                height: minimumSpan
+            )
+        }
+        position = .rect(mapRect.insetBy(dx: -mapRect.width * 0.18, dy: -mapRect.height * 0.18))
     }
 }

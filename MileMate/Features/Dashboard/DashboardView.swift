@@ -40,10 +40,12 @@ struct DashboardView: View {
                 hasAppeared = true
             } else {
                 withAnimation(.easeOut(duration: 0.55)) { hasAppeared = true }
-                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-                    isPulsing = true
-                }
             }
+            updateTrackingPulse()
+        }
+        .onChange(of: tripCoordinator.state) { _, _ in updateTrackingPulse() }
+        .onReceive(NotificationCenter.default.publisher(for: .mileageTripsDidChange)) { _ in
+            Task { await viewModel.load() }
         }
     }
 
@@ -90,6 +92,9 @@ struct DashboardView: View {
                 Text(tripCoordinator.state == .tracking ? "MANUAL TRACKING ACTIVE" : "READY TO TRACK")
                     .font(.caption.weight(.bold))
                     .tracking(1.2)
+                    .padding(.horizontal, tripCoordinator.state == .tracking ? 10 : 0)
+                    .padding(.vertical, tripCoordinator.state == .tracking ? 6 : 0)
+                    .background(.white.opacity(tripCoordinator.state == .tracking ? 0.14 : 0), in: Capsule())
                 Spacer()
                 Image(systemName: "location.fill")
             }
@@ -131,6 +136,11 @@ struct DashboardView: View {
                         : viewModel.summary.businessMiles.milesFormatted
                 )
                 .font(.subheadline.weight(.bold))
+                .contentTransition(.numericText())
+                .animation(
+                    reduceMotion ? nil : .smooth(duration: 0.3),
+                    value: tripCoordinator.currentDeduction
+                )
             }
 
             Button {
@@ -163,7 +173,7 @@ struct DashboardView: View {
             }
         }
         .foregroundStyle(.white)
-        .padding(AppTheme.Spacing.xLarge)
+        .padding(AppTheme.Spacing.card)
         .background {
             LinearGradient(
                 colors: [Color(red: 0.03, green: 0.33, blue: 0.22), AppTheme.Color.brand],
@@ -179,7 +189,7 @@ struct DashboardView: View {
         .shadow(color: AppTheme.Color.brand.opacity(0.28), radius: 28, y: 16)
         .scaleEffect(hasAppeared ? 1 : 0.97)
         .opacity(hasAppeared ? 1 : 0)
-        .animation(.snappy(duration: 0.35), value: tripCoordinator.state)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.35), value: tripCoordinator.state)
         .accessibilityElement(children: .combine)
     }
 
@@ -190,6 +200,8 @@ struct DashboardView: View {
                 .foregroundStyle(.white.opacity(0.72))
             Text(value)
                 .font(.headline.monospacedDigit())
+                .contentTransition(.numericText())
+                .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: value)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -197,14 +209,7 @@ struct DashboardView: View {
     private var lastTrip: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
             SectionHeader(title: "Last trip")
-            if tripCoordinator.state == .tracking {
-                RouteMapView(
-                    origin: "Trip start",
-                    destination: "Current location",
-                    route: tripCoordinator.currentRoute,
-                    height: 260
-                )
-            } else if let trip = viewModel.recentTrips.first {
+            if let trip = viewModel.recentTrips.first {
                 NavigationLink(value: trip) {
                     AppCard {
                         HStack(spacing: AppTheme.Spacing.large) {
@@ -248,6 +253,19 @@ struct DashboardView: View {
         .navigationDestination(for: Trip.self) { TripDetailView(trip: $0, repository: repository) }
     }
 
+    private func updateTrackingPulse() {
+        guard tripCoordinator.state == .tracking, !reduceMotion else {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { isPulsing = false }
+            return
+        }
+        isPulsing = false
+        withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+            isPulsing = true
+        }
+    }
+
     private var mapSection: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
             HStack {
@@ -257,7 +275,16 @@ struct DashboardView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(AppTheme.Color.brand)
             }
-            if let trip = viewModel.recentTrips.first {
+            if tripCoordinator.state == .tracking {
+                RouteMapView(
+                    origin: "Trip start",
+                    destination: "Current location",
+                    route: tripCoordinator.currentRoute,
+                    height: 260,
+                    showsUserLocation: true,
+                    showsEndMarker: false
+                )
+            } else if let trip = viewModel.recentTrips.first {
                 RouteMapView(
                     origin: trip.originName,
                     destination: trip.destinationName,

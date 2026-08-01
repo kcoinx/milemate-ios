@@ -41,6 +41,9 @@ struct InsightsView: View {
                 withAnimation(.smooth(duration: 0.55)) { ringProgress = 1 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .mileageTripsDidChange)) { _ in
+            Task { await viewModel.load() }
+        }
     }
 
     private var weeklyHero: some View {

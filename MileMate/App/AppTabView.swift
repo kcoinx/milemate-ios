@@ -5,6 +5,7 @@ struct AppTabView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var selection: AppTab = .dashboard
     @AppStorage("appAppearance") private var appearance = AppAppearance.system.rawValue
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         TabView(selection: $selection) {
@@ -17,7 +18,7 @@ struct AppTabView: View {
             tab(.trips) { TripsView(repository: dependencies.mileageRepository) }
             tab(.reports) { ReportsView(repository: dependencies.mileageRepository) }
             tab(.insights) { InsightsView(repository: dependencies.mileageRepository) }
-            tab(.settings) { SettingsView() }
+            tab(.settings) { SettingsView(repository: dependencies.mileageRepository) }
         }
         .tint(AppTheme.Color.brand)
         .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
@@ -36,7 +37,15 @@ struct AppTabView: View {
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
         .tabItem {
-            Label(tab.title, systemImage: tab.systemImage)
+            Label {
+                Text(tab.title)
+            } icon: {
+                Image(systemName: tab.systemImage)
+                    .font(.system(size: 17, weight: .semibold))
+                    .symbolVariant(selection == tab ? .fill : .none)
+                    .scaleEffect(selection == tab ? 1.08 : 1)
+                    .animation(reduceMotion ? nil : .smooth(duration: 0.22), value: selection)
+            }
         }
         .tag(tab)
     }

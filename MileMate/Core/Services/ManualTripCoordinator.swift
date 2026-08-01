@@ -95,6 +95,7 @@ final class ManualTripCoordinator {
         trip.purpose = notes
         trip.updatedAt = .now
         try await repository.save(trip)
+        NotificationCenter.default.post(name: .mileageTripsDidChange, object: trip.id)
         pendingTrip = nil
         resetSession()
     }

@@ -8,3 +8,7 @@ protocol MileageRepository: Sendable {
     func update(_ trip: Trip) async throws
     func delete(_ trip: Trip) async throws
 }
+
+extension Notification.Name {
+    static let mileageTripsDidChange = Notification.Name("MileMate.mileageTripsDidChange")
+}

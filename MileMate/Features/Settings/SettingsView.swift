@@ -1,9 +1,13 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @State private var viewModel = SettingsViewModel()
+    @State private var viewModel: SettingsViewModel
     @AppStorage("appAppearance") private var appearance = AppAppearance.system.rawValue
     @State private var cloudBackup = false
+
+    init(repository: any MileageRepository) {
+        _viewModel = State(initialValue: SettingsViewModel(repository: repository))
+    }
 
     var body: some View {
         List {
@@ -20,11 +24,8 @@ struct SettingsView: View {
                 destination("Vehicles", icon: "car.side.fill", tint: AppTheme.Color.brand) {
                     VehiclesView()
                 }
-                destination("Home address", icon: "house.fill", tint: .purple) {
-                    AddressSettingsView(title: "Home Address", address: "1457 Pine Street")
-                }
-                destination("Work address", icon: "briefcase.fill", tint: .orange) {
-                    AddressSettingsView(title: "Work Address", address: "425 Market Street")
+                destination("Frequent places", icon: "mappin.and.ellipse", tint: AppTheme.Color.brand) {
+                    FrequentPlacesView(places: viewModel.frequentPlaces)
                 }
             }
 
@@ -89,6 +90,10 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .background(AppTheme.Color.canvas)
         .navigationTitle("Settings")
+        .task { await viewModel.loadFrequentPlaces() }
+        .onReceive(NotificationCenter.default.publisher(for: .mileageTripsDidChange)) { _ in
+            Task { await viewModel.loadFrequentPlaces() }
+        }
     }
 
     private var profileSection: some View {
@@ -166,44 +171,82 @@ private struct ProfileSettingsView: View {
 }
 
 private struct VehiclesView: View {
-    var body: some View {
-        List {
-            Section("Primary vehicle") {
-                Label {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("2024 Tesla Model Y").font(.headline)
-                        Text("Midnight Silver - EV").font(.caption).foregroundStyle(.secondary)
-                    }
-                } icon: {
-                    Image(systemName: "car.side.fill").foregroundStyle(AppTheme.Color.brand)
-                }
-                .padding(.vertical, 8)
-            }
-            Button("Add another vehicle") {}
-        }
-        .navigationTitle("Vehicles")
-    }
-}
-
-private struct AddressSettingsView: View {
-    let title: String
-    @State private var address: String
-
-    init(title: String, address: String) {
-        self.title = title
-        _address = State(initialValue: address)
-    }
+    @AppStorage("vehicle.nickname") private var nickname = "My Vehicle"
+    @AppStorage("vehicle.year") private var year = "2024"
+    @AppStorage("vehicle.make") private var make = "Tesla"
+    @AppStorage("vehicle.model") private var model = "Model Y"
 
     var body: some View {
         Form {
-            Section("Saved location") {
-                TextField("Address", text: $address)
-                Label("Used to classify nearby trips", systemImage: "mappin.and.ellipse")
+            Section("Default vehicle") {
+                TextField("Vehicle nickname", text: $nickname)
+                TextField("Year", text: $year)
+                    .keyboardType(.numberPad)
+                TextField("Make", text: $make)
+                TextField("Model", text: $model)
+            }
+            Section {
+                Label("Trips are not linked to vehicles yet.", systemImage: "info.circle")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+            } footer: {
+                Text("This milestone supports one locally stored default vehicle.")
             }
         }
-        .navigationTitle(title)
+        .navigationTitle("Vehicle")
+    }
+}
+
+private struct FrequentPlacesView: View {
+    let places: [SettingsViewModel.FrequentPlace]
+    @AppStorage("frequentPlace.home") private var home = ""
+    @AppStorage("frequentPlace.work") private var work = ""
+
+    var body: some View {
+        Form {
+            if places.isEmpty {
+                Section {
+                    Label(
+                        "Complete trips to build your frequent-place history.",
+                        systemImage: "mappin.slash"
+                    )
+                    .foregroundStyle(.secondary)
+                }
+            } else {
+                Section("Confirmed labels") {
+                    placePicker("Home", selection: $home, icon: "house.fill")
+                    placePicker("Work", selection: $work, icon: "briefcase.fill")
+                }
+
+                Section("Most visited") {
+                    ForEach(places.prefix(5)) { place in
+                        LabeledContent(place.name, value: "\(place.visitCount) visits")
+                    }
+                }
+
+                Section {
+                    Text("Labels are saved only after you choose them. MileMate does not automatically infer Home or Work.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Frequent Places")
+    }
+
+    private func placePicker(
+        _ title: String,
+        selection: Binding<String>,
+        icon: String
+    ) -> some View {
+        Picker(selection: selection) {
+            Text("Not set").tag("")
+            ForEach(places) { place in
+                Text(place.name).tag(place.name)
+            }
+        } label: {
+            Label(title, systemImage: icon)
+        }
     }
 }
 

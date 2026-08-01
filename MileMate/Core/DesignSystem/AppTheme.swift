@@ -33,6 +33,7 @@ enum AppTheme {
         static let small: CGFloat = 8
         static let medium: CGFloat = 12
         static let large: CGFloat = 16
+        static let card: CGFloat = 21
         static let xLarge: CGFloat = 24
         static let xxLarge: CGFloat = 32
     }

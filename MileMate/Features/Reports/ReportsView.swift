@@ -1,3 +1,4 @@
+import Charts
 import SwiftUI
 
 struct ReportsView: View {
@@ -20,6 +21,7 @@ struct ReportsView: View {
                 .pickerStyle(.segmented)
 
                 monthlySummary
+                mileageChart
 
                 SectionHeader(title: "Quick actions")
                 quickActions
@@ -32,6 +34,9 @@ struct ReportsView: View {
         .background(AppTheme.Color.canvas)
         .navigationTitle("Reports")
         .onAppear { Task { await viewModel.load() } }
+        .onReceive(NotificationCenter.default.publisher(for: .mileageTripsDidChange)) { _ in
+            Task { await viewModel.load() }
+        }
         .confirmationDialog("Export \(selectedExport)", isPresented: $showingExport) {
             Button("Save to Files") {}
             Button("Share") {}
@@ -84,7 +89,7 @@ struct ReportsView: View {
             }
         }
         .foregroundStyle(.white)
-        .padding(AppTheme.Spacing.xLarge)
+        .padding(AppTheme.Spacing.card)
         .background {
             LinearGradient(
                 colors: [Color(red: 0.04, green: 0.30, blue: 0.20), AppTheme.Color.brand],
@@ -110,6 +115,49 @@ struct ReportsView: View {
                     actionCell("IRS Mileage Report", icon: "building.columns", tint: AppTheme.Color.warning)
                     Divider()
                     actionCell("Year Summary", icon: "calendar", tint: AppTheme.Color.textPrimary)
+                }
+            }
+        }
+    }
+
+    private var mileageChart: some View {
+        AppCard {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
+                SectionHeader(title: "Business mileage by week")
+
+                if viewModel.weeklyMileage.isEmpty {
+                    Label {
+                        Text("Record and classify business trips to see weekly mileage.")
+                            .foregroundStyle(AppTheme.Color.textSecondary)
+                    } icon: {
+                        Image(systemName: "chart.bar.xaxis")
+                            .foregroundStyle(AppTheme.Color.brand)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 120)
+                    .accessibilityElement(children: .combine)
+                } else {
+                    Chart(viewModel.weeklyMileage) { item in
+                        BarMark(
+                            x: .value("Week", item.weekStart, unit: .weekOfYear),
+                            y: .value("Business miles", item.miles)
+                        )
+                        .foregroundStyle(AppTheme.Color.brand.gradient)
+                        .cornerRadius(5)
+                    }
+                    .chartXAxis {
+                        AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                            AxisGridLine().foregroundStyle(AppTheme.Color.divider.opacity(0.3))
+                            AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                        }
+                    }
+                    .chartYAxis {
+                        AxisMarks(position: .leading) {
+                            AxisGridLine().foregroundStyle(AppTheme.Color.divider.opacity(0.3))
+                            AxisValueLabel()
+                        }
+                    }
+                    .frame(height: 190)
+                    .accessibilityLabel("Business mileage by week")
                 }
             }
         }

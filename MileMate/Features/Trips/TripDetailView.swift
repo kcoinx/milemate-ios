@@ -68,34 +68,82 @@ struct TripDetailView: View {
 
     private var routeTimeline: some View {
         AppCard {
-            HStack(alignment: .top, spacing: AppTheme.Spacing.large) {
-                VStack(spacing: 4) {
-                    Circle().stroke(AppTheme.Color.textSecondary, lineWidth: 2).frame(width: 12, height: 12)
-                    Rectangle().fill(AppTheme.Color.divider).frame(width: 2, height: 44)
-                    Circle().fill(AppTheme.Color.brand).frame(width: 12, height: 12)
-                }
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(trip.originName).font(.appHeadline)
-                    Text(trip.startedAt.formatted(.dateTime.hour().minute()))
-                        .font(.caption).foregroundStyle(AppTheme.Color.textSecondary)
-                    Spacer().frame(height: 18)
-                    Text(trip.destinationName).font(.appHeadline)
-                    Text(trip.endedAt.formatted(.dateTime.hour().minute()))
-                        .font(.caption).foregroundStyle(AppTheme.Color.textSecondary)
-                }
-                Spacer()
-                if isEditing {
-                    Picker("Classification", selection: $trip.classification) {
-                        ForEach(Trip.Classification.allCases, id: \.self) {
-                            Text($0.rawValue).tag($0)
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
+                HStack {
+                    Text("Route timeline")
+                        .font(.appHeadline)
+                    Spacer()
+                    if isEditing {
+                        Picker("Classification", selection: $trip.classification) {
+                            ForEach(Trip.Classification.allCases, id: \.self) {
+                                Text($0.rawValue).tag($0)
+                            }
                         }
+                        .labelsHidden()
+                    } else {
+                        ClassificationBadge(classification: trip.classification)
                     }
-                    .labelsHidden()
-                } else {
-                    ClassificationBadge(classification: trip.classification)
                 }
+
+                HStack(alignment: .top, spacing: AppTheme.Spacing.medium) {
+                    VStack(spacing: 4) {
+                        Circle()
+                            .stroke(AppTheme.Color.textSecondary, lineWidth: 2)
+                            .frame(width: 12, height: 12)
+                        Rectangle()
+                            .fill(AppTheme.Color.divider)
+                            .frame(width: 2, height: 50)
+                        Circle()
+                            .fill(AppTheme.Color.brand)
+                            .frame(width: 12, height: 12)
+                    }
+                    .padding(.top, 5)
+
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
+                        timelineStop(
+                            label: "START",
+                            time: trip.startedAt.formatted(.dateTime.hour().minute()),
+                            location: trip.originName
+                        )
+                        timelineStop(
+                            label: "END",
+                            time: trip.endedAt.formatted(.dateTime.hour().minute()),
+                            location: trip.destinationName
+                        )
+                    }
+                }
+
+                Divider()
+
+                HStack {
+                    Label(trip.duration.formattedDuration, systemImage: "clock")
+                    Spacer()
+                    Label(trip.distanceMiles.milesFormatted, systemImage: "road.lanes")
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(AppTheme.Color.textSecondary)
+                .accessibilityElement(children: .combine)
             }
         }
+    }
+
+    private func timelineStop(label: String, time: String, location: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(label)
+                    .font(.caption2.weight(.bold))
+                    .tracking(0.8)
+                    .foregroundStyle(AppTheme.Color.textSecondary)
+                Spacer()
+                Text(time)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(AppTheme.Color.textSecondary)
+            }
+            Text(location)
+                .font(.appHeadline)
+                .lineLimit(2)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private var tripMetrics: some View {
@@ -152,6 +200,7 @@ struct TripDetailView: View {
             do {
                 try await repository.update(trip)
                 saveError = nil
+                NotificationCenter.default.post(name: .mileageTripsDidChange, object: trip.id)
             } catch {
                 saveError = "Changes could not be saved."
             }
@@ -162,6 +211,7 @@ struct TripDetailView: View {
         Task {
             do {
                 try await repository.delete(trip)
+                NotificationCenter.default.post(name: .mileageTripsDidChange, object: trip.id)
                 dismiss()
             } catch {
                 saveError = "The trip could not be deleted."
