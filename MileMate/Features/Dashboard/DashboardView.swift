@@ -9,6 +9,9 @@ struct DashboardView: View {
     @AppStorage(AutomaticTrackingSettings.enabledKey) private var automaticTrackingEnabled = false
     @State private var isPulsing = false
     @State private var hasAppeared = false
+    @ScaledMetric(relativeTo: .headline) private var secondaryMetricValueSize: CGFloat = 19
+    @ScaledMetric(relativeTo: .subheadline) private var compactMetricValueSize: CGFloat = 17
+    @ScaledMetric(relativeTo: .title2) private var activeMetricValueSize: CGFloat = 25
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
@@ -251,7 +254,15 @@ struct DashboardView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Text(value)
-                .font(.title2.weight(.bold).monospacedDigit())
+                .font(
+                    .system(
+                        size: activeMetricValueSize,
+                        weight: .bold,
+                        design: .rounded
+                    )
+                    .monospacedDigit()
+                )
+                .lineLimit(1)
                 .contentTransition(.numericText())
                 .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: value)
                 .minimumScaleFactor(0.75)
@@ -287,7 +298,16 @@ struct DashboardView: View {
                     .foregroundStyle(.white.opacity(0.72))
                 Spacer()
                 Text(viewModel.summary.businessMiles.milesFormatted)
-                    .font(.subheadline.weight(.bold))
+                    .font(
+                        .system(
+                            size: compactMetricValueSize,
+                            weight: .semibold,
+                            design: .rounded
+                        )
+                        .monospacedDigit()
+                    )
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
             }
             .padding(.top, AppTheme.Spacing.small)
         }
@@ -299,7 +319,16 @@ struct DashboardView: View {
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.72))
             Text(value)
-                .font(.headline.monospacedDigit())
+                .font(
+                    .system(
+                        size: secondaryMetricValueSize,
+                        weight: .semibold,
+                        design: .rounded
+                    )
+                    .monospacedDigit()
+                )
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
