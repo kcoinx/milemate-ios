@@ -1,15 +1,40 @@
-@preconcurrency import UserNotifications
+import UserNotifications
 import UIKit
 
-final class NotificationDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    var tripTapHandler: (@MainActor (UUID) -> Void)?
+final class NotificationDelegate: NSObject, UIApplicationDelegate {
+    private let routeHandler = NotificationRouteHandler()
+    private lazy var userNotificationDelegate = UserNotificationDelegate(
+        routeHandler: routeHandler
+    )
+
+    var tripTapHandler: (@MainActor (UUID) -> Void)? {
+        get { routeHandler.tripTapHandler }
+        set { routeHandler.tripTapHandler = newValue }
+    }
 
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        UNUserNotificationCenter.current().delegate = self
+        UNUserNotificationCenter.current().delegate = userNotificationDelegate
         return true
+    }
+}
+
+@MainActor
+private final class NotificationRouteHandler {
+    var tripTapHandler: (@MainActor (UUID) -> Void)?
+
+    func route(to tripID: UUID) {
+        tripTapHandler?(tripID)
+    }
+}
+
+private final class UserNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    private let routeHandler: NotificationRouteHandler
+
+    init(routeHandler: NotificationRouteHandler) {
+        self.routeHandler = routeHandler
     }
 
     func userNotificationCenter(
@@ -17,12 +42,12 @@ final class NotificationDelegate: NSObject, UIApplicationDelegate, UNUserNotific
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        if notification.request.content.categoryIdentifier ==
-            TripNotificationUserInfo.categoryIdentifier {
-            completionHandler([])
-        } else {
-            completionHandler([.banner, .sound])
-        }
+        let options: UNNotificationPresentationOptions =
+            notification.request.content.categoryIdentifier ==
+            TripNotificationUserInfo.categoryIdentifier
+            ? []
+            : [.banner, .sound]
+        completionHandler(options)
     }
 
     func userNotificationCenter(
@@ -30,14 +55,15 @@ final class NotificationDelegate: NSObject, UIApplicationDelegate, UNUserNotific
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        defer { completionHandler() }
         let value = response.notification.request.content.userInfo[TripNotificationUserInfo.tripIDKey]
-        guard let tripIDString = value as? String,
-              let tripID = UUID(uuidString: tripIDString) else {
+        let tripID = (value as? String).flatMap(UUID.init(uuidString:))
+        completionHandler()
+
+        guard let tripID else {
             return
         }
-        Task { @MainActor [weak self] in
-            self?.tripTapHandler?(tripID)
+        Task { @MainActor [routeHandler] in
+            routeHandler.route(to: tripID)
         }
     }
 }
