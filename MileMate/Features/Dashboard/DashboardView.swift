@@ -9,8 +9,8 @@ struct DashboardView: View {
     @AppStorage(AutomaticTrackingSettings.enabledKey) private var automaticTrackingEnabled = false
     @State private var isPulsing = false
     @State private var hasAppeared = false
-    @ScaledMetric(relativeTo: .headline) private var secondaryMetricValueSize: CGFloat = 19
-    @ScaledMetric(relativeTo: .subheadline) private var compactMetricValueSize: CGFloat = 17
+    @ScaledMetric(relativeTo: .headline) private var secondaryMetricValueSize: CGFloat = 22
+    @ScaledMetric(relativeTo: .subheadline) private var compactMetricValueSize: CGFloat = 22
     @ScaledMetric(relativeTo: .title2) private var activeMetricValueSize: CGFloat = 25
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -314,7 +314,7 @@ struct DashboardView: View {
     }
 
     private func summaryMetric(_ title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 1) {
             Text(title)
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.72))
