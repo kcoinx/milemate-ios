@@ -112,7 +112,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
 
         if pendingTrip != nil {
             state = .reviewing
-        } else if locationService.authorizationStatus == .authorizedAlways {
+        } else if locationService.authorizationStatus == CLAuthorizationStatus.authorizedAlways {
             locationService.startLowPowerMonitoring()
             startMotionMonitoring()
             state = .idle
@@ -161,15 +161,15 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
 
     private func requestLocationAuthorizationIfNeeded() {
         switch locationService.authorizationStatus {
-        case .notDetermined:
+        case CLAuthorizationStatus.notDetermined:
             locationService.requestWhenInUseAuthorization()
-        case .authorizedWhenInUse:
+        case CLAuthorizationStatus.authorizedWhenInUse:
             requestedAlwaysAuthorization = true
             locationService.requestAlwaysAuthorization()
-        case .authorizedAlways:
+        case CLAuthorizationStatus.authorizedAlways:
             locationService.startLowPowerMonitoring()
             if pendingTrip == nil { state = .idle }
-        case .denied, .restricted:
+        case CLAuthorizationStatus.denied, CLAuthorizationStatus.restricted:
             state = .permissionRequired
         @unknown default:
             state = .permissionRequired
@@ -180,16 +180,16 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         switch event {
         case .authorizationChanged(let status):
             switch status {
-            case .authorizedAlways:
+            case CLAuthorizationStatus.authorizedAlways:
                 locationService.startLowPowerMonitoring()
                 if pendingTrip == nil {
                     startMotionMonitoring()
                     state = .idle
                 }
-            case .authorizedWhenInUse where !requestedAlwaysAuthorization:
+            case CLAuthorizationStatus.authorizedWhenInUse where !requestedAlwaysAuthorization:
                 requestedAlwaysAuthorization = true
                 locationService.requestAlwaysAuthorization()
-            case .denied, .restricted:
+            case CLAuthorizationStatus.denied, CLAuthorizationStatus.restricted:
                 state = .permissionRequired
             default:
                 break
@@ -219,9 +219,12 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
                   AutomaticTrackingSettings.isEnabled,
                   self.pendingTrip == nil else { return }
             switch self.motionService.permissionStatus {
-            case .denied, .restricted, .unavailable:
+            case MotionPermissionStatus.denied,
+                 MotionPermissionStatus.restricted,
+                 MotionPermissionStatus.unavailable:
                 self.state = .permissionRequired
-            case .notDetermined, .authorized:
+            case MotionPermissionStatus.notDetermined,
+                 MotionPermissionStatus.authorized:
                 break
             }
         }
@@ -265,7 +268,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     }
 
     private func beginDetecting() {
-        guard locationService.authorizationStatus == .authorizedAlways else {
+        guard locationService.authorizationStatus == CLAuthorizationStatus.authorizedAlways else {
             state = .permissionRequired
             return
         }

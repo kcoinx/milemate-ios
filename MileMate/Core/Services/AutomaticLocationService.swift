@@ -100,7 +100,7 @@ final class CoreAutomaticLocationService: NSObject, AutomaticLocationService, CL
 #if DEBUG
 @MainActor
 final class MockAutomaticLocationService: AutomaticLocationService {
-    var authorizationStatus: CLAuthorizationStatus = .authorizedAlways
+    var authorizationStatus: CLAuthorizationStatus = CLAuthorizationStatus.authorizedAlways
     var eventHandler: ((LocationServiceEvent) -> Void)?
     private(set) var isLowPowerMonitoring = false
     private(set) var isPreciseTracking = false

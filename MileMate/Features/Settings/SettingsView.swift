@@ -68,7 +68,8 @@ struct SettingsView: View {
                     )
 
                     if automaticTripCoordinator.state == .permissionRequired ||
-                        automaticTripCoordinator.locationAuthorizationStatus == .authorizedWhenInUse {
+                        automaticTripCoordinator.locationAuthorizationStatus ==
+                        CLAuthorizationStatus.authorizedWhenInUse {
                         Button {
                             guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
                             openURL(url)
@@ -223,22 +224,33 @@ struct SettingsView: View {
 
     private var locationPermissionText: String {
         switch automaticTripCoordinator.locationAuthorizationStatus {
-        case .authorizedAlways: "Always Allowed"
-        case .authorizedWhenInUse: "While Using App"
-        case .denied: "Denied"
-        case .restricted: "Restricted"
-        case .notDetermined: "Not Requested"
-        @unknown default: "Unavailable"
+        case CLAuthorizationStatus.authorizedAlways:
+            return "Always Allowed"
+        case CLAuthorizationStatus.authorizedWhenInUse:
+            return "While Using App"
+        case CLAuthorizationStatus.denied:
+            return "Denied"
+        case CLAuthorizationStatus.restricted:
+            return "Restricted"
+        case CLAuthorizationStatus.notDetermined:
+            return "Not Requested"
+        @unknown default:
+            return "Unavailable"
         }
     }
 
     private var motionPermissionText: String {
         switch automaticTripCoordinator.motionPermissionStatus {
-        case .authorized: "Allowed"
-        case .notDetermined: "Not Requested"
-        case .denied: "Denied"
-        case .restricted: "Restricted"
-        case .unavailable: "Unavailable"
+        case MotionPermissionStatus.authorized:
+            return "Allowed"
+        case MotionPermissionStatus.notDetermined:
+            return "Not Requested"
+        case MotionPermissionStatus.denied:
+            return "Denied"
+        case MotionPermissionStatus.restricted:
+            return "Restricted"
+        case MotionPermissionStatus.unavailable:
+            return "Unavailable"
         }
     }
 

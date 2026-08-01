@@ -44,13 +44,22 @@ final class CoreMotionActivityService: MotionActivityService {
     var eventHandler: ((MotionActivitySample) -> Void)?
 
     var permissionStatus: MotionPermissionStatus {
-        guard CMMotionActivityManager.isActivityAvailable() else { return .unavailable }
-        switch CMMotionActivityManager.authorizationStatus() {
-        case .notDetermined: .notDetermined
-        case .authorized: .authorized
-        case .denied: .denied
-        case .restricted: .restricted
-        @unknown default: .unavailable
+        guard CMMotionActivityManager.isActivityAvailable() else {
+            return MotionPermissionStatus.unavailable
+        }
+        let authorizationStatus: CMAuthorizationStatus =
+            CMMotionActivityManager.authorizationStatus()
+        switch authorizationStatus {
+        case CMAuthorizationStatus.notDetermined:
+            return MotionPermissionStatus.notDetermined
+        case CMAuthorizationStatus.authorized:
+            return MotionPermissionStatus.authorized
+        case CMAuthorizationStatus.denied:
+            return MotionPermissionStatus.denied
+        case CMAuthorizationStatus.restricted:
+            return MotionPermissionStatus.restricted
+        @unknown default:
+            return MotionPermissionStatus.unavailable
         }
     }
 
@@ -74,20 +83,24 @@ final class CoreMotionActivityService: MotionActivityService {
     }
 
     nonisolated private static func kind(for activity: CMMotionActivity) -> MotionKind {
-        if activity.automotive { return .automotive }
-        if activity.cycling { return .cycling }
-        if activity.running { return .running }
-        if activity.walking { return .walking }
-        if activity.stationary { return .stationary }
-        return .unknown
+        if activity.automotive { return MotionKind.automotive }
+        if activity.cycling { return MotionKind.cycling }
+        if activity.running { return MotionKind.running }
+        if activity.walking { return MotionKind.walking }
+        if activity.stationary { return MotionKind.stationary }
+        return MotionKind.unknown
     }
 
     nonisolated private static func confidence(for confidence: CMMotionActivityConfidence) -> MotionConfidence {
         switch confidence {
-        case .low: .low
-        case .medium: .medium
-        case .high: .high
-        @unknown default: .low
+        case CMMotionActivityConfidence.low:
+            return MotionConfidence.low
+        case CMMotionActivityConfidence.medium:
+            return MotionConfidence.medium
+        case CMMotionActivityConfidence.high:
+            return MotionConfidence.high
+        @unknown default:
+            return MotionConfidence.low
         }
     }
 }
@@ -95,7 +108,7 @@ final class CoreMotionActivityService: MotionActivityService {
 #if DEBUG
 @MainActor
 final class MockMotionActivityService: MotionActivityService {
-    var permissionStatus: MotionPermissionStatus = .authorized
+    var permissionStatus: MotionPermissionStatus = MotionPermissionStatus.authorized
     var eventHandler: ((MotionActivitySample) -> Void)?
     private(set) var isUpdating = false
 
