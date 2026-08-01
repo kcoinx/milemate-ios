@@ -74,60 +74,71 @@ struct ReportsView: View {
     }
 
     private var monthlySummary: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.xLarge) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(Date.now.formatted(.dateTime.month(.wide).year()).uppercased())
-                        .font(.caption.weight(.bold))
-                        .tracking(1.2)
-                        .foregroundStyle(.white.opacity(0.7))
-                    Text("Tax summary")
-                        .font(.title2.weight(.bold))
+        AppCard {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(summaryPeriodTitle.uppercased())
+                            .font(.caption.weight(.bold))
+                            .tracking(1.1)
+                            .foregroundStyle(AppTheme.Color.textSecondary)
+                        Text("Tax Summary")
+                            .font(.appTitle)
+                    }
+                    Spacer()
+                    Image(systemName: "chart.bar.doc.horizontal.fill")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(AppTheme.Color.brand)
+                        .frame(width: 44, height: 44)
+                        .background(AppTheme.Color.brand.opacity(0.12), in: Circle())
                 }
-                Spacer()
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.title2)
-                    .foregroundStyle(.white)
-            }
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text("ESTIMATED IRS DEDUCTION")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.7))
-                Text(viewModel.summary.estimatedDeduction.currencyFormatted)
-                    .font(.system(size: 48, weight: .bold, design: .rounded))
-                    .minimumScaleFactor(0.75)
-            }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("BUSINESS MILES")
+                        .font(.caption.weight(.semibold))
+                        .tracking(0.8)
+                        .foregroundStyle(AppTheme.Color.textSecondary)
+                    Text(viewModel.summary.businessMiles.milesFormatted)
+                        .font(.system(size: 42, weight: .bold, design: .rounded))
+                        .foregroundStyle(AppTheme.Color.brand)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                }
 
-            HStack {
-                reportMetric("BUSINESS MILES", value: viewModel.summary.businessMiles.milesFormatted)
-                Spacer()
-                reportMetric("ESTIMATED TAX SAVINGS", value: viewModel.summary.estimatedTaxSavings.currencyFormatted)
-            }
-
-            if viewModel.summary.businessMiles <= 0 {
                 Divider()
-                    .overlay(.white.opacity(0.2))
+
+                Grid(alignment: .leading, horizontalSpacing: AppTheme.Spacing.xLarge) {
+                    GridRow {
+                        reportMetric(
+                            "ESTIMATED DEDUCTION",
+                            value: viewModel.summary.estimatedDeduction.currencyFormatted
+                        )
+                        reportMetric(
+                            "RECORDED TRIPS",
+                            value: "\(viewModel.summary.tripCount)"
+                        )
+                    }
+                    GridRow {
+                        reportMetric(
+                            "IRS RATE",
+                            value: MileageSettings.mileageRate.formatted(.currency(code: "USD"))
+                                + " / mile"
+                        )
+                        Color.clear
+                    }
+                }
 
                 Label(
-                    "Classify trips as Business to include them in your deduction.",
+                    viewModel.summary.businessMiles > 0
+                        ? "Estimated deduction is based on your business miles and configured mileage rate."
+                        : "Classify trips as Business to include them in your estimated deduction.",
                     systemImage: "info.circle"
                 )
-                .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.85))
+                .font(.footnote)
+                .foregroundStyle(AppTheme.Color.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .foregroundStyle(.white)
-        .padding(AppTheme.Spacing.card)
-        .background {
-            LinearGradient(
-                colors: [Color(red: 0.04, green: 0.30, blue: 0.20), AppTheme.Color.brand],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 30))
-        }
-        .shadow(color: AppTheme.Color.brand.opacity(0.22), radius: 24, y: 14)
         .accessibilityElement(children: .combine)
     }
 
@@ -217,21 +228,43 @@ struct ReportsView: View {
         AppCard {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
                 SectionHeader(title: "2026 at a glance")
-                summaryRow("Business mileage", value: viewModel.summary.businessMiles.milesFormatted)
+                summaryRow("Business Mileage", value: viewModel.summary.businessMiles.milesFormatted)
                 Divider()
-                summaryRow("Recorded trips", value: "\(viewModel.summary.tripCount)")
+                summaryRow("Recorded Trips", value: "\(viewModel.summary.tripCount)")
                 Divider()
-                summaryRow("Deduction rate", value: MileageSettings.mileageRate.formatted(.currency(code: "USD")) + " / mile")
+                summaryRow("Deduction Rate", value: MileageSettings.mileageRate.formatted(.currency(code: "USD")) + " / mile")
                 Divider()
-                summaryRow("Estimated savings", value: viewModel.summary.estimatedTaxSavings.currencyFormatted, emphasized: true)
+                summaryRow("Estimated Deduction", value: viewModel.summary.estimatedDeduction.currencyFormatted, emphasized: true)
             }
         }
     }
 
     private func reportMetric(_ title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title).font(.caption2.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
-            Text(value).font(.headline.monospacedDigit())
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(AppTheme.Color.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text(value)
+                .font(.headline.weight(.semibold).monospacedDigit())
+                .foregroundStyle(AppTheme.Color.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var summaryPeriodTitle: String {
+        switch viewModel.period {
+        case .month:
+            return Date.now.formatted(.dateTime.month(.wide).year())
+        case .quarter:
+            let quarter = (Calendar.current.component(.month, from: .now) - 1) / 3 + 1
+            return "Quarter \(quarter), \(Calendar.current.component(.year, from: .now))"
+        case .year:
+            return Date.now.formatted(.dateTime.year())
         }
     }
 
