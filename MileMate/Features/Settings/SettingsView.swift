@@ -14,6 +14,8 @@ struct SettingsView: View {
     private var tripDetectedNotificationsEnabled = true
     @AppStorage(TripNotificationSettings.remindersEnabledKey)
     private var tripReviewRemindersEnabled = true
+    @AppStorage(ClassificationSettings.automaticRulesEnabledKey)
+    private var automaticClassificationEnabled = false
     @State private var showingAutomaticTrackingExplanation = false
     @State private var notificationPermissionStatus = NotificationPermissionStatus.notDetermined
     @Environment(\.openURL) private var openURL
@@ -87,19 +89,21 @@ struct SettingsView: View {
                     }
                 }
 
-                Toggle(isOn: .constant(false)) {
+                Toggle(isOn: $automaticClassificationEnabled) {
                     settingLabel(
-                        "Automatically Classify Frequent Routes",
+                        "Automatic Classification",
                         icon: "arrow.triangle.branch",
-                        tint: AppTheme.Color.textSecondary
+                        tint: AppTheme.Color.brand
                     )
                 }
-                .disabled(true)
                 destination("Vehicles", icon: "car.side.fill", tint: AppTheme.Color.brand) {
-                    VehiclesView()
+                    VehicleManagementView(repository: viewModel.repository)
                 }
                 destination("Frequent places", icon: "mappin.and.ellipse", tint: AppTheme.Color.brand) {
-                    FrequentPlacesView(places: viewModel.frequentPlaces)
+                    FrequentPlacesManagementView(repository: viewModel.repository)
+                }
+                destination("Classification Rules", icon: "list.bullet.rectangle", tint: .indigo) {
+                    ClassificationRulesView(repository: viewModel.repository)
                 }
             }
 
@@ -373,86 +377,6 @@ private struct ProfileSettingsView: View {
             }
         }
         .navigationTitle("Profile")
-    }
-}
-
-private struct VehiclesView: View {
-    @AppStorage("vehicle.nickname") private var nickname = "My Vehicle"
-    @AppStorage("vehicle.year") private var year = "2024"
-    @AppStorage("vehicle.make") private var make = "Tesla"
-    @AppStorage("vehicle.model") private var model = "Model Y"
-
-    var body: some View {
-        Form {
-            Section("Default vehicle") {
-                TextField("Vehicle nickname", text: $nickname)
-                TextField("Year", text: $year)
-                    .keyboardType(.numberPad)
-                TextField("Make", text: $make)
-                TextField("Model", text: $model)
-            }
-            Section {
-                Label("Trips are not linked to vehicles yet.", systemImage: "info.circle")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } footer: {
-                Text("This milestone supports one locally stored default vehicle.")
-            }
-        }
-        .navigationTitle("Vehicle")
-    }
-}
-
-private struct FrequentPlacesView: View {
-    let places: [SettingsViewModel.FrequentPlace]
-    @AppStorage("frequentPlace.home") private var home = ""
-    @AppStorage("frequentPlace.work") private var work = ""
-
-    var body: some View {
-        Form {
-            if places.isEmpty {
-                Section {
-                    Label(
-                        "Complete trips to build your frequent-place history.",
-                        systemImage: "mappin.slash"
-                    )
-                    .foregroundStyle(.secondary)
-                }
-            } else {
-                Section("Confirmed labels") {
-                    placePicker("Home", selection: $home, icon: "house.fill")
-                    placePicker("Work", selection: $work, icon: "briefcase.fill")
-                }
-
-                Section("Most visited") {
-                    ForEach(places.prefix(5)) { place in
-                        LabeledContent(place.name, value: "\(place.visitCount) visits")
-                    }
-                }
-
-                Section {
-                    Text("Labels are saved only after you choose them. MileMate does not automatically infer Home or Work.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .navigationTitle("Frequent Places")
-    }
-
-    private func placePicker(
-        _ title: String,
-        selection: Binding<String>,
-        icon: String
-    ) -> some View {
-        Picker(selection: selection) {
-            Text("Not set").tag("")
-            ForEach(places) { place in
-                Text(place.name).tag(place.name)
-            }
-        } label: {
-            Label(title, systemImage: icon)
-        }
     }
 }
 

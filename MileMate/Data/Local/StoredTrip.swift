@@ -20,6 +20,14 @@ final class StoredTrip {
     var endLatitude: Double?
     var endLongitude: Double?
     var routeData: Data = Data()
+    var vehicleID: UUID?
+    var vehicleNickname: String?
+    var vehicleYear: Int?
+    var vehicleMake: String?
+    var vehicleModel: String?
+    var vehicleLicensePlateNickname: String?
+    var classificationSourceRawValue: String?
+    var appliedRuleID: UUID?
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
 
@@ -41,6 +49,9 @@ final class StoredTrip {
         endLatitude = trip.endCoordinate?.latitude
         endLongitude = trip.endCoordinate?.longitude
         routeData = (try? JSONEncoder().encode(trip.route)) ?? Data()
+        applyVehicle(trip.vehicle)
+        classificationSourceRawValue = trip.classificationSource?.rawValue
+        appliedRuleID = trip.appliedRuleID
         createdAt = trip.createdAt
         updatedAt = trip.updatedAt
     }
@@ -62,6 +73,9 @@ final class StoredTrip {
         endLatitude = trip.endCoordinate?.latitude
         endLongitude = trip.endCoordinate?.longitude
         routeData = (try? JSONEncoder().encode(trip.route)) ?? Data()
+        applyVehicle(trip.vehicle)
+        classificationSourceRawValue = trip.classificationSource?.rawValue
+        appliedRuleID = trip.appliedRuleID
         updatedAt = .now
     }
 
@@ -80,9 +94,33 @@ final class StoredTrip {
             startCoordinate: coordinate(latitude: startLatitude, longitude: startLongitude, fallback: startedAt),
             endCoordinate: coordinate(latitude: endLatitude, longitude: endLongitude, fallback: endedAt),
             route: route,
+            vehicle: vehicleSnapshot,
+            classificationSource: Trip.ClassificationSource(rawValue: classificationSourceRawValue ?? "") ?? .user,
+            appliedRuleID: appliedRuleID,
             createdAt: createdAt,
             updatedAt: updatedAt
         )
+    }
+
+    private var vehicleSnapshot: VehicleSnapshot? {
+        guard let vehicleID, let vehicleNickname else { return nil }
+        return VehicleSnapshot(
+            id: vehicleID,
+            nickname: vehicleNickname,
+            year: vehicleYear,
+            make: vehicleMake ?? "",
+            model: vehicleModel ?? "",
+            licensePlateNickname: vehicleLicensePlateNickname ?? ""
+        )
+    }
+
+    private func applyVehicle(_ vehicle: VehicleSnapshot?) {
+        vehicleID = vehicle?.id
+        vehicleNickname = vehicle?.nickname
+        vehicleYear = vehicle?.year
+        vehicleMake = vehicle?.make
+        vehicleModel = vehicle?.model
+        vehicleLicensePlateNickname = vehicle?.licensePlateNickname
     }
 
     private func coordinate(latitude: Double?, longitude: Double?, fallback: Date) -> TripCoordinate? {

@@ -10,7 +10,7 @@ final class SettingsViewModel {
         var id: String { name }
     }
 
-    private let repository: any MileageRepository
+    let repository: any MileageRepository
     private(set) var frequentPlaces: [FrequentPlace] = []
 
     init(repository: any MileageRepository) {

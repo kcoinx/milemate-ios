@@ -8,7 +8,10 @@ protocol TripReviewCoordinating: AnyObject, Observable {
     func savePendingTrip(
         classification: Trip.Classification,
         purpose: String,
-        notes: String
+        notes: String,
+        vehicle: VehicleSnapshot?,
+        classificationSource: Trip.ClassificationSource,
+        appliedRuleID: UUID?
     ) async throws
     func discardPendingTrip()
 }
@@ -100,18 +103,25 @@ final class ManualTripCoordinator: TripReviewCoordinating {
             route: route
         )
         state = .reviewing
+        assignDefaultVehicleToPendingTrip()
         reverseGeocodePendingTrip()
     }
 
     func savePendingTrip(
         classification: Trip.Classification,
         purpose: String,
-        notes: String
+        notes: String,
+        vehicle: VehicleSnapshot? = nil,
+        classificationSource: Trip.ClassificationSource = .user,
+        appliedRuleID: UUID? = nil
     ) async throws {
         guard var trip = pendingTrip else { return }
         trip.classification = classification
         trip.purpose = purpose
         trip.notes = notes
+        trip.vehicle = vehicle
+        trip.classificationSource = classificationSource
+        trip.appliedRuleID = appliedRuleID
         trip.updatedAt = .now
         try await repository.save(trip)
         NotificationCenter.default.post(name: .mileageTripsDidChange, object: trip.id)
@@ -219,6 +229,18 @@ final class ManualTripCoordinator: TripReviewCoordinating {
             updated.originName = startName
             updated.destinationName = endName
             pendingTrip = updated
+        }
+    }
+
+    private func assignDefaultVehicleToPendingTrip() {
+        guard let tripID = pendingTrip?.id else { return }
+        Task {
+            let vehicles = (try? await repository.fetchVehicles()) ?? []
+            guard let current = pendingTrip, current.id == tripID else { return }
+            pendingTrip = VehicleAssignmentService.assigningDefault(
+                to: current,
+                vehicles: vehicles
+            )
         }
     }
 

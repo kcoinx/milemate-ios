@@ -9,6 +9,7 @@ final class DashboardViewModel {
     private(set) var recentTrips: [Trip] = []
     private(set) var allTrips: [Trip] = []
     private(set) var profile = MockData.profile
+    private(set) var vehicles: [Vehicle] = []
 
     init(repository: any MileageRepository) {
         self.repository = repository
@@ -19,11 +20,13 @@ final class DashboardViewModel {
             async let summary = repository.fetchSummary()
             async let trips = repository.fetchTrips()
             async let profile = repository.fetchProfile()
+            async let vehicles = repository.fetchVehicles()
             self.summary = try await summary
             let fetchedTrips = try await trips
             self.allTrips = fetchedTrips
             self.recentTrips = Array(fetchedTrips.prefix(3))
             self.profile = try await profile
+            self.vehicles = try await vehicles
         } catch {
             // Retain cached values. A production repository can surface recoverable errors here.
         }
@@ -46,5 +49,13 @@ final class DashboardViewModel {
 
     var weeklyDeduction: Double {
         weeklyTrips.reduce(0) { $0 + $1.estimatedDeduction }
+    }
+
+    var unclassifiedCount: Int {
+        allTrips.filter { $0.classification == .unclassified }.count
+    }
+
+    var defaultVehicle: Vehicle? {
+        vehicles.first(where: \.isDefault)
     }
 }

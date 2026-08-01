@@ -4,10 +4,18 @@ import Observation
 @MainActor
 @Observable
 final class TripsViewModel {
+    enum VehicleFilter: Hashable {
+        case all
+        case vehicle(UUID)
+        case unassigned
+    }
+
     private let repository: any MileageRepository
     var selection: Trip.Classification?
     var searchText = ""
+    var vehicleFilter = VehicleFilter.all
     private(set) var trips: [Trip] = []
+    private(set) var vehicles: [Vehicle] = []
     private(set) var errorMessage: String?
 
     init(repository: any MileageRepository) {
@@ -22,7 +30,16 @@ final class TripsViewModel {
                 trip.destinationName.localizedStandardContains(searchText) ||
                 trip.purpose.localizedStandardContains(searchText) ||
                 trip.notes.localizedStandardContains(searchText)
-            return matchesType && matchesSearch
+            let matchesVehicle: Bool
+            switch vehicleFilter {
+            case .all:
+                matchesVehicle = true
+            case .vehicle(let id):
+                matchesVehicle = trip.vehicle?.id == id
+            case .unassigned:
+                matchesVehicle = trip.vehicle == nil
+            }
+            return matchesType && matchesSearch && matchesVehicle
         }
     }
 
@@ -30,9 +47,16 @@ final class TripsViewModel {
         filteredTrips.reduce(0) { $0 + $1.distanceMiles }
     }
 
+    var unclassifiedCount: Int {
+        trips.filter { $0.classification == .unclassified }.count
+    }
+
     func load() async {
         do {
-            trips = try await repository.fetchTrips()
+            async let fetchedTrips = repository.fetchTrips()
+            async let fetchedVehicles = repository.fetchVehicles()
+            trips = try await fetchedTrips
+            vehicles = try await fetchedVehicles
             errorMessage = nil
         } catch {
             errorMessage = "Trips are temporarily unavailable."
@@ -42,9 +66,10 @@ final class TripsViewModel {
     func classify(_ trip: Trip, as classification: Trip.Classification) async {
         guard let index = trips.firstIndex(where: { $0.id == trip.id }) else { return }
         let previous = trips[index]
-        var updated = previous
-        updated.classification = classification
-        updated.updatedAt = .now
+        let updated = SmartClassificationService.overriding(
+            previous,
+            with: classification
+        )
         trips[index] = updated
 
         do {

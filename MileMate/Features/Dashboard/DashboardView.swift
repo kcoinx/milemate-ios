@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DashboardView: View {
     private let repository: any MileageRepository
+    private let notificationService: any TripNotificationScheduling
     @State private var viewModel: DashboardViewModel
     @Bindable private var tripCoordinator: ManualTripCoordinator
     @Bindable private var automaticTripCoordinator: AutomaticTripCoordinator
@@ -13,9 +14,11 @@ struct DashboardView: View {
     init(
         repository: any MileageRepository,
         tripCoordinator: ManualTripCoordinator,
-        automaticTripCoordinator: AutomaticTripCoordinator
+        automaticTripCoordinator: AutomaticTripCoordinator,
+        notificationService: any TripNotificationScheduling
     ) {
         self.repository = repository
+        self.notificationService = notificationService
         _viewModel = State(initialValue: DashboardViewModel(repository: repository))
         _tripCoordinator = Bindable(wrappedValue: tripCoordinator)
         _automaticTripCoordinator = Bindable(wrappedValue: automaticTripCoordinator)
@@ -26,6 +29,9 @@ struct DashboardView: View {
             LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
                 greeting
                 deductionHero
+                if viewModel.unclassifiedCount > 0 {
+                    reviewQueueCard
+                }
                 lastTrip
                 mapSection
                 weeklySummary
@@ -36,13 +42,13 @@ struct DashboardView: View {
         .background(AppTheme.Color.canvas)
         .toolbar(.hidden, for: .navigationBar)
         .sheet(item: $tripCoordinator.pendingTrip) { trip in
-            TripReviewView(trip: trip, coordinator: tripCoordinator) {
+            TripReviewView(trip: trip, repository: repository, coordinator: tripCoordinator) {
                 Task { await viewModel.load() }
             }
             .interactiveDismissDisabled()
         }
         .sheet(item: $automaticTripCoordinator.pendingTrip) { trip in
-            TripReviewView(trip: trip, coordinator: automaticTripCoordinator) {
+            TripReviewView(trip: trip, repository: repository, coordinator: automaticTripCoordinator) {
                 Task { await viewModel.load() }
             }
             .interactiveDismissDisabled()
@@ -61,6 +67,36 @@ struct DashboardView: View {
         .onReceive(NotificationCenter.default.publisher(for: .mileageTripsDidChange)) { _ in
             Task { await viewModel.load() }
         }
+    }
+
+    private var reviewQueueCard: some View {
+        NavigationLink {
+            ReviewQueueView(
+                repository: repository,
+                notificationService: notificationService
+            )
+        } label: {
+            AppCard {
+                HStack(spacing: AppTheme.Spacing.large) {
+                    Image(systemName: "tray.full.fill")
+                        .font(.title2)
+                        .foregroundStyle(.white)
+                        .frame(width: 48, height: 48)
+                        .background(AppTheme.Color.brand, in: Circle())
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(viewModel.unclassifiedCount) \(viewModel.unclassifiedCount == 1 ? "Trip Needs" : "Trips Need") Review")
+                            .font(.appHeadline)
+                        Text("Review Now")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppTheme.Color.brand)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(AppTheme.Color.textSecondary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private var greeting: some View {
@@ -183,6 +219,13 @@ struct DashboardView: View {
                     .foregroundStyle(.white.opacity(0.84))
                     .lineLimit(1)
                     .accessibilityLabel("Current area, \(location)")
+            }
+
+            if let vehicle = viewModel.defaultVehicle {
+                Label(vehicle.nickname, systemImage: "car.side.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .accessibilityLabel("Tracking vehicle, \(vehicle.nickname)")
             }
 
             HStack(spacing: AppTheme.Spacing.medium) {

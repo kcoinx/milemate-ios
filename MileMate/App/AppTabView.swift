@@ -18,13 +18,15 @@ struct AppTabView: View {
                 DashboardView(
                     repository: dependencies.mileageRepository,
                     tripCoordinator: dependencies.tripCoordinator,
-                    automaticTripCoordinator: dependencies.automaticTripCoordinator
+                    automaticTripCoordinator: dependencies.automaticTripCoordinator,
+                    notificationService: dependencies.notificationService
                 )
             }
             tab(.trips) {
                 TripsView(
                     repository: dependencies.mileageRepository,
-                    requestedTrip: $router.requestedTrip
+                    requestedTrip: $router.requestedTrip,
+                    notificationService: dependencies.notificationService
                 )
             }
             tab(.reports) { ReportsView(repository: dependencies.mileageRepository) }
@@ -39,6 +41,16 @@ struct AppTabView: View {
         }
         .tint(AppTheme.Color.brand)
         .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
+        .onReceive(NotificationCenter.default.publisher(for: .mileageTripsDidChange)) { notification in
+            guard let tripID = notification.object as? UUID else { return }
+            Task {
+                let trips = (try? await dependencies.mileageRepository.fetchTrips()) ?? []
+                if let trip = trips.first(where: { $0.id == tripID }),
+                   trip.classification != .unclassified {
+                    dependencies.notificationService.cancelNotifications(for: tripID)
+                }
+            }
+        }
         .onChange(of: dependencies.automaticTripCoordinator.pendingTrip?.id) { _, tripID in
             if tripID != nil {
                 router.showAutomaticTripReview()

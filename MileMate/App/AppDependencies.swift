@@ -12,7 +12,12 @@ struct AppDependencies {
 
     static func live() -> AppDependencies {
         do {
-            let container = try ModelContainer(for: StoredTrip.self)
+            let container = try ModelContainer(
+                for: StoredTrip.self,
+                StoredVehicle.self,
+                StoredFrequentPlace.self,
+                StoredClassificationRule.self
+            )
             let repository = SwiftDataMileageRepository(modelContainer: container)
             let locationService = CoreLocationService()
             let manualCoordinator = ManualTripCoordinator(

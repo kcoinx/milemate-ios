@@ -18,8 +18,12 @@ struct ReportsView: View {
                 }
                 .pickerStyle(.segmented)
 
+                vehiclePicker
                 monthlySummary
                 mileageChart
+                if viewModel.selectedVehicleID == nil && viewModel.vehicleBreakdown.count > 1 {
+                    vehicleBreakdown
+                }
 
                 SectionHeader(title: "Quick actions")
                 quickActions
@@ -34,6 +38,38 @@ struct ReportsView: View {
         .onAppear { Task { await viewModel.load() } }
         .onReceive(NotificationCenter.default.publisher(for: .mileageTripsDidChange)) { _ in
             Task { await viewModel.load() }
+        }
+    }
+
+    private var vehiclePicker: some View {
+        Menu {
+            Button("All Vehicles") { viewModel.selectedVehicleID = nil }
+            ForEach(viewModel.vehicles) { vehicle in
+                Button(vehicle.nickname) { viewModel.selectedVehicleID = vehicle.id }
+            }
+        } label: {
+            Label(
+                viewModel.vehicles.first(where: { $0.id == viewModel.selectedVehicleID })?.nickname
+                    ?? "All Vehicles",
+                systemImage: "car.side.fill"
+            )
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(AppTheme.Color.textPrimary)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(.horizontal, AppTheme.Spacing.large)
+            .background(AppTheme.Color.surface, in: RoundedRectangle(cornerRadius: AppTheme.Radius.medium))
+        }
+    }
+
+    private var vehicleBreakdown: some View {
+        AppCard {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
+                SectionHeader(title: "Business miles by vehicle")
+                ForEach(viewModel.vehicleBreakdown) { item in
+                    LabeledContent(item.vehicle, value: item.miles.milesFormatted)
+                    if item.id != viewModel.vehicleBreakdown.last?.id { Divider() }
+                }
+            }
         }
     }
 

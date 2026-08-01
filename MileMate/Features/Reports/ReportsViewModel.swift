@@ -11,6 +11,13 @@ final class ReportsViewModel {
         var id: Date { weekStart }
     }
 
+    struct VehicleMileage: Identifiable {
+        let vehicle: String
+        let miles: Double
+
+        var id: String { vehicle }
+    }
+
     enum Period: String, CaseIterable {
         case month = "Month"
         case quarter = "Quarter"
@@ -19,21 +26,21 @@ final class ReportsViewModel {
 
     private let repository: any MileageRepository
     private(set) var trips: [Trip] = []
+    private(set) var vehicles: [Vehicle] = []
     var period: Period = .month
+    var selectedVehicleID: UUID?
 
     init(repository: any MileageRepository) {
         self.repository = repository
     }
 
     var summary: MileageSummary {
-        MileageSummaryCalculator.summary(for: trips.filter { selectedInterval.contains($0.startedAt) })
+        MileageSummaryCalculator.summary(for: filteredTrips)
     }
 
     var weeklyMileage: [WeeklyMileage] {
         let calendar = Calendar.current
-        let businessTrips = trips.filter {
-            selectedInterval.contains($0.startedAt) && $0.classification == .business
-        }
+        let businessTrips = filteredTrips.filter { $0.classification == .business }
         let grouped = Dictionary(grouping: businessTrips) {
             calendar.dateInterval(of: .weekOfYear, for: $0.startedAt)?.start
                 ?? calendar.startOfDay(for: $0.startedAt)
@@ -48,7 +55,31 @@ final class ReportsViewModel {
     }
 
     func load() async {
-        trips = (try? await repository.fetchTrips()) ?? []
+        async let fetchedTrips = repository.fetchTrips()
+        async let fetchedVehicles = repository.fetchVehicles()
+        trips = (try? await fetchedTrips) ?? []
+        vehicles = (try? await fetchedVehicles) ?? []
+    }
+
+    var vehicleBreakdown: [VehicleMileage] {
+        let business = trips.filter {
+            selectedInterval.contains($0.startedAt) && $0.classification == .business
+        }
+        let grouped = Dictionary(grouping: business) { $0.vehicle?.nickname ?? "No vehicle assigned" }
+        return grouped.map { name, trips in
+            VehicleMileage(
+                vehicle: name,
+                miles: trips.reduce(0) { $0 + $1.distanceMiles }
+            )
+        }
+        .sorted { $0.miles > $1.miles }
+    }
+
+    private var filteredTrips: [Trip] {
+        trips.filter {
+            selectedInterval.contains($0.startedAt) &&
+            (selectedVehicleID == nil || $0.vehicle?.id == selectedVehicleID)
+        }
     }
 
     private var selectedInterval: DateInterval {

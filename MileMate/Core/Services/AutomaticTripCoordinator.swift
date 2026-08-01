@@ -142,12 +142,18 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     func savePendingTrip(
         classification: Trip.Classification,
         purpose: String,
-        notes: String
+        notes: String,
+        vehicle: VehicleSnapshot? = nil,
+        classificationSource: Trip.ClassificationSource = .user,
+        appliedRuleID: UUID? = nil
     ) async throws {
         guard var trip = pendingTrip else { return }
         trip.classification = classification
         trip.purpose = purpose
         trip.notes = notes
+        trip.vehicle = vehicle
+        trip.classificationSource = classificationSource
+        trip.appliedRuleID = appliedRuleID
         trip.updatedAt = .now
         try await repository.save(trip)
         notificationService.cancelNotifications(for: trip.id)
@@ -380,6 +386,49 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             endCoordinate: route.last,
             route: route
         )
+        Task { [weak self] in
+            guard let self else { return }
+            var assignedTrip = trip
+            async let fetchedVehicles = self.repository.fetchVehicles()
+            async let fetchedPlaces = self.repository.fetchFrequentPlaces()
+            async let fetchedRules = self.repository.fetchClassificationRules()
+            let vehicles = (try? await fetchedVehicles) ?? []
+            assignedTrip = VehicleAssignmentService.assigningDefault(
+                to: assignedTrip,
+                vehicles: vehicles
+            )
+            if UserDefaults.standard.bool(
+                forKey: ClassificationSettings.automaticRulesEnabledKey
+            ) {
+                let places = (try? await fetchedPlaces) ?? []
+                let rules = (try? await fetchedRules) ?? []
+                if let rule = SmartClassificationService.matchingRule(
+                    for: assignedTrip,
+                    places: places,
+                    rules: rules
+                ) {
+                    let classifiedTrip = SmartClassificationService.applying(
+                        rule,
+                        to: assignedTrip
+                    )
+                    do {
+                        try await self.repository.save(classifiedTrip)
+                        NotificationCenter.default.post(
+                            name: .mileageTripsDidChange,
+                            object: classifiedTrip.id
+                        )
+                        self.resetToIdle()
+                        return
+                    } catch {
+                        // Fall through to review so a persistence failure never loses the trip.
+                    }
+                }
+            }
+            self.completeAutomaticTrip(assignedTrip)
+        }
+    }
+
+    private func completeAutomaticTrip(_ trip: Trip) {
         guard persistPendingTrip(trip) else {
             resetToIdle()
             return

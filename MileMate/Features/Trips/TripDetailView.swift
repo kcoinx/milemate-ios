@@ -2,16 +2,23 @@ import SwiftUI
 
 struct TripDetailView: View {
     private let repository: any MileageRepository
+    private let originalClassification: Trip.Classification
+    private let originalRuleID: UUID?
     @State private var trip: Trip
     @State private var isEditing = false
     @State private var showingDeleteConfirmation = false
     @State private var saveError: String?
     @State private var purposeSelection: String
     @State private var customPurpose: String
+    @State private var vehicles: [Vehicle] = []
+    @State private var selectedVehicleID: UUID?
+    @State private var overriddenRule: ClassificationRule?
     @Environment(\.dismiss) private var dismiss
 
     init(trip: Trip, repository: any MileageRepository) {
         self.repository = repository
+        self.originalClassification = trip.classification
+        self.originalRuleID = trip.appliedRuleID
         _trip = State(initialValue: trip)
         if trip.purpose.isEmpty {
             _purposeSelection = State(initialValue: "")
@@ -70,6 +77,38 @@ struct TripDetailView: View {
         } message: {
             Text("This trip will be removed from your mileage records.")
         }
+        .confirmationDialog(
+            "Update the classification rule?",
+            isPresented: Binding(
+                get: { overriddenRule != nil },
+                set: { if !$0 { overriddenRule = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let rule = overriddenRule {
+                Button("Update Rule to \(trip.classification.rawValue)") {
+                    var updated = rule
+                    updated.classification = trip.classification
+                    updated.updatedAt = .now
+                    overriddenRule = nil
+                    Task { try? await repository.saveClassificationRule(updated) }
+                }
+                Button("Disable Rule", role: .destructive) {
+                    var updated = rule
+                    updated.isEnabled = false
+                    updated.updatedAt = .now
+                    overriddenRule = nil
+                    Task { try? await repository.saveClassificationRule(updated) }
+                }
+            }
+            Button("Keep Rule", role: .cancel) { overriddenRule = nil }
+        } message: {
+            Text("This trip was classified by an approved rule. Your override applies immediately.")
+        }
+        .task {
+            vehicles = (try? await repository.fetchVehicles()) ?? []
+            selectedVehicleID = trip.vehicle?.id
+        }
     }
 
     private var routeTimeline: some View {
@@ -116,6 +155,24 @@ struct TripDetailView: View {
                             time: trip.endedAt.formatted(.dateTime.hour().minute()),
                             location: trip.destinationName
                         )
+                    }
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.small) {
+                    Label("Vehicle", systemImage: "car.side.fill")
+                        .font(.appHeadline)
+                    if isEditing {
+                        Picker("Vehicle", selection: $selectedVehicleID) {
+                            Text("No vehicle assigned").tag(UUID?.none)
+                            ForEach(vehicles) {
+                                Text($0.nickname).tag(Optional($0.id))
+                            }
+                        }
+                    } else {
+                        Text(trip.vehicle?.nickname ?? "No vehicle assigned")
+                            .foregroundStyle(AppTheme.Color.textSecondary)
                     }
                 }
 
@@ -212,16 +269,29 @@ struct TripDetailView: View {
 
     private func persistChanges() {
         trip.purpose = resolvedPurpose
+        trip.vehicle = vehicles.first { $0.id == selectedVehicleID }?.snapshot
+        trip.classificationSource = .user
+        trip.appliedRuleID = nil
         trip.updatedAt = .now
         Task {
             do {
                 try await repository.update(trip)
                 saveError = nil
                 NotificationCenter.default.post(name: .mileageTripsDidChange, object: trip.id)
+                await offerRuleUpdateIfNeeded()
             } catch {
                 saveError = "Changes could not be saved."
             }
         }
+    }
+
+    private func offerRuleUpdateIfNeeded() async {
+        guard trip.classification != originalClassification,
+              let originalRuleID else {
+            return
+        }
+        overriddenRule = (try? await repository.fetchClassificationRules())?
+            .first { $0.id == originalRuleID }
     }
 
     private func deleteTrip() {

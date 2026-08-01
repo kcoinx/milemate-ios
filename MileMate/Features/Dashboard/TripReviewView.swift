@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TripReviewView<Coordinator: TripReviewCoordinating>: View {
     let trip: Trip
+    let repository: any MileageRepository
     @Bindable var coordinator: Coordinator
     let onSaved: () -> Void
 
@@ -12,9 +13,19 @@ struct TripReviewView<Coordinator: TripReviewCoordinating>: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var showingShortTripConfirmation = false
+    @State private var vehicles: [Vehicle] = []
+    @State private var selectedVehicleID: UUID?
+    @State private var suggestion: ClassificationSuggestion?
+    @State private var appliedRule: ClassificationRule?
 
-    init(trip: Trip, coordinator: Coordinator, onSaved: @escaping () -> Void) {
+    init(
+        trip: Trip,
+        repository: any MileageRepository,
+        coordinator: Coordinator,
+        onSaved: @escaping () -> Void
+    ) {
         self.trip = trip
+        self.repository = repository
         _coordinator = Bindable(wrappedValue: coordinator)
         self.onSaved = onSaved
         _classification = State(initialValue: trip.classification)
@@ -47,12 +58,35 @@ struct TripReviewView<Coordinator: TripReviewCoordinating>: View {
                 }
 
                 Section("Classification") {
+                    if let suggestion {
+                        Label {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Suggested: \(suggestion.classification.rawValue)")
+                                    .font(.subheadline.weight(.semibold))
+                                Text(suggestion.explanation)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "lightbulb.fill")
+                                .foregroundStyle(AppTheme.Color.warning)
+                        }
+                    }
                     Picker("Classification", selection: $classification) {
                         ForEach(Trip.Classification.allCases, id: \.self) {
                             Text($0.rawValue).tag($0)
                         }
                     }
                     .pickerStyle(.segmented)
+                }
+
+                Section("Vehicle") {
+                    Picker("Vehicle", selection: $selectedVehicleID) {
+                        Text("No vehicle assigned").tag(UUID?.none)
+                        ForEach(vehicles) { vehicle in
+                            Text(vehicle.nickname).tag(Optional(vehicle.id))
+                        }
+                    }
                 }
 
                 Section("Trip Purpose") {
@@ -103,6 +137,7 @@ struct TripReviewView<Coordinator: TripReviewCoordinating>: View {
             }
             .navigationTitle("Review Trip")
             .navigationBarTitleDisplayMode(.inline)
+            .task { await loadReviewContext() }
             .confirmationDialog(
                 "This trip is very short. Save anyway?",
                 isPresented: $showingShortTripConfirmation,
@@ -123,13 +158,48 @@ struct TripReviewView<Coordinator: TripReviewCoordinating>: View {
                 try await coordinator.savePendingTrip(
                     classification: classification,
                     purpose: resolvedPurpose,
-                    notes: notes
+                    notes: notes,
+                    vehicle: selectedVehicle?.snapshot,
+                    classificationSource: appliedRule == nil ? .user : .approvedRule,
+                    appliedRuleID: appliedRule?.id
                 )
                 onSaved()
             } catch {
                 errorMessage = "The trip could not be saved. Please try again."
                 isSaving = false
             }
+        }
+    }
+
+    private var selectedVehicle: Vehicle? {
+        vehicles.first { $0.id == selectedVehicleID }
+    }
+
+    private func loadReviewContext() async {
+        async let fetchedVehicles = repository.fetchVehicles()
+        async let fetchedTrips = repository.fetchTrips()
+        async let fetchedPlaces = repository.fetchFrequentPlaces()
+        async let fetchedRules = repository.fetchClassificationRules()
+        let vehicles = (try? await fetchedVehicles) ?? []
+        let history = (try? await fetchedTrips) ?? []
+        let places = (try? await fetchedPlaces) ?? []
+        let rules = (try? await fetchedRules) ?? []
+        self.vehicles = vehicles
+        selectedVehicleID = trip.vehicle?.id ?? vehicles.first(where: \.isDefault)?.id
+        suggestion = SmartClassificationService.suggestion(
+            for: trip,
+            history: history,
+            places: places
+        )
+        if UserDefaults.standard.bool(forKey: ClassificationSettings.automaticRulesEnabledKey),
+           let rule = SmartClassificationService.matchingRule(
+                for: trip,
+                places: places,
+                rules: rules
+           ) {
+            appliedRule = rule
+            classification = rule.classification
+            save()
         }
     }
 

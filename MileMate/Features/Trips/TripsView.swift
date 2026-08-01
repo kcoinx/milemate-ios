@@ -2,14 +2,20 @@ import SwiftUI
 
 struct TripsView: View {
     private let repository: any MileageRepository
+    private let notificationService: any TripNotificationScheduling
     @Binding private var requestedTrip: Trip?
     @State private var viewModel: TripsViewModel
     @State private var hasAppeared = false
     @State private var tripPendingDeletion: Trip?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(repository: any MileageRepository, requestedTrip: Binding<Trip?> = .constant(nil)) {
+    init(
+        repository: any MileageRepository,
+        requestedTrip: Binding<Trip?> = .constant(nil),
+        notificationService: any TripNotificationScheduling
+    ) {
         self.repository = repository
+        self.notificationService = notificationService
         _requestedTrip = requestedTrip
         _viewModel = State(initialValue: TripsViewModel(repository: repository))
     }
@@ -20,6 +26,21 @@ struct TripsView: View {
                 .tripListRow()
             filters
                 .tripListRow()
+            NavigationLink {
+                ReviewQueueView(
+                    repository: repository,
+                    notificationService: notificationService
+                )
+            } label: {
+                Label(
+                    "\(viewModel.unclassifiedCount) \(viewModel.unclassifiedCount == 1 ? "Trip" : "Trips") to Review",
+                    systemImage: "tray.full.fill"
+                )
+                .font(.headline)
+                .foregroundStyle(AppTheme.Color.brand)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            }
+            .tripListRow()
 
             if viewModel.filteredTrips.isEmpty {
                 emptyState
@@ -126,6 +147,22 @@ struct TripsView: View {
                 ForEach(Trip.Classification.allCases, id: \.self) { item in
                     filterButton(item.rawValue, selection: item)
                 }
+                Menu {
+                    Button("All Vehicles") { viewModel.vehicleFilter = .all }
+                    ForEach(viewModel.vehicles) { vehicle in
+                        Button(vehicle.nickname) {
+                            viewModel.vehicleFilter = .vehicle(vehicle.id)
+                        }
+                    }
+                    Button("No vehicle assigned") { viewModel.vehicleFilter = .unassigned }
+                } label: {
+                    Label(vehicleFilterTitle, systemImage: "car.side.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppTheme.Color.textPrimary)
+                        .padding(.horizontal, 17)
+                        .frame(minHeight: 42)
+                        .background(AppTheme.Color.surface, in: Capsule())
+                }
             }
         }
     }
@@ -160,6 +197,12 @@ struct TripsView: View {
                     ClassificationBadge(classification: trip.classification)
                 }
 
+                if let vehicle = trip.vehicle {
+                    Label(vehicle.nickname, systemImage: "car.side.fill")
+                        .font(.caption)
+                        .foregroundStyle(AppTheme.Color.textSecondary)
+                }
+
                 Divider()
 
                 HStack {
@@ -172,6 +215,17 @@ struct TripsView: View {
             }
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private var vehicleFilterTitle: String {
+        switch viewModel.vehicleFilter {
+        case .all:
+            return "All Vehicles"
+        case .unassigned:
+            return "No Vehicle"
+        case .vehicle(let id):
+            return viewModel.vehicles.first(where: { $0.id == id })?.nickname ?? "Vehicle"
+        }
     }
 
     private func tripValue(_ label: String, value: String, tint: Color = AppTheme.Color.textPrimary) -> some View {

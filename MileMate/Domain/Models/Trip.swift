@@ -7,6 +7,10 @@ struct TripCoordinate: Hashable, Codable, Sendable {
 }
 
 struct Trip: Identifiable, Hashable, Codable, Sendable {
+    enum ClassificationSource: String, Codable, Sendable {
+        case user
+        case approvedRule
+    }
     enum Classification: String, CaseIterable, Codable, Sendable {
         case business = "Business"
         case personal = "Personal"
@@ -25,6 +29,9 @@ struct Trip: Identifiable, Hashable, Codable, Sendable {
     var startCoordinate: TripCoordinate?
     var endCoordinate: TripCoordinate?
     var route: [TripCoordinate]
+    var vehicle: VehicleSnapshot?
+    var classificationSource: ClassificationSource?
+    var appliedRuleID: UUID?
     var createdAt: Date
     var updatedAt: Date
 
@@ -41,6 +48,9 @@ struct Trip: Identifiable, Hashable, Codable, Sendable {
         startCoordinate: TripCoordinate? = nil,
         endCoordinate: TripCoordinate? = nil,
         route: [TripCoordinate] = [],
+        vehicle: VehicleSnapshot? = nil,
+        classificationSource: ClassificationSource? = .user,
+        appliedRuleID: UUID? = nil,
         createdAt: Date = .now,
         updatedAt: Date = .now
     ) {
@@ -56,6 +66,9 @@ struct Trip: Identifiable, Hashable, Codable, Sendable {
         self.startCoordinate = startCoordinate
         self.endCoordinate = endCoordinate
         self.route = route
+        self.vehicle = vehicle
+        self.classificationSource = classificationSource
+        self.appliedRuleID = appliedRuleID
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
