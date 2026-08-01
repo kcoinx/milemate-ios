@@ -37,6 +37,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     private let locationService: any AutomaticLocationService
     private let motionService: any MotionActivityService
     private let repository: any MileageRepository
+    private let notificationService: any TripNotificationScheduling
     private let isManualTrackingActive: @MainActor () -> Bool
     private let stopInterval: TimeInterval
     private var processor = LocationSampleProcessor()
@@ -61,12 +62,14 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         locationService: any AutomaticLocationService,
         motionService: any MotionActivityService,
         repository: any MileageRepository,
+        notificationService: any TripNotificationScheduling,
         stopInterval: TimeInterval = 180,
         isManualTrackingActive: @escaping @MainActor () -> Bool
     ) {
         self.locationService = locationService
         self.motionService = motionService
         self.repository = repository
+        self.notificationService = notificationService
         self.stopInterval = stopInterval
         self.isManualTrackingActive = isManualTrackingActive
 
@@ -147,6 +150,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         trip.notes = notes
         trip.updatedAt = .now
         try await repository.save(trip)
+        notificationService.cancelNotifications(for: trip.id)
         NotificationCenter.default.post(name: .mileageTripsDidChange, object: trip.id)
         pendingTrip = nil
         clearPersistedPendingTrip()
@@ -154,6 +158,9 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     }
 
     func discardPendingTrip() {
+        if let tripID = pendingTrip?.id {
+            notificationService.cancelNotifications(for: tripID)
+        }
         pendingTrip = nil
         clearPersistedPendingTrip()
         resetToIdle()
@@ -373,9 +380,15 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             endCoordinate: route.last,
             route: route
         )
+        guard persistPendingTrip(trip) else {
+            resetToIdle()
+            return
+        }
         pendingTrip = trip
-        persistPendingTrip(trip)
         state = .reviewing
+        Task { [notificationService] in
+            await notificationService.scheduleTripCompletion(for: trip)
+        }
         reverseGeocodePendingTrip()
     }
 
@@ -411,9 +424,13 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         }
     }
 
-    private func persistPendingTrip(_ trip: Trip) {
-        guard let data = try? JSONEncoder().encode(PendingTripEnvelope(trip: trip)) else { return }
+    @discardableResult
+    private func persistPendingTrip(_ trip: Trip) -> Bool {
+        guard let data = try? JSONEncoder().encode(PendingTripEnvelope(trip: trip)) else {
+            return false
+        }
         UserDefaults.standard.set(data, forKey: Self.pendingTripKey)
+        return UserDefaults.standard.data(forKey: Self.pendingTripKey) == data
     }
 
     private func restorePendingTrip() {

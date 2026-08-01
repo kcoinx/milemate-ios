@@ -6,6 +6,8 @@ struct AppDependencies {
     let locationService: any LocationService
     let tripCoordinator: ManualTripCoordinator
     let automaticTripCoordinator: AutomaticTripCoordinator
+    let notificationService: any TripNotificationScheduling
+    let router: AppRouter
     let modelContainer: ModelContainer
 
     static func live() -> AppDependencies {
@@ -17,10 +19,12 @@ struct AppDependencies {
                 locationService: locationService,
                 repository: repository
             )
+            let notificationService = LocalTripNotificationService()
             let automaticCoordinator = AutomaticTripCoordinator(
                 locationService: CoreAutomaticLocationService(),
                 motionService: CoreMotionActivityService(),
                 repository: repository,
+                notificationService: notificationService,
                 isManualTrackingActive: {
                     switch manualCoordinator.state {
                     case .requestingPermission, .tracking, .reviewing:
@@ -30,12 +34,18 @@ struct AppDependencies {
                     }
                 }
             )
+            let appRouter = AppRouter(
+                repository: repository,
+                automaticTripCoordinator: automaticCoordinator
+            )
             automaticCoordinator.startIfEnabled()
             return AppDependencies(
                 mileageRepository: repository,
                 locationService: locationService,
                 tripCoordinator: manualCoordinator,
                 automaticTripCoordinator: automaticCoordinator,
+                notificationService: notificationService,
+                router: appRouter,
                 modelContainer: container
             )
         } catch {

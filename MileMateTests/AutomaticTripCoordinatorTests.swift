@@ -33,6 +33,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
             locationService: location,
             motionService: motion,
             repository: MockMileageRepository(),
+            notificationService: MockTripNotificationService(),
             isManualTrackingActive: { true }
         )
 
@@ -92,6 +93,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
             locationService: location,
             motionService: motion,
             repository: MockMileageRepository(),
+            notificationService: MockTripNotificationService(),
             stopInterval: stopInterval,
             isManualTrackingActive: { false }
         )

@@ -2,13 +2,15 @@ import SwiftUI
 
 struct TripsView: View {
     private let repository: any MileageRepository
+    @Binding private var requestedTrip: Trip?
     @State private var viewModel: TripsViewModel
     @State private var hasAppeared = false
     @State private var tripPendingDeletion: Trip?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(repository: any MileageRepository) {
+    init(repository: any MileageRepository, requestedTrip: Binding<Trip?> = .constant(nil)) {
         self.repository = repository
+        _requestedTrip = requestedTrip
         _viewModel = State(initialValue: TripsViewModel(repository: repository))
     }
 
@@ -60,6 +62,9 @@ struct TripsView: View {
         }
         .searchable(text: $viewModel.searchText, prompt: "Search destinations")
         .navigationDestination(for: Trip.self) { TripDetailView(trip: $0, repository: repository) }
+        .navigationDestination(item: $requestedTrip) {
+            TripDetailView(trip: $0, repository: repository)
+        }
         .confirmationDialog(
             "Delete this trip?",
             isPresented: Binding(

@@ -3,12 +3,17 @@ import SwiftUI
 struct AppTabView: View {
     let dependencies: AppDependencies
     @Environment(\.scenePhase) private var scenePhase
-    @State private var selection: AppTab = .dashboard
+    @Bindable private var router: AppRouter
     @AppStorage("appAppearance") private var appearance = AppAppearance.system.rawValue
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    init(dependencies: AppDependencies) {
+        self.dependencies = dependencies
+        _router = Bindable(wrappedValue: dependencies.router)
+    }
+
     var body: some View {
-        TabView(selection: $selection) {
+        TabView(selection: $router.selectedTab) {
             tab(.dashboard) {
                 DashboardView(
                     repository: dependencies.mileageRepository,
@@ -16,18 +21,29 @@ struct AppTabView: View {
                     automaticTripCoordinator: dependencies.automaticTripCoordinator
                 )
             }
-            tab(.trips) { TripsView(repository: dependencies.mileageRepository) }
+            tab(.trips) {
+                TripsView(
+                    repository: dependencies.mileageRepository,
+                    requestedTrip: $router.requestedTrip
+                )
+            }
             tab(.reports) { ReportsView(repository: dependencies.mileageRepository) }
             tab(.insights) { InsightsView(repository: dependencies.mileageRepository) }
             tab(.settings) {
                 SettingsView(
                     repository: dependencies.mileageRepository,
-                    automaticTripCoordinator: dependencies.automaticTripCoordinator
+                    automaticTripCoordinator: dependencies.automaticTripCoordinator,
+                    notificationService: dependencies.notificationService
                 )
             }
         }
         .tint(AppTheme.Color.brand)
         .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
+        .onChange(of: dependencies.automaticTripCoordinator.pendingTrip?.id) { _, tripID in
+            if tripID != nil {
+                router.showAutomaticTripReview()
+            }
+        }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .background:
@@ -55,35 +71,11 @@ struct AppTabView: View {
             } icon: {
                 Image(systemName: tab.systemImage)
                     .font(.system(size: 17, weight: .semibold))
-                    .symbolVariant(selection == tab ? .fill : .none)
-                    .scaleEffect(selection == tab ? 1.08 : 1)
-                    .animation(reduceMotion ? nil : .smooth(duration: 0.22), value: selection)
+                    .symbolVariant(router.selectedTab == tab ? .fill : .none)
+                    .scaleEffect(router.selectedTab == tab ? 1.08 : 1)
+                    .animation(reduceMotion ? nil : .smooth(duration: 0.22), value: router.selectedTab)
             }
         }
         .tag(tab)
-    }
-}
-
-private enum AppTab: Hashable {
-    case dashboard, trips, reports, insights, settings
-
-    var title: String {
-        switch self {
-        case .dashboard: "Dashboard"
-        case .trips: "Trips"
-        case .reports: "Reports"
-        case .insights: "Insights"
-        case .settings: "Settings"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .dashboard: "gauge.with.dots.needle.67percent"
-        case .trips: "car"
-        case .reports: "doc.text"
-        case .insights: "chart.xyaxis.line"
-        case .settings: "gearshape"
-        }
     }
 }

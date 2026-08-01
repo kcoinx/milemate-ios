@@ -5,19 +5,27 @@ import UIKit
 struct SettingsView: View {
     @State private var viewModel: SettingsViewModel
     @Bindable private var automaticTripCoordinator: AutomaticTripCoordinator
+    private let notificationService: any TripNotificationScheduling
     @AppStorage("appAppearance") private var appearance = AppAppearance.system.rawValue
     @AppStorage(AutomaticTrackingSettings.enabledKey) private var automaticTrackingEnabled = false
     @AppStorage(AutomaticTrackingSettings.minimumDistanceKey)
     private var automaticMinimumDistance = AutomaticTrackingSettings.defaultMinimumDistance
+    @AppStorage(TripNotificationSettings.completionEnabledKey)
+    private var tripDetectedNotificationsEnabled = true
+    @AppStorage(TripNotificationSettings.remindersEnabledKey)
+    private var tripReviewRemindersEnabled = true
     @State private var showingAutomaticTrackingExplanation = false
+    @State private var notificationPermissionStatus = NotificationPermissionStatus.notDetermined
     @Environment(\.openURL) private var openURL
 
     init(
         repository: any MileageRepository,
-        automaticTripCoordinator: AutomaticTripCoordinator
+        automaticTripCoordinator: AutomaticTripCoordinator,
+        notificationService: any TripNotificationScheduling
     ) {
         _viewModel = State(initialValue: SettingsViewModel(repository: repository))
         _automaticTripCoordinator = Bindable(wrappedValue: automaticTripCoordinator)
+        self.notificationService = notificationService
     }
 
     var body: some View {
@@ -95,6 +103,53 @@ struct SettingsView: View {
                 }
             }
 
+            settingsSection("Notifications") {
+                Toggle(isOn: $tripDetectedNotificationsEnabled) {
+                    settingLabel(
+                        "Trip Detected Notifications",
+                        icon: "bell.badge.fill",
+                        tint: AppTheme.Color.brand
+                    )
+                }
+                .onChange(of: tripDetectedNotificationsEnabled) { _, enabled in
+                    if !enabled {
+                        notificationService.cancelCompletionNotifications()
+                    }
+                }
+
+                Toggle(isOn: $tripReviewRemindersEnabled) {
+                    settingLabel(
+                        "Trip Review Reminders",
+                        icon: "clock.badge.fill",
+                        tint: .orange
+                    )
+                }
+                .onChange(of: tripReviewRemindersEnabled) { _, enabled in
+                    if !enabled {
+                        notificationService.cancelReminderNotifications()
+                    }
+                }
+
+                permissionRow(
+                    "Notification Permission",
+                    status: notificationPermissionText,
+                    icon: "bell.circle.fill"
+                )
+
+                if notificationPermissionStatus == .denied {
+                    Text("Notifications are off. Automatic tracking will continue, but MileMate cannot alert you when a trip is ready for review.")
+                        .font(.footnote)
+                        .foregroundStyle(AppTheme.Color.textSecondary)
+
+                    Button {
+                        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                        openURL(url)
+                    } label: {
+                        Label("Open iPhone Settings", systemImage: "gear")
+                    }
+                }
+            }
+
             settingsSection("Tax") {
                 destination("IRS rate", icon: "dollarsign.circle.fill", tint: AppTheme.Color.positive) {
                     TaxSettingsView()
@@ -144,7 +199,11 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .background(AppTheme.Color.canvas)
         .navigationTitle("Settings")
-        .task { await viewModel.loadFrequentPlaces() }
+        .task {
+            await viewModel.loadFrequentPlaces()
+            await notificationService.refreshAuthorizationStatus()
+            notificationPermissionStatus = notificationService.authorizationStatus
+        }
         .onReceive(NotificationCenter.default.publisher(for: .mileageTripsDidChange)) { _ in
             Task { await viewModel.loadFrequentPlaces() }
         }
@@ -156,10 +215,17 @@ struct SettingsView: View {
             Button("Continue") {
                 automaticTrackingEnabled = true
                 automaticTripCoordinator.setEnabled(true)
+                if tripDetectedNotificationsEnabled,
+                   notificationPermissionStatus == .notDetermined {
+                    Task {
+                        await notificationService.requestAuthorization()
+                        notificationPermissionStatus = notificationService.authorizationStatus
+                    }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("MileMate uses Motion & Fitness to recognize driving and Always Location to record work trips in the background. Precise GPS runs only after driving is detected.")
+            Text("MileMate uses Motion & Fitness to recognize driving and Always Location to record work trips in the background. You can also allow notifications so MileMate can tell you when an automatic trip is ready to review.")
         }
     }
 
@@ -250,6 +316,23 @@ struct SettingsView: View {
         case MotionPermissionStatus.restricted:
             return "Restricted"
         case MotionPermissionStatus.unavailable:
+            return "Unavailable"
+        }
+    }
+
+    private var notificationPermissionText: String {
+        switch notificationPermissionStatus {
+        case .authorized:
+            return "Allowed"
+        case .provisional:
+            return "Provisional"
+        case .ephemeral:
+            return "Temporary"
+        case .notDetermined:
+            return "Not Requested"
+        case .denied:
+            return "Denied"
+        case .unavailable:
             return "Unavailable"
         }
     }
