@@ -14,6 +14,7 @@ final class StoredTrip {
     var estimatedDeductionAmount: Double = 0
     var classificationRawValue: String
     var purpose: String
+    var notes: String = ""
     var startLatitude: Double?
     var startLongitude: Double?
     var endLatitude: Double?
@@ -34,6 +35,7 @@ final class StoredTrip {
         estimatedDeductionAmount = trip.estimatedDeduction
         classificationRawValue = trip.classification.rawValue
         purpose = trip.purpose
+        notes = trip.notes
         startLatitude = trip.startCoordinate?.latitude
         startLongitude = trip.startCoordinate?.longitude
         endLatitude = trip.endCoordinate?.latitude
@@ -54,6 +56,7 @@ final class StoredTrip {
         estimatedDeductionAmount = trip.estimatedDeduction
         classificationRawValue = trip.classification.rawValue
         purpose = trip.purpose
+        notes = trip.notes
         startLatitude = trip.startCoordinate?.latitude
         startLongitude = trip.startCoordinate?.longitude
         endLatitude = trip.endCoordinate?.latitude
@@ -73,6 +76,7 @@ final class StoredTrip {
             distanceMiles: distanceMeters > 0 ? distanceMeters / 1_609.344 : distanceMiles,
             classification: Trip.Classification(rawValue: classificationRawValue) ?? .unclassified,
             purpose: purpose,
+            notes: notes,
             startCoordinate: coordinate(latitude: startLatitude, longitude: startLongitude, fallback: startedAt),
             endCoordinate: coordinate(latitude: endLatitude, longitude: endLongitude, fallback: endedAt),
             route: route,

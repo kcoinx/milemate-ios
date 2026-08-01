@@ -50,21 +50,11 @@ struct DashboardView: View {
     }
 
     private var greeting: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("\(greetingText), \(viewModel.profile.firstName)")
-                    .font(.appLargeTitle)
-                Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                    .foregroundStyle(AppTheme.Color.textSecondary)
-            }
-            Spacer()
-            Button(action: {}) {
-                Image(systemName: "bell")
-                    .font(.headline)
-                    .frame(width: 44, height: 44)
-                    .background(AppTheme.Color.surface, in: Circle())
-            }
-            .accessibilityLabel("Notifications")
+        VStack(alignment: .leading, spacing: 5) {
+            Text("\(greetingText), \(viewModel.profile.firstName)")
+                .font(.appLargeTitle)
+            Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
+                .foregroundStyle(AppTheme.Color.textSecondary)
         }
         .padding(.top, AppTheme.Spacing.xLarge)
     }
@@ -99,48 +89,10 @@ struct DashboardView: View {
                 Image(systemName: "location.fill")
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("YEAR-TO-DATE DEDUCTION")
-                    .font(.caption.weight(.semibold))
-                    .tracking(0.8)
-                    .foregroundStyle(.white.opacity(0.72))
-                Text(viewModel.summary.estimatedDeduction.currencyFormatted)
-                    .font(.system(size: 54, weight: .bold, design: .rounded))
-                    .minimumScaleFactor(0.72)
-                    .contentTransition(.numericText())
-            }
-
-            HStack(spacing: AppTheme.Spacing.xLarge) {
-                heroMetric(
-                    tripCoordinator.state == .tracking ? "Live distance" : "Today's miles",
-                    value: (tripCoordinator.state == .tracking ? tripCoordinator.distanceMiles : viewModel.todayBusinessMiles).milesFormatted
-                )
-                Divider().overlay(.white.opacity(0.25))
-                heroMetric(
-                    tripCoordinator.state == .tracking ? "Elapsed time" : "Est. tax savings",
-                    value: tripCoordinator.state == .tracking
-                        ? tripCoordinator.elapsedTime.formattedDuration
-                        : viewModel.summary.estimatedTaxSavings.currencyFormatted
-                )
-            }
-            .frame(height: 48)
-
-            HStack {
-                Text(tripCoordinator.state == .tracking ? "Estimated deduction" : "Year-to-date business miles")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.72))
-                Spacer()
-                Text(
-                    tripCoordinator.state == .tracking
-                        ? tripCoordinator.currentDeduction.currencyFormatted
-                        : viewModel.summary.businessMiles.milesFormatted
-                )
-                .font(.subheadline.weight(.bold))
-                .contentTransition(.numericText())
-                .animation(
-                    reduceMotion ? nil : .smooth(duration: 0.3),
-                    value: tripCoordinator.currentDeduction
-                )
+            if tripCoordinator.state == .tracking {
+                activeTripSummary
+            } else {
+                yearToDateSummary
             }
 
             Button {
@@ -190,25 +142,113 @@ struct DashboardView: View {
         .scaleEffect(hasAppeared ? 1 : 0.97)
         .opacity(hasAppeared ? 1 : 0)
         .animation(reduceMotion ? nil : .snappy(duration: 0.35), value: tripCoordinator.state)
+    }
+
+    private var activeTripSummary: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("LIVE DISTANCE")
+                    .font(.caption.weight(.bold))
+                    .tracking(1)
+                    .foregroundStyle(.white.opacity(0.72))
+                Text(tripCoordinator.distanceMiles.milesFormatted)
+                    .font(.system(size: 56, weight: .bold, design: .rounded))
+                    .minimumScaleFactor(0.72)
+                    .contentTransition(.numericText())
+                    .animation(
+                        reduceMotion ? nil : .smooth(duration: 0.3),
+                        value: tripCoordinator.distanceMiles
+                    )
+            }
+
+            if let location = tripCoordinator.currentLocationLabel {
+                Label(location, systemImage: "location.fill")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.84))
+                    .lineLimit(1)
+                    .accessibilityLabel("Current area, \(location)")
+            }
+
+            HStack(spacing: AppTheme.Spacing.medium) {
+                activeMetric(
+                    "Elapsed Time",
+                    value: tripCoordinator.elapsedTime.formattedDuration,
+                    icon: "clock.fill"
+                )
+                activeMetric(
+                    "Estimated Deduction",
+                    value: tripCoordinator.currentDeduction.currencyFormatted,
+                    icon: "dollarsign.circle.fill"
+                )
+            }
+        }
+    }
+
+    private func activeMetric(_ title: String, value: String, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.small) {
+            Label(title, systemImage: icon)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.74))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text(value)
+                .font(.title2.weight(.bold).monospacedDigit())
+                .contentTransition(.numericText())
+                .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: value)
+                .minimumScaleFactor(0.75)
+        }
+        .padding(AppTheme.Spacing.medium)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white.opacity(0.11), in: RoundedRectangle(cornerRadius: AppTheme.Radius.medium))
         .accessibilityElement(children: .combine)
     }
 
-    private func heroMetric(_ title: String, value: String) -> some View {
+    private var yearToDateSummary: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("YEAR-TO-DATE DEDUCTION")
+                .font(.caption.weight(.semibold))
+                .tracking(0.8)
+                .foregroundStyle(.white.opacity(0.72))
+            Text(viewModel.summary.estimatedDeduction.currencyFormatted)
+                .font(.system(size: 54, weight: .bold, design: .rounded))
+                .minimumScaleFactor(0.72)
+                .contentTransition(.numericText())
+
+            HStack(spacing: AppTheme.Spacing.xLarge) {
+                summaryMetric("Today\u{2019}s Miles", value: viewModel.todayBusinessMiles.milesFormatted)
+                Divider().overlay(.white.opacity(0.25))
+                summaryMetric("Estimated Tax Savings", value: viewModel.summary.estimatedTaxSavings.currencyFormatted)
+            }
+            .frame(height: 52)
+            .padding(.top, AppTheme.Spacing.large)
+
+            HStack {
+                Text("Business Miles")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.72))
+                Spacer()
+                Text(viewModel.summary.businessMiles.milesFormatted)
+                    .font(.subheadline.weight(.bold))
+            }
+            .padding(.top, AppTheme.Spacing.small)
+        }
+    }
+
+    private func summaryMetric(_ title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.72))
             Text(value)
                 .font(.headline.monospacedDigit())
-                .contentTransition(.numericText())
-                .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: value)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 
     private var lastTrip: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
-            SectionHeader(title: "Last trip")
+            SectionHeader(title: "Recent Trip")
             if let trip = viewModel.recentTrips.first {
                 NavigationLink(value: trip) {
                     AppCard {
@@ -268,13 +308,7 @@ struct DashboardView: View {
 
     private var mapSection: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
-            HStack {
-                SectionHeader(title: "Live route")
-                Spacer()
-                Text("Preview")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(AppTheme.Color.brand)
-            }
+            SectionHeader(title: tripCoordinator.state == .tracking ? "Live Route" : "Recorded Route")
             if tripCoordinator.state == .tracking {
                 RouteMapView(
                     origin: "Trip start",
@@ -299,31 +333,31 @@ struct DashboardView: View {
 
     private var weeklySummary: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
-            SectionHeader(title: "This week")
+            SectionHeader(title: "This Week")
             AppCard {
                 VStack(spacing: AppTheme.Spacing.large) {
                     HStack(alignment: .top, spacing: AppTheme.Spacing.medium) {
                         ProgressRing(
                             progress: min(viewModel.weeklyBusinessMiles / 500, 1),
                             value: viewModel.weeklyBusinessMiles.formatted(.number.precision(.fractionLength(0))),
-                            label: "Business\nmiles"
+                            label: "Business\nMiles"
                         )
                         ProgressRing(
                             progress: min(Double(viewModel.weeklyTrips.count) / 20, 1),
                             value: "\(viewModel.weeklyTrips.count)",
-                            label: "Trips",
+                            label: "Trips\nThis Week",
                             tint: AppTheme.Color.positive
                         )
                         ProgressRing(
                             progress: min(viewModel.weeklyDeduction / 350, 1),
                             value: viewModel.weeklyDeduction.currencyFormatted,
-                            label: "IRS\ndeduction",
+                            label: "Estimated\nDeduction",
                             tint: AppTheme.Color.warning
                         )
                     }
                     Divider()
                     HStack {
-                        Label("Estimated tax savings", systemImage: "arrow.up.right")
+                        Label("Estimated Tax Savings", systemImage: "arrow.up.right")
                             .foregroundStyle(AppTheme.Color.textSecondary)
                         Spacer()
                         Text(MileageDeductionService.estimatedTaxSavings(deduction: viewModel.weeklyDeduction).currencyFormatted)

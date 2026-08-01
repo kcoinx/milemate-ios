@@ -3,8 +3,6 @@ import SwiftUI
 
 struct ReportsView: View {
     @State private var viewModel: ReportsViewModel
-    @State private var showingExport = false
-    @State private var selectedExport = "PDF"
 
     init(repository: any MileageRepository) {
         _viewModel = State(initialValue: ReportsViewModel(repository: repository))
@@ -37,11 +35,6 @@ struct ReportsView: View {
         .onReceive(NotificationCenter.default.publisher(for: .mileageTripsDidChange)) { _ in
             Task { await viewModel.load() }
         }
-        .confirmationDialog("Export \(selectedExport)", isPresented: $showingExport) {
-            Button("Save to Files") {}
-            Button("Share") {}
-            Button("Cancel", role: .cancel) {}
-        }
     }
 
     private var monthlySummary: some View {
@@ -73,7 +66,7 @@ struct ReportsView: View {
             HStack {
                 reportMetric("BUSINESS MILES", value: viewModel.summary.businessMiles.milesFormatted)
                 Spacer()
-                reportMetric("EST. TAX SAVINGS", value: viewModel.summary.estimatedTaxSavings.currencyFormatted)
+                reportMetric("ESTIMATED TAX SAVINGS", value: viewModel.summary.estimatedTaxSavings.currencyFormatted)
             }
 
             if viewModel.summary.businessMiles <= 0 {
@@ -164,31 +157,24 @@ struct ReportsView: View {
     }
 
     private func actionCell(_ title: String, icon: String, tint: Color) -> some View {
-        Button {
-            selectedExport = title
-            showingExport = true
-        } label: {
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
-                Image(systemName: icon)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(tint)
-                    .frame(width: 40, height: 40)
-                    .background(tint.opacity(0.12), in: Circle())
-                Text(title)
-                    .font(.appHeadline)
-                    .foregroundStyle(AppTheme.Color.textPrimary)
-                    .multilineTextAlignment(.leading)
-                Text("COMING SOON")
-                    .font(.caption2.weight(.bold))
-                    .tracking(0.7)
-                    .foregroundStyle(AppTheme.Color.textSecondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
+            Image(systemName: icon)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(tint)
+                .frame(width: 40, height: 40)
+                .background(tint.opacity(0.12), in: Circle())
+            Text(title)
+                .font(.appHeadline)
+                .foregroundStyle(AppTheme.Color.textPrimary)
+                .multilineTextAlignment(.leading)
+            Text("COMING SOON")
+                .font(.caption2.weight(.bold))
+                .tracking(0.7)
+                .foregroundStyle(AppTheme.Color.textSecondary)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-        .accessibilityHint("Coming soon")
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title), coming soon")
     }
 
     private var yearSummary: some View {

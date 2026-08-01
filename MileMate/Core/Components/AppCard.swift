@@ -99,9 +99,9 @@ struct RouteMapView: View {
                     .foregroundStyle(AppTheme.Color.textSecondary)
                     .multilineTextAlignment(.center)
             }
-            .padding(AppTheme.Spacing.xLarge)
+            .padding(AppTheme.Spacing.card)
             .frame(maxWidth: .infinity)
-            .frame(height: height)
+            .frame(minHeight: min(height, 140))
             .background(AppTheme.Color.elevated, in: RoundedRectangle(cornerRadius: AppTheme.Radius.large))
             .accessibilityElement(children: .combine)
         } else {
@@ -126,14 +126,14 @@ struct RouteMapView: View {
             .frame(height: height)
             .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.large))
             .overlay(alignment: .bottomLeading) {
-                Label(showsUserLocation ? "Live route" : "Route preview", systemImage: "location.fill")
+                Label(showsUserLocation ? "Live Route" : "Recorded Route", systemImage: "location.fill")
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(.regularMaterial, in: Capsule())
                     .padding(12)
             }
-            .accessibilityLabel("Map preview from \(origin) to \(destination)")
+            .accessibilityLabel("Recorded route from \(origin) to \(destination)")
             .onAppear { fitRoute() }
             .onChange(of: route) { _, _ in fitRoute() }
         }

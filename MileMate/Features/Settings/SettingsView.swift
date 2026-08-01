@@ -3,7 +3,6 @@ import SwiftUI
 struct SettingsView: View {
     @State private var viewModel: SettingsViewModel
     @AppStorage("appAppearance") private var appearance = AppAppearance.system.rawValue
-    @State private var cloudBackup = false
 
     init(repository: any MileageRepository) {
         _viewModel = State(initialValue: SettingsViewModel(repository: repository))
@@ -29,15 +28,6 @@ struct SettingsView: View {
                 }
             }
 
-            settingsSection("Notifications") {
-                Toggle(isOn: $viewModel.smartReminders) {
-                    settingLabel("Smart reminders", icon: "bell.badge.fill", tint: .orange)
-                }
-                Toggle(isOn: $viewModel.weeklySummary) {
-                    settingLabel("Weekly summary", icon: "calendar.badge.clock", tint: AppTheme.Color.brand)
-                }
-            }
-
             settingsSection("Tax") {
                 destination("IRS rate", icon: "dollarsign.circle.fill", tint: AppTheme.Color.positive) {
                     TaxSettingsView()
@@ -48,9 +38,6 @@ struct SettingsView: View {
             }
 
             settingsSection("MileMate") {
-                Toggle(isOn: $cloudBackup) {
-                    settingLabel("Cloud backup", icon: "icloud.fill", tint: AppTheme.Color.brand)
-                }
                 Picker(selection: $appearance) {
                     ForEach(AppAppearance.allCases, id: \.self) {
                         Text($0.rawValue).tag($0.rawValue)

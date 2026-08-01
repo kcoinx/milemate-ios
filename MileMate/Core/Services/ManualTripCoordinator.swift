@@ -18,12 +18,15 @@ final class ManualTripCoordinator {
     private let repository: any MileageRepository
     private var processor = LocationSampleProcessor()
     private var elapsedTask: Task<Void, Never>?
+    private var geocodeTask: Task<Void, Never>?
     private var startedAt: Date?
+    private var lastGeocodedAt: Date?
     private var pendingStart = false
 
     private(set) var state: State = .ready
     private(set) var distanceMeters = 0.0
     private(set) var elapsedTime: TimeInterval = 0
+    private(set) var currentLocationLabel: String?
     var pendingTrip: Trip?
 
     init(locationService: any LocationService, repository: any MileageRepository) {
@@ -89,10 +92,15 @@ final class ManualTripCoordinator {
         reverseGeocodePendingTrip()
     }
 
-    func savePendingTrip(classification: Trip.Classification, notes: String) async throws {
+    func savePendingTrip(
+        classification: Trip.Classification,
+        purpose: String,
+        notes: String
+    ) async throws {
         guard var trip = pendingTrip else { return }
         trip.classification = classification
-        trip.purpose = notes
+        trip.purpose = purpose
+        trip.notes = notes
         trip.updatedAt = .now
         try await repository.save(trip)
         NotificationCenter.default.post(name: .mileageTripsDidChange, object: trip.id)
@@ -116,6 +124,8 @@ final class ManualTripCoordinator {
         processor.reset()
         distanceMeters = 0
         elapsedTime = 0
+        currentLocationLabel = nil
+        lastGeocodedAt = nil
         startedAt = .now
         state = .tracking
         locationService.startUpdatingLocation()
@@ -143,6 +153,7 @@ final class ManualTripCoordinator {
             guard state == .tracking else { return }
             for sample in samples where processor.process(sample) {
                 distanceMeters = processor.distanceMeters
+                updateCurrentLocationContext(using: sample)
             }
         case .failed(let message):
             guard state == .tracking else { return }
@@ -155,6 +166,8 @@ final class ManualTripCoordinator {
         locationService.stopUpdatingLocation()
         elapsedTask?.cancel()
         elapsedTask = nil
+        geocodeTask?.cancel()
+        geocodeTask = nil
         pendingStart = false
     }
 
@@ -162,8 +175,28 @@ final class ManualTripCoordinator {
         processor.reset()
         distanceMeters = 0
         elapsedTime = 0
+        currentLocationLabel = nil
+        lastGeocodedAt = nil
         startedAt = nil
         state = .ready
+    }
+
+    private func updateCurrentLocationContext(using sample: LocationSample) {
+        let now = Date()
+        guard lastGeocodedAt.map({ now.timeIntervalSince($0) >= 20 }) ?? true else { return }
+        lastGeocodedAt = now
+        geocodeTask?.cancel()
+
+        geocodeTask = Task { [weak self] in
+            let coordinate = TripCoordinate(
+                latitude: sample.latitude,
+                longitude: sample.longitude,
+                timestamp: sample.timestamp
+            )
+            let label = await Self.areaName(for: coordinate)
+            guard !Task.isCancelled, let self, self.state == .tracking else { return }
+            self.currentLocationLabel = label
+        }
     }
 
     private func reverseGeocodePendingTrip() {
@@ -191,6 +224,21 @@ final class ManualTripCoordinator {
                 .nilIfEmpty ?? "Unknown location"
         } catch {
             return "Unknown location"
+        }
+    }
+
+    private static func areaName(for coordinate: TripCoordinate) async -> String? {
+        let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        do {
+            let placemarks = try await CLGeocoder().reverseGeocodeLocation(location)
+            guard let placemark = placemarks.first else { return nil }
+            return [placemark.locality, placemark.administrativeArea]
+                .compactMap { $0 }
+                .uniqued()
+                .joined(separator: ", ")
+                .nilIfEmpty
+        } catch {
+            return nil
         }
     }
 }

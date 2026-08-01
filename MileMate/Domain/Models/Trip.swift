@@ -21,6 +21,7 @@ struct Trip: Identifiable, Hashable, Codable, Sendable {
     var distanceMiles: Double
     var classification: Classification
     var purpose: String
+    var notes: String
     var startCoordinate: TripCoordinate?
     var endCoordinate: TripCoordinate?
     var route: [TripCoordinate]
@@ -36,6 +37,7 @@ struct Trip: Identifiable, Hashable, Codable, Sendable {
         distanceMiles: Double,
         classification: Classification,
         purpose: String,
+        notes: String = "",
         startCoordinate: TripCoordinate? = nil,
         endCoordinate: TripCoordinate? = nil,
         route: [TripCoordinate] = [],
@@ -50,6 +52,7 @@ struct Trip: Identifiable, Hashable, Codable, Sendable {
         self.distanceMiles = distanceMiles
         self.classification = classification
         self.purpose = purpose
+        self.notes = notes
         self.startCoordinate = startCoordinate
         self.endCoordinate = endCoordinate
         self.route = route
@@ -67,4 +70,19 @@ struct Trip: Identifiable, Hashable, Codable, Sendable {
             classification: classification
         )
     }
+}
+
+enum TripPurposeOptions {
+    static let presets = [
+        "Client Meeting",
+        "Property Showing",
+        "Delivery",
+        "Service Call",
+        "Site Visit",
+        "Supply Run",
+        "Office",
+        "Healthcare Visit",
+        "Inspection"
+    ]
+    static let other = "Other"
 }

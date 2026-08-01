@@ -60,15 +60,6 @@ struct TripsView: View {
         }
         .searchable(text: $viewModel.searchText, prompt: "Search destinations")
         .navigationDestination(for: Trip.self) { TripDetailView(trip: $0, repository: repository) }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: {}) {
-                    Image(systemName: "line.3.horizontal.decrease")
-                        .frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("Trip filters")
-            }
-        }
         .confirmationDialog(
             "Delete this trip?",
             isPresented: Binding(

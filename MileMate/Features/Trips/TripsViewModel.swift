@@ -20,7 +20,8 @@ final class TripsViewModel {
             let matchesSearch = searchText.isEmpty ||
                 trip.originName.localizedStandardContains(searchText) ||
                 trip.destinationName.localizedStandardContains(searchText) ||
-                trip.purpose.localizedStandardContains(searchText)
+                trip.purpose.localizedStandardContains(searchText) ||
+                trip.notes.localizedStandardContains(searchText)
             return matchesType && matchesSearch
         }
     }

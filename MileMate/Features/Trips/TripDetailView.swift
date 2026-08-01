@@ -6,16 +6,23 @@ struct TripDetailView: View {
     @State private var isEditing = false
     @State private var showingDeleteConfirmation = false
     @State private var saveError: String?
+    @State private var purposeSelection: String
+    @State private var customPurpose: String
     @Environment(\.dismiss) private var dismiss
 
     init(trip: Trip, repository: any MileageRepository) {
         self.repository = repository
         _trip = State(initialValue: trip)
-    }
-
-    private var averageSpeed: Double {
-        guard trip.duration > 0 else { return 0 }
-        return trip.distanceMiles / (trip.duration / 3_600)
+        if trip.purpose.isEmpty {
+            _purposeSelection = State(initialValue: "")
+            _customPurpose = State(initialValue: "")
+        } else if TripPurposeOptions.presets.contains(trip.purpose) {
+            _purposeSelection = State(initialValue: trip.purpose)
+            _customPurpose = State(initialValue: "")
+        } else {
+            _purposeSelection = State(initialValue: TripPurposeOptions.other)
+            _customPurpose = State(initialValue: trip.purpose)
+        }
     }
 
     var body: some View {
@@ -29,8 +36,7 @@ struct TripDetailView: View {
                 )
 
                 routeTimeline
-                tripMetrics
-                notesCard
+                tripInformation
 
                 if let saveError {
                     Text(saveError)
@@ -146,55 +152,66 @@ struct TripDetailView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private var tripMetrics: some View {
+    private var tripInformation: some View {
         AppCard {
-            VStack(spacing: AppTheme.Spacing.xLarge) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
                 HStack {
-                    metric("Distance", value: trip.distanceMiles.milesFormatted, icon: "road.lanes")
-                    Spacer()
-                    metric("Duration", value: trip.duration.formattedDuration, icon: "clock")
-                    Spacer()
-                    metric("Avg. speed", value: "\(averageSpeed.formatted(.number.precision(.fractionLength(0)))) mph", icon: "speedometer")
-                }
-                Divider()
-                HStack {
-                    Text("Estimated IRS deduction")
+                    Label("Estimated Deduction", systemImage: "dollarsign.circle.fill")
                         .foregroundStyle(AppTheme.Color.textSecondary)
                     Spacer()
                     Text(trip.estimatedDeduction.currencyFormatted)
                         .font(.appTitle)
                         .foregroundStyle(AppTheme.Color.positive)
                 }
-            }
-        }
-    }
 
-    private var notesCard: some View {
-        AppCard {
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
-                Label("Trip notes", systemImage: "note.text")
-                    .font(.appHeadline)
-                if isEditing {
-                    TextField("Optional trip notes", text: $trip.purpose, axis: .vertical)
-                        .lineLimit(3...6)
-                } else {
-                    Text(trip.purpose.isEmpty ? "No notes" : trip.purpose)
-                        .foregroundStyle(AppTheme.Color.textSecondary)
+                Divider()
+
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.small) {
+                    Label("Trip Purpose", systemImage: "briefcase.fill")
+                        .font(.appHeadline)
+                    if isEditing {
+                        Picker("Trip Purpose", selection: $purposeSelection) {
+                            Text("Not specified").tag("")
+                            ForEach(TripPurposeOptions.presets, id: \.self) {
+                                Text($0).tag($0)
+                            }
+                            Text(TripPurposeOptions.other).tag(TripPurposeOptions.other)
+                        }
+
+                        if purposeSelection == TripPurposeOptions.other {
+                            TextField("Custom trip purpose", text: $customPurpose)
+                        }
+                    } else {
+                        Text(trip.purpose.isEmpty ? "Not specified" : trip.purpose)
+                            .foregroundStyle(AppTheme.Color.textSecondary)
+                    }
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.small) {
+                    Label("Notes", systemImage: "note.text")
+                        .font(.appHeadline)
+                    if isEditing {
+                        TextField("Optional trip notes", text: $trip.notes, axis: .vertical)
+                            .lineLimit(2...5)
+                    } else {
+                        Text(trip.notes.isEmpty ? "No notes" : trip.notes)
+                            .foregroundStyle(AppTheme.Color.textSecondary)
+                    }
                 }
             }
         }
     }
 
-    private func metric(_ title: String, value: String, icon: String) -> some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon).foregroundStyle(AppTheme.Color.brand)
-            Text(value).font(.subheadline.weight(.bold)).monospacedDigit()
-            Text(title).font(.caption).foregroundStyle(AppTheme.Color.textSecondary)
-        }
-        .accessibilityElement(children: .combine)
+    private var resolvedPurpose: String {
+        purposeSelection == TripPurposeOptions.other
+            ? customPurpose.trimmingCharacters(in: .whitespacesAndNewlines)
+            : purposeSelection
     }
 
     private func persistChanges() {
+        trip.purpose = resolvedPurpose
         trip.updatedAt = .now
         Task {
             do {

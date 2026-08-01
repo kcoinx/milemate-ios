@@ -6,6 +6,8 @@ struct TripReviewView: View {
     let onSaved: () -> Void
 
     @State private var classification: Trip.Classification
+    @State private var purposeSelection: String
+    @State private var customPurpose: String
     @State private var notes: String
     @State private var isSaving = false
     @State private var errorMessage: String?
@@ -16,7 +18,17 @@ struct TripReviewView: View {
         self.coordinator = coordinator
         self.onSaved = onSaved
         _classification = State(initialValue: trip.classification)
-        _notes = State(initialValue: trip.purpose)
+        if trip.purpose.isEmpty {
+            _purposeSelection = State(initialValue: "")
+            _customPurpose = State(initialValue: "")
+        } else if TripPurposeOptions.presets.contains(trip.purpose) {
+            _purposeSelection = State(initialValue: trip.purpose)
+            _customPurpose = State(initialValue: "")
+        } else {
+            _purposeSelection = State(initialValue: TripPurposeOptions.other)
+            _customPurpose = State(initialValue: trip.purpose)
+        }
+        _notes = State(initialValue: trip.notes)
     }
 
     var body: some View {
@@ -41,6 +53,20 @@ struct TripReviewView: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                }
+
+                Section("Trip Purpose") {
+                    Picker("Purpose", selection: $purposeSelection) {
+                        Text("Not specified").tag("")
+                        ForEach(TripPurposeOptions.presets, id: \.self) {
+                            Text($0).tag($0)
+                        }
+                        Text(TripPurposeOptions.other).tag(TripPurposeOptions.other)
+                    }
+
+                    if purposeSelection == TripPurposeOptions.other {
+                        TextField("Custom trip purpose", text: $customPurpose)
+                    }
                 }
 
                 Section("Notes") {
@@ -94,12 +120,22 @@ struct TripReviewView: View {
         isSaving = true
         Task {
             do {
-                try await coordinator.savePendingTrip(classification: classification, notes: notes)
+                try await coordinator.savePendingTrip(
+                    classification: classification,
+                    purpose: resolvedPurpose,
+                    notes: notes
+                )
                 onSaved()
             } catch {
                 errorMessage = "The trip could not be saved. Please try again."
                 isSaving = false
             }
         }
+    }
+
+    private var resolvedPurpose: String {
+        purposeSelection == TripPurposeOptions.other
+            ? customPurpose.trimmingCharacters(in: .whitespacesAndNewlines)
+            : purposeSelection
     }
 }

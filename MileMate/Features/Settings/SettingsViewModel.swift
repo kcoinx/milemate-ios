@@ -11,8 +11,6 @@ final class SettingsViewModel {
     }
 
     private let repository: any MileageRepository
-    var smartReminders = true
-    var weeklySummary = true
     private(set) var frequentPlaces: [FrequentPlace] = []
 
     init(repository: any MileageRepository) {
