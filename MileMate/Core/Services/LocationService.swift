@@ -1,11 +1,12 @@
 @preconcurrency import CoreLocation
 import Foundation
 
-struct LocationSample: Sendable {
+struct LocationSample: Codable, Sendable {
     let latitude: Double
     let longitude: Double
     let horizontalAccuracy: Double
     let timestamp: Date
+    var speed: Double = -1
 }
 
 enum LocationServiceEvent: Sendable {
@@ -66,7 +67,8 @@ final class CoreLocationService: NSObject, LocationService, CLLocationManagerDel
                 latitude: $0.coordinate.latitude,
                 longitude: $0.coordinate.longitude,
                 horizontalAccuracy: $0.horizontalAccuracy,
-                timestamp: $0.timestamp
+                timestamp: $0.timestamp,
+                speed: $0.speed
             )
         }
         Task { @MainActor [weak self] in
@@ -92,6 +94,11 @@ struct LocationSampleProcessor {
     mutating func reset() {
         acceptedSamples = []
         distanceMeters = 0
+    }
+
+    mutating func restore(samples: [LocationSample], distanceMeters: Double) {
+        acceptedSamples = samples
+        self.distanceMeters = max(distanceMeters, 0)
     }
 
     @discardableResult

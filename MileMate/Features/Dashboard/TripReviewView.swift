@@ -1,8 +1,8 @@
 import SwiftUI
 
-struct TripReviewView: View {
+struct TripReviewView<Coordinator: TripReviewCoordinating>: View {
     let trip: Trip
-    let coordinator: ManualTripCoordinator
+    @Bindable var coordinator: Coordinator
     let onSaved: () -> Void
 
     @State private var classification: Trip.Classification
@@ -13,9 +13,9 @@ struct TripReviewView: View {
     @State private var errorMessage: String?
     @State private var showingShortTripConfirmation = false
 
-    init(trip: Trip, coordinator: ManualTripCoordinator, onSaved: @escaping () -> Void) {
+    init(trip: Trip, coordinator: Coordinator, onSaved: @escaping () -> Void) {
         self.trip = trip
-        self.coordinator = coordinator
+        _coordinator = Bindable(wrappedValue: coordinator)
         self.onSaved = onSaved
         _classification = State(initialValue: trip.classification)
         if trip.purpose.isEmpty {

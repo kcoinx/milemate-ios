@@ -3,8 +3,19 @@ import Foundation
 import Observation
 
 @MainActor
+protocol TripReviewCoordinating: AnyObject, Observable {
+    var pendingTrip: Trip? { get }
+    func savePendingTrip(
+        classification: Trip.Classification,
+        purpose: String,
+        notes: String
+    ) async throws
+    func discardPendingTrip()
+}
+
+@MainActor
 @Observable
-final class ManualTripCoordinator {
+final class ManualTripCoordinator: TripReviewCoordinating {
     enum State: Equatable {
         case ready
         case requestingPermission

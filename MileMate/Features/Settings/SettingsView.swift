@@ -1,11 +1,23 @@
+import CoreLocation
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     @State private var viewModel: SettingsViewModel
+    @Bindable private var automaticTripCoordinator: AutomaticTripCoordinator
     @AppStorage("appAppearance") private var appearance = AppAppearance.system.rawValue
+    @AppStorage(AutomaticTrackingSettings.enabledKey) private var automaticTrackingEnabled = false
+    @AppStorage(AutomaticTrackingSettings.minimumDistanceKey)
+    private var automaticMinimumDistance = AutomaticTrackingSettings.defaultMinimumDistance
+    @State private var showingAutomaticTrackingExplanation = false
+    @Environment(\.openURL) private var openURL
 
-    init(repository: any MileageRepository) {
+    init(
+        repository: any MileageRepository,
+        automaticTripCoordinator: AutomaticTripCoordinator
+    ) {
         _viewModel = State(initialValue: SettingsViewModel(repository: repository))
+        _automaticTripCoordinator = Bindable(wrappedValue: automaticTripCoordinator)
     }
 
     var body: some View {
@@ -13,13 +25,67 @@ struct SettingsView: View {
             profileSection
 
             settingsSection("Tracking") {
-                destination("Tracking status", icon: "location.fill", tint: AppTheme.Color.brand) {
-                    InformationView(
-                        title: "Tracking",
+                Toggle(isOn: automaticTrackingBinding) {
+                    settingLabel(
+                        "Automatic Tracking (Recommended)",
                         icon: "location.fill",
-                        message: "Automatic mileage tracking will be available in the next milestone."
+                        tint: AppTheme.Color.brand
                     )
                 }
+                .disabled(
+                    automaticTripCoordinator.state == .tracking ||
+                    automaticTripCoordinator.state == .reviewing
+                )
+
+                LabeledContent {
+                    Text(automaticTrackingEnabled ? "Switch modes to use" : "Available")
+                        .foregroundStyle(AppTheme.Color.textSecondary)
+                } label: {
+                    settingLabel("Manual Tracking", icon: "play.circle.fill", tint: AppTheme.Color.brand)
+                }
+
+                if automaticTrackingEnabled {
+                    Stepper(
+                        value: $automaticMinimumDistance,
+                        in: 0.10...2.0,
+                        step: 0.10
+                    ) {
+                        LabeledContent(
+                            "Ignore Short Trips",
+                            value: "Under \(automaticMinimumDistance.milesFormatted)"
+                        )
+                    }
+
+                    permissionRow(
+                        "Location",
+                        status: locationPermissionText,
+                        icon: "location.circle.fill"
+                    )
+                    permissionRow(
+                        "Motion & Fitness",
+                        status: motionPermissionText,
+                        icon: "figure.walk.motion"
+                    )
+
+                    if automaticTripCoordinator.state == .permissionRequired ||
+                        automaticTripCoordinator.locationAuthorizationStatus == .authorizedWhenInUse {
+                        Button {
+                            guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                            openURL(url)
+                        } label: {
+                            Label("Open iPhone Settings", systemImage: "gear")
+                        }
+                    }
+                }
+
+                Toggle(isOn: .constant(false)) {
+                    settingLabel(
+                        "Automatically Classify Frequent Routes",
+                        icon: "arrow.triangle.branch",
+                        tint: AppTheme.Color.textSecondary
+                    )
+                }
+                .disabled(true)
                 destination("Vehicles", icon: "car.side.fill", tint: AppTheme.Color.brand) {
                     VehiclesView()
                 }
@@ -81,6 +147,19 @@ struct SettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: .mileageTripsDidChange)) { _ in
             Task { await viewModel.loadFrequentPlaces() }
         }
+        .confirmationDialog(
+            "Enable Automatic Tracking?",
+            isPresented: $showingAutomaticTrackingExplanation,
+            titleVisibility: .visible
+        ) {
+            Button("Continue") {
+                automaticTrackingEnabled = true
+                automaticTripCoordinator.setEnabled(true)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("MileMate uses Motion & Fitness to recognize driving and Always Location to record work trips in the background. Precise GPS runs only after driving is detected.")
+        }
     }
 
     private var profileSection: some View {
@@ -125,6 +204,51 @@ struct SettingsView: View {
                 .foregroundStyle(.white)
                 .frame(width: 30, height: 30)
                 .background(tint.gradient, in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    private var automaticTrackingBinding: Binding<Bool> {
+        Binding(
+            get: { automaticTrackingEnabled },
+            set: { enabled in
+                if enabled {
+                    showingAutomaticTrackingExplanation = true
+                } else {
+                    automaticTrackingEnabled = false
+                    automaticTripCoordinator.setEnabled(false)
+                }
+            }
+        )
+    }
+
+    private var locationPermissionText: String {
+        switch automaticTripCoordinator.locationAuthorizationStatus {
+        case .authorizedAlways: "Always Allowed"
+        case .authorizedWhenInUse: "While Using App"
+        case .denied: "Denied"
+        case .restricted: "Restricted"
+        case .notDetermined: "Not Requested"
+        @unknown default: "Unavailable"
+        }
+    }
+
+    private var motionPermissionText: String {
+        switch automaticTripCoordinator.motionPermissionStatus {
+        case .authorized: "Allowed"
+        case .notDetermined: "Not Requested"
+        case .denied: "Denied"
+        case .restricted: "Restricted"
+        case .unavailable: "Unavailable"
+        }
+    }
+
+    private func permissionRow(_ title: String, status: String, icon: String) -> some View {
+        LabeledContent {
+            Text(status)
+                .foregroundStyle(AppTheme.Color.textSecondary)
+        } label: {
+            Label(title, systemImage: icon)
+                .foregroundStyle(AppTheme.Color.textPrimary)
         }
     }
 

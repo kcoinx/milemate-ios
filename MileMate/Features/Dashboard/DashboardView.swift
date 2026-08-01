@@ -4,14 +4,21 @@ struct DashboardView: View {
     private let repository: any MileageRepository
     @State private var viewModel: DashboardViewModel
     @Bindable private var tripCoordinator: ManualTripCoordinator
+    @Bindable private var automaticTripCoordinator: AutomaticTripCoordinator
+    @AppStorage(AutomaticTrackingSettings.enabledKey) private var automaticTrackingEnabled = false
     @State private var isPulsing = false
     @State private var hasAppeared = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(repository: any MileageRepository, tripCoordinator: ManualTripCoordinator) {
+    init(
+        repository: any MileageRepository,
+        tripCoordinator: ManualTripCoordinator,
+        automaticTripCoordinator: AutomaticTripCoordinator
+    ) {
         self.repository = repository
         _viewModel = State(initialValue: DashboardViewModel(repository: repository))
         _tripCoordinator = Bindable(wrappedValue: tripCoordinator)
+        _automaticTripCoordinator = Bindable(wrappedValue: automaticTripCoordinator)
     }
 
     var body: some View {
@@ -34,6 +41,12 @@ struct DashboardView: View {
             }
             .interactiveDismissDisabled()
         }
+        .sheet(item: $automaticTripCoordinator.pendingTrip) { trip in
+            TripReviewView(trip: trip, coordinator: automaticTripCoordinator) {
+                Task { await viewModel.load() }
+            }
+            .interactiveDismissDisabled()
+        }
         .onAppear {
             Task { await viewModel.load() }
             if reduceMotion {
@@ -44,6 +57,7 @@ struct DashboardView: View {
             updateTrackingPulse()
         }
         .onChange(of: tripCoordinator.state) { _, _ in updateTrackingPulse() }
+        .onChange(of: automaticTripCoordinator.state) { _, _ in updateTrackingPulse() }
         .onReceive(NotificationCenter.default.publisher(for: .mileageTripsDidChange)) { _ in
             Task { await viewModel.load() }
         }
@@ -74,45 +88,47 @@ struct DashboardView: View {
                     Circle()
                         .fill(Color.white.opacity(0.2))
                         .frame(width: 22, height: 22)
-                        .scaleEffect(tripCoordinator.state == .tracking && isPulsing ? 1.35 : 0.9)
+                        .scaleEffect(isRecording && isPulsing ? 1.35 : 0.9)
                     Circle()
                         .fill(Color.white)
                         .frame(width: 8, height: 8)
                 }
-                Text(tripCoordinator.state == .tracking ? "MANUAL TRACKING ACTIVE" : "READY TO TRACK")
+                Text(trackingStatus)
                     .font(.caption.weight(.bold))
                     .tracking(1.2)
-                    .padding(.horizontal, tripCoordinator.state == .tracking ? 10 : 0)
-                    .padding(.vertical, tripCoordinator.state == .tracking ? 6 : 0)
-                    .background(.white.opacity(tripCoordinator.state == .tracking ? 0.14 : 0), in: Capsule())
+                    .padding(.horizontal, isRecording ? 10 : 0)
+                    .padding(.vertical, isRecording ? 6 : 0)
+                    .background(.white.opacity(isRecording ? 0.14 : 0), in: Capsule())
                 Spacer()
                 Image(systemName: "location.fill")
             }
 
-            if tripCoordinator.state == .tracking {
+            if isRecording {
                 activeTripSummary
             } else {
                 yearToDateSummary
             }
 
-            Button {
-                if tripCoordinator.state == .tracking {
-                    tripCoordinator.stopTrip()
-                } else {
-                    tripCoordinator.startTrip()
+            if !automaticTrackingEnabled || tripCoordinator.state == .tracking {
+                Button {
+                    if tripCoordinator.state == .tracking {
+                        tripCoordinator.stopTrip()
+                    } else {
+                        tripCoordinator.startTrip()
+                    }
+                } label: {
+                    Label(
+                        tripCoordinator.state == .tracking ? "Stop Trip" : "Start Trip",
+                        systemImage: tripCoordinator.state == .tracking ? "stop.fill" : "play.fill"
+                    )
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 50)
+                    .background(.white, in: Capsule())
+                    .foregroundStyle(tripCoordinator.state == .tracking ? Color.red : AppTheme.Color.brand)
                 }
-            } label: {
-                Label(
-                    tripCoordinator.state == .tracking ? "Stop Trip" : "Start Trip",
-                    systemImage: tripCoordinator.state == .tracking ? "stop.fill" : "play.fill"
-                )
-                .font(.headline)
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: 50)
-                .background(.white, in: Capsule())
-                .foregroundStyle(tripCoordinator.state == .tracking ? Color.red : AppTheme.Color.brand)
+                .disabled(tripCoordinator.state == .requestingPermission || tripCoordinator.state == .reviewing)
             }
-            .disabled(tripCoordinator.state == .requestingPermission || tripCoordinator.state == .reviewing)
 
             if tripCoordinator.state == .permissionDenied {
                 Text("Location access is denied. Enable it in iPhone Settings to record a trip.")
@@ -151,17 +167,17 @@ struct DashboardView: View {
                     .font(.caption.weight(.bold))
                     .tracking(1)
                     .foregroundStyle(.white.opacity(0.72))
-                Text(tripCoordinator.distanceMiles.milesFormatted)
+                Text(activeDistanceMiles.milesFormatted)
                     .font(.system(size: 56, weight: .bold, design: .rounded))
                     .minimumScaleFactor(0.72)
                     .contentTransition(.numericText())
                     .animation(
                         reduceMotion ? nil : .smooth(duration: 0.3),
-                        value: tripCoordinator.distanceMiles
+                        value: activeDistanceMiles
                     )
             }
 
-            if let location = tripCoordinator.currentLocationLabel {
+            if let location = activeLocationLabel {
                 Label(location, systemImage: "location.fill")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.white.opacity(0.84))
@@ -172,12 +188,12 @@ struct DashboardView: View {
             HStack(spacing: AppTheme.Spacing.medium) {
                 activeMetric(
                     "Elapsed Time",
-                    value: tripCoordinator.elapsedTime.formattedDuration,
+                    value: activeElapsedTime.formattedDuration,
                     icon: "clock.fill"
                 )
                 activeMetric(
                     "Estimated Deduction",
-                    value: tripCoordinator.currentDeduction.currencyFormatted,
+                    value: activeDeduction.currencyFormatted,
                     icon: "dollarsign.circle.fill"
                 )
             }
@@ -294,7 +310,7 @@ struct DashboardView: View {
     }
 
     private func updateTrackingPulse() {
-        guard tripCoordinator.state == .tracking, !reduceMotion else {
+        guard isRecording, !reduceMotion else {
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) { isPulsing = false }
@@ -308,12 +324,12 @@ struct DashboardView: View {
 
     private var mapSection: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
-            SectionHeader(title: tripCoordinator.state == .tracking ? "Live Route" : "Recorded Route")
-            if tripCoordinator.state == .tracking {
+            SectionHeader(title: isRecording ? "Live Route" : "Recorded Route")
+            if isRecording {
                 RouteMapView(
                     origin: "Trip start",
                     destination: "Current location",
-                    route: tripCoordinator.currentRoute,
+                    route: activeRoute,
                     height: 260,
                     showsUserLocation: true,
                     showsEndMarker: false
@@ -329,6 +345,58 @@ struct DashboardView: View {
                 RouteMapView(origin: "", destination: "", height: 260)
             }
         }
+    }
+
+    private var isRecording: Bool {
+        tripCoordinator.state == .tracking || automaticTripCoordinator.state == .tracking
+    }
+
+    private var trackingStatus: String {
+        if tripCoordinator.state == .tracking {
+            return "MANUAL TRACKING ACTIVE"
+        }
+        switch automaticTripCoordinator.state {
+        case .tracking:
+            return "TRACKING AUTOMATICALLY"
+        case .detecting:
+            return "DETECTING A DRIVE"
+        case .permissionRequired:
+            return "AUTOMATIC TRACKING NEEDS PERMISSION"
+        case .reviewing:
+            return "TRIP READY FOR REVIEW"
+        case .failed:
+            return "AUTOMATIC TRACKING PAUSED"
+        default:
+            return automaticTrackingEnabled ? "READY FOR AUTOMATIC TRACKING" : "READY TO TRACK"
+        }
+    }
+
+    private var activeDistanceMiles: Double {
+        tripCoordinator.state == .tracking
+            ? tripCoordinator.distanceMiles
+            : automaticTripCoordinator.distanceMiles
+    }
+
+    private var activeElapsedTime: TimeInterval {
+        tripCoordinator.state == .tracking
+            ? tripCoordinator.elapsedTime
+            : automaticTripCoordinator.elapsedTime
+    }
+
+    private var activeDeduction: Double {
+        tripCoordinator.state == .tracking
+            ? tripCoordinator.currentDeduction
+            : automaticTripCoordinator.currentDeduction
+    }
+
+    private var activeRoute: [TripCoordinate] {
+        tripCoordinator.state == .tracking
+            ? tripCoordinator.currentRoute
+            : automaticTripCoordinator.currentRoute
+    }
+
+    private var activeLocationLabel: String? {
+        tripCoordinator.state == .tracking ? tripCoordinator.currentLocationLabel : nil
     }
 
     private var weeklySummary: some View {

@@ -267,9 +267,12 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = MileMate;
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "MileMate uses your location while you record a trip to calculate mileage and display your route.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "MileMate uses your location in the background to automatically detect and record work-related drives, even when the app is not open.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "MileMate uses your location to record mileage and display the route for work-related trips.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "MileMate uses Motion & Fitness activity to recognize driving and avoid recording walking, running, or cycling as trips.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = location;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -297,9 +300,12 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = MileMate;
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "MileMate uses your location while you record a trip to calculate mileage and display your route.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "MileMate uses your location in the background to automatically detect and record work-related drives, even when the app is not open.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "MileMate uses your location to record mileage and display the route for work-related trips.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "MileMate uses Motion & Fitness activity to recognize driving and avoid recording walking, running, or cycling as trips.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = location;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;

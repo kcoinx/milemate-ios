@@ -5,6 +5,7 @@ struct AppDependencies {
     let mileageRepository: any MileageRepository
     let locationService: any LocationService
     let tripCoordinator: ManualTripCoordinator
+    let automaticTripCoordinator: AutomaticTripCoordinator
     let modelContainer: ModelContainer
 
     static func live() -> AppDependencies {
@@ -12,13 +13,29 @@ struct AppDependencies {
             let container = try ModelContainer(for: StoredTrip.self)
             let repository = SwiftDataMileageRepository(modelContainer: container)
             let locationService = CoreLocationService()
+            let manualCoordinator = ManualTripCoordinator(
+                locationService: locationService,
+                repository: repository
+            )
+            let automaticCoordinator = AutomaticTripCoordinator(
+                locationService: CoreAutomaticLocationService(),
+                motionService: CoreMotionActivityService(),
+                repository: repository,
+                isManualTrackingActive: {
+                    switch manualCoordinator.state {
+                    case .requestingPermission, .tracking, .reviewing:
+                        true
+                    case .ready, .permissionDenied, .failed:
+                        false
+                    }
+                }
+            )
+            automaticCoordinator.startIfEnabled()
             return AppDependencies(
                 mileageRepository: repository,
                 locationService: locationService,
-                tripCoordinator: ManualTripCoordinator(
-                    locationService: locationService,
-                    repository: repository
-                ),
+                tripCoordinator: manualCoordinator,
+                automaticTripCoordinator: automaticCoordinator,
                 modelContainer: container
             )
         } catch {

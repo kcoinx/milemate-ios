@@ -12,19 +12,32 @@ struct AppTabView: View {
             tab(.dashboard) {
                 DashboardView(
                     repository: dependencies.mileageRepository,
-                    tripCoordinator: dependencies.tripCoordinator
+                    tripCoordinator: dependencies.tripCoordinator,
+                    automaticTripCoordinator: dependencies.automaticTripCoordinator
                 )
             }
             tab(.trips) { TripsView(repository: dependencies.mileageRepository) }
             tab(.reports) { ReportsView(repository: dependencies.mileageRepository) }
             tab(.insights) { InsightsView(repository: dependencies.mileageRepository) }
-            tab(.settings) { SettingsView(repository: dependencies.mileageRepository) }
+            tab(.settings) {
+                SettingsView(
+                    repository: dependencies.mileageRepository,
+                    automaticTripCoordinator: dependencies.automaticTripCoordinator
+                )
+            }
         }
         .tint(AppTheme.Color.brand)
         .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
         .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .background {
+            switch newPhase {
+            case .background:
                 dependencies.tripCoordinator.appDidEnterBackground()
+            case .active:
+                dependencies.automaticTripCoordinator.startIfEnabled()
+            case .inactive:
+                break
+            @unknown default:
+                break
             }
         }
     }
