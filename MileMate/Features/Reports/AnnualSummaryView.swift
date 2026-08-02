@@ -91,20 +91,27 @@ struct AnnualSummaryView: View {
     private var yearPicker: some View {
         Menu {
             ForEach(viewModel.availableYears, id: \.self) { year in
-                Button("\(year)") { viewModel.selectedYear = year }
+                Button {
+                    viewModel.selectedYear = year
+                } label: {
+                    Text(verbatim: plainYear(year))
+                }
             }
         } label: {
-            HStack {
+            HStack(alignment: .center, spacing: AppTheme.Spacing.medium) {
                 Label("Tax Year", systemImage: "calendar")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
-                Text("\(viewModel.selectedYear)")
-                    .font(.headline.monospacedDigit())
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption.weight(.semibold))
+                HStack(spacing: AppTheme.Spacing.small) {
+                    Text(verbatim: plainYear(viewModel.selectedYear))
+                        .font(.headline.monospacedDigit())
+                        .frame(minWidth: 44, alignment: .trailing)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption.weight(.semibold))
+                }
             }
             .foregroundStyle(AppTheme.Color.textPrimary)
-            .frame(minHeight: 44)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .padding(.horizontal, AppTheme.Spacing.large)
             .background(
                 AppTheme.Color.surface,
@@ -116,7 +123,9 @@ struct AnnualSummaryView: View {
     private var overview: some View {
         AppCard {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
-                SectionHeader(title: "\(viewModel.selectedYear) overview")
+                SectionHeader(
+                    title: "\(plainYear(viewModel.selectedYear)) overview"
+                )
 
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xSmall) {
                     Text("BUSINESS MILES")
@@ -160,7 +169,7 @@ struct AnnualSummaryView: View {
                     GridRow {
                         metric(
                             "MOST ACTIVE MONTH",
-                            value: viewModel.summary.mostActiveMonth ?? "Not available"
+                            value: viewModel.summary.mostActiveMonth ?? "No data yet"
                         )
                         metric(
                             "PRIMARY VEHICLE",
@@ -186,24 +195,39 @@ struct AnnualSummaryView: View {
         AppCard {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
                 SectionHeader(title: "Monthly business mileage")
-                Chart(viewModel.summary.monthlyMileage) { item in
-                    BarMark(
-                        x: .value("Month", item.label),
-                        y: .value("Business miles", item.miles)
+                if viewModel.summary.businessMiles > 0 {
+                    Chart(viewModel.summary.monthlyMileage) { item in
+                        BarMark(
+                            x: .value("Month", item.label),
+                            y: .value("Business miles", item.miles)
+                        )
+                        .foregroundStyle(AppTheme.Color.brand.gradient)
+                        .cornerRadius(4)
+                    }
+                    .chartXAxis {
+                        AxisMarks(values: .automatic(desiredCount: 6))
+                    }
+                    .chartYAxis {
+                        AxisMarks(position: .leading)
+                    }
+                    .frame(height: 190)
+                    .accessibilityLabel(
+                        "Monthly business mileage for \(plainYear(viewModel.selectedYear))"
                     )
-                    .foregroundStyle(AppTheme.Color.brand.gradient)
-                    .cornerRadius(4)
+                } else {
+                    VStack(spacing: AppTheme.Spacing.small) {
+                        Text("No business mileage recorded this year.")
+                            .font(.headline)
+                            .foregroundStyle(AppTheme.Color.textPrimary)
+                        Text("Complete Business trips to see your monthly trend.")
+                            .font(.subheadline)
+                            .foregroundStyle(AppTheme.Color.textSecondary)
+                    }
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, minHeight: 190)
+                    .padding(.horizontal, AppTheme.Spacing.large)
+                    .accessibilityElement(children: .combine)
                 }
-                .chartXAxis {
-                    AxisMarks(values: .automatic(desiredCount: 6))
-                }
-                .chartYAxis {
-                    AxisMarks(position: .leading)
-                }
-                .frame(height: 190)
-                .accessibilityLabel(
-                    "Monthly business mileage for \(viewModel.selectedYear)"
-                )
             }
         }
     }
@@ -256,6 +280,10 @@ struct AnnualSummaryView: View {
     private var shouldShowMileageSplit: Bool {
         viewModel.summary.businessMiles > 0 &&
         viewModel.summary.personalMiles > 0
+    }
+
+    private func plainYear(_ year: Int) -> String {
+        String(year)
     }
 
     private func metric(_ title: String, value: String) -> some View {
