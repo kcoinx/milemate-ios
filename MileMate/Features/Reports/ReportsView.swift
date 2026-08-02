@@ -152,7 +152,7 @@ struct ReportsView: View {
                             value: viewModel.summary.estimatedDeduction.currencyFormatted
                         )
                         reportMetric(
-                            "RECORDED TRIPS",
+                            "BUSINESS TRIPS",
                             value: "\(viewModel.summary.tripCount)"
                         )
                     }
@@ -425,7 +425,7 @@ struct ReportsView: View {
                 SectionHeader(title: "2026 at a glance")
                 summaryRow("Business Mileage", value: viewModel.summary.businessMiles.milesFormatted)
                 Divider()
-                summaryRow("Recorded Trips", value: "\(viewModel.summary.tripCount)")
+                summaryRow("Business Trips", value: "\(viewModel.summary.tripCount)")
                 Divider()
                 summaryRow("Deduction Rate", value: MileageSettings.mileageRate.formatted(.currency(code: "USD")) + " / mile")
                 Divider()

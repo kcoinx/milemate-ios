@@ -7,11 +7,19 @@ final class MileageReportExportTests: XCTestCase {
     func testPreparationIncludesBusinessTripsOnly() throws {
         let selection = selection()
         let business = trip(classification: .business, miles: 12)
+        let zeroMileageBusiness = trip(classification: .business, miles: 0)
+        let negativeMileageBusiness = trip(classification: .business, miles: -2)
         let personal = trip(classification: .personal, miles: 20)
         let unclassified = trip(classification: .unclassified, miles: 30)
 
         let report = try MileageReportPreparationService.prepare(
-            trips: [personal, business, unclassified],
+            trips: [
+                personal,
+                zeroMileageBusiness,
+                business,
+                negativeMileageBusiness,
+                unclassified
+            ],
             places: [],
             profile: nil,
             selection: selection,
@@ -285,6 +293,7 @@ final class MileageReportExportTests: XCTestCase {
         let report = try MileageReportPreparationService.prepare(
             trips: [
                 trip(classification: .personal, miles: 20),
+                trip(classification: .business, miles: 0),
                 business
             ],
             places: [],
@@ -318,6 +327,7 @@ final class MileageReportExportTests: XCTestCase {
             trips: [
                 trip(date: january, classification: .business, miles: 4),
                 trip(date: march, classification: .business, miles: 12),
+                trip(date: march, classification: .business, miles: 0),
                 trip(date: march, classification: .personal, miles: 7)
             ],
             year: 2026,
@@ -372,15 +382,28 @@ final class MileageReportExportTests: XCTestCase {
 
     func testPreparedTotalsMatchReportsSummaryCalculation() throws {
         let business = trip(classification: .business, miles: 9)
+        let zeroMileageBusiness = trip(classification: .business, miles: 0)
+        let trips = [
+            business,
+            zeroMileageBusiness,
+            trip(classification: .personal, miles: 4)
+        ]
         let report = try MileageReportPreparationService.prepare(
-            trips: [business, trip(classification: .personal, miles: 4)],
+            trips: trips,
             places: [],
             profile: nil,
             selection: selection(rate: MileageSettings.mileageRate),
             reportToken: "MATCH"
         )
-        let screenSummary = MileageSummaryCalculator.summary(for: [business])
+        let screenSummary = MileageReportPreparationService.reportingSummary(
+            trips: trips,
+            interval: selection().interval,
+            vehicleID: nil,
+            mileageRate: MileageSettings.mileageRate
+        )
 
+        XCTAssertEqual(report.businessTripCount, 1)
+        XCTAssertEqual(screenSummary.tripCount, 1)
         XCTAssertEqual(
             report.businessMiles,
             screenSummary.businessMiles,

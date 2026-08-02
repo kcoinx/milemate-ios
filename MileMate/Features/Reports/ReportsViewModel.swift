@@ -37,13 +37,17 @@ final class ReportsViewModel {
     }
 
     var summary: MileageSummary {
-        MileageSummaryCalculator.summary(for: filteredTrips)
+        MileageReportPreparationService.reportingSummary(
+            trips: trips,
+            interval: selectedInterval,
+            vehicleID: selectedVehicleID,
+            mileageRate: MileageSettings.mileageRate
+        )
     }
 
     var weeklyMileage: [WeeklyMileage] {
         let calendar = Calendar.current
-        let businessTrips = filteredTrips.filter { $0.classification == .business }
-        let grouped = Dictionary(grouping: businessTrips) {
+        let grouped = Dictionary(grouping: qualifyingBusinessTrips) {
             calendar.dateInterval(of: .weekOfYear, for: $0.startedAt)?.start
                 ?? calendar.startOfDay(for: $0.startedAt)
         }
@@ -69,8 +73,7 @@ final class ReportsViewModel {
             end: min(interval.end, selectedInterval.end)
         )
         guard clippedInterval.start < clippedInterval.end else { return nil }
-        let hasTrips = filteredTrips.contains { trip in
-            trip.classification == .business &&
+        let hasTrips = qualifyingBusinessTrips.contains { trip in
             clippedInterval.contains(trip.startedAt)
         }
         return hasTrips ? clippedInterval : nil
@@ -106,11 +109,10 @@ final class ReportsViewModel {
     }
 
     var vehicleBreakdown: [VehicleMileage] {
-        let business = MileageReportPreparationService.filteredTrips(
+        let business = MileageReportPreparationService.qualifyingBusinessTrips(
             trips,
             interval: selectedInterval,
-            vehicleID: nil,
-            classifications: [.business]
+            vehicleID: nil
         )
         let grouped = Dictionary(grouping: business) { $0.vehicle?.nickname ?? "No vehicle assigned" }
         return grouped.map { name, trips in
@@ -122,12 +124,11 @@ final class ReportsViewModel {
         .sorted { $0.miles > $1.miles }
     }
 
-    private var filteredTrips: [Trip] {
-        MileageReportPreparationService.filteredTrips(
+    private var qualifyingBusinessTrips: [Trip] {
+        MileageReportPreparationService.qualifyingBusinessTrips(
             trips,
             interval: selectedInterval,
-            vehicleID: selectedVehicleID,
-            classifications: Set(Trip.Classification.allCases)
+            vehicleID: selectedVehicleID
         )
     }
 

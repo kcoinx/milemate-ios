@@ -71,16 +71,13 @@ enum MileageReportPreparationService {
         generatedAt: Date = .now,
         reportToken: String = String(UUID().uuidString.prefix(4))
     ) throws -> MileageReportData {
-        let businessTrips = filteredTrips(
+        let businessTrips = qualifyingBusinessTrips(
             trips,
             interval: selection.interval,
-            vehicleID: selection.vehicleID,
-            classifications: [.business]
+            vehicleID: selection.vehicleID
         )
 
-        guard businessTrips.contains(where: { trip in
-            trip.distanceMiles > 0
-        }) else {
+        guard !businessTrips.isEmpty else {
             throw MileageReportPreparationError.noBusinessTrips
         }
 
@@ -197,6 +194,42 @@ enum MileageReportPreparationService {
             }
     }
 
+    static func isQualifyingBusinessTrip(_ trip: Trip) -> Bool {
+        trip.classification == .business && trip.distanceMiles > 0
+    }
+
+    static func qualifyingBusinessTrips(
+        _ trips: [Trip],
+        interval: DateInterval,
+        vehicleID: UUID?
+    ) -> [Trip] {
+        filteredTrips(
+            trips,
+            interval: interval,
+            vehicleID: vehicleID,
+            classifications: [.business]
+        )
+        .filter { trip in
+            isQualifyingBusinessTrip(trip)
+        }
+    }
+
+    static func reportingSummary(
+        trips: [Trip],
+        interval: DateInterval,
+        vehicleID: UUID?,
+        mileageRate: Double
+    ) -> MileageSummary {
+        MileageSummaryCalculator.summary(
+            for: qualifyingBusinessTrips(
+                trips,
+                interval: interval,
+                vehicleID: vehicleID
+            ),
+            mileageRate: mileageRate
+        )
+    }
+
     static func annualSummary(
         trips: [Trip],
         year: Int,
@@ -205,18 +238,17 @@ enum MileageReportPreparationService {
         calendar: Calendar = .current
     ) -> AnnualMileageSummary {
         let interval = annualInterval(year: year, calendar: calendar)
-        let relevant = filteredTrips(
+        let business = qualifyingBusinessTrips(
+            trips,
+            interval: interval,
+            vehicleID: vehicleID
+        )
+        let personal = filteredTrips(
             trips,
             interval: interval,
             vehicleID: vehicleID,
-            classifications: [.business, .personal]
+            classifications: [.personal]
         )
-        let business = relevant.filter { trip in
-            trip.classification == .business
-        }
-        let personal = relevant.filter { trip in
-            trip.classification == .personal
-        }
         let monthly = (1...12).map { month in
             let miles = business
                 .filter { trip in
