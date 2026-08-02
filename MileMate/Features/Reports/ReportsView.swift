@@ -82,7 +82,7 @@ struct ReportsView: View {
                             .font(.caption.weight(.bold))
                             .tracking(1.1)
                             .foregroundStyle(AppTheme.Color.textSecondary)
-                        Text("Tax Summary")
+                        Text("Monthly Summary")
                             .font(.appTitle)
                     }
                     Spacer()
