@@ -18,7 +18,10 @@ final class MileageReportExportTests: XCTestCase {
             reportToken: "TEST"
         )
 
-        XCTAssertEqual(report.trips.map(\.id), [business.id])
+        XCTAssertEqual(
+            report.trips.map { trip in trip.id },
+            [business.id]
+        )
         XCTAssertEqual(report.businessMiles, 12, accuracy: 0.001)
     }
 
@@ -57,7 +60,10 @@ final class MileageReportExportTests: XCTestCase {
             reportToken: "TEST"
         )
 
-        XCTAssertEqual(report.trips.map(\.id), [included.id])
+        XCTAssertEqual(
+            report.trips.map { trip in trip.id },
+            [included.id]
+        )
     }
 
     func testSummaryTotalsUseConfiguredMileageRate() throws {
@@ -118,7 +124,10 @@ final class MileageReportExportTests: XCTestCase {
             reportToken: "TEST"
         )
 
-        XCTAssertEqual(report.trips.map(\.id), [earlier.id, later.id])
+        XCTAssertEqual(
+            report.trips.map { trip in trip.id },
+            [earlier.id, later.id]
+        )
     }
 
     func testNoBusinessTripsRejectsExport() {
@@ -149,8 +158,14 @@ final class MileageReportExportTests: XCTestCase {
         )
 
         XCTAssertGreaterThan(pages.count, 1)
-        XCTAssertEqual(pages.flatMap(\.rowIndices), Array(0..<80))
-        XCTAssertEqual(pages.filter(\.includesRecordSummary).count, 1)
+        XCTAssertEqual(
+            pages.flatMap { page in page.rowIndices },
+            Array(0..<80)
+        )
+        XCTAssertEqual(
+            pages.filter { page in page.includesRecordSummary }.count,
+            1
+        )
         XCTAssertTrue(pages.last?.includesRecordSummary == true)
     }
 

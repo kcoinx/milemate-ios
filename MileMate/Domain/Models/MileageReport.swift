@@ -167,7 +167,9 @@ enum MileageReportPreparationService {
     }
 
     private static func sanitizedToken(_ token: String) -> String {
-        let value = token.uppercased().filter(\.isLetterOrNumber)
+        let value = token.uppercased().filter { character in
+            character.isLetter || character.isNumber
+        }
         return String(value.prefix(8)).nilIfBlank ?? "REPORT"
     }
 

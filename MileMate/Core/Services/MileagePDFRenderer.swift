@@ -32,7 +32,9 @@ final class MileagePDFRenderer {
             kCGPDFContextCreator as String: "MileMate"
         ]
         let renderer = UIGraphicsPDFRenderer(bounds: pageRect, format: format)
-        let rowHeights = report.trips.map(rowHeight)
+        let rowHeights = report.trips.map { trip in
+            rowHeight(trip)
+        }
         let plans = MileageReportPaginator.pages(
             rowHeights: rowHeights,
             firstPageCapacity: 360,
