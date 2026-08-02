@@ -56,6 +56,26 @@ final class ReportsViewModel {
         .sorted { $0.weekStart < $1.weekStart }
     }
 
+    func businessWeek(containing date: Date) -> DateInterval? {
+        let calendar = Calendar.current
+        guard let interval = calendar.dateInterval(
+            of: .weekOfYear,
+            for: date
+        ) else {
+            return nil
+        }
+        let clippedInterval = DateInterval(
+            start: max(interval.start, selectedInterval.start),
+            end: min(interval.end, selectedInterval.end)
+        )
+        guard clippedInterval.start < clippedInterval.end else { return nil }
+        let hasTrips = filteredTrips.contains { trip in
+            trip.classification == .business &&
+            clippedInterval.contains(trip.startedAt)
+        }
+        return hasTrips ? clippedInterval : nil
+    }
+
     func load() async {
         async let fetchedTrips = repository.fetchTrips()
         async let fetchedVehicles = repository.fetchVehicles()

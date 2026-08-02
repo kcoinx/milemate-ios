@@ -29,11 +29,18 @@ enum AppTab: Hashable {
     }
 }
 
+struct TripsFilterRequest: Equatable, Sendable {
+    let interval: DateInterval
+    let classification: Trip.Classification
+    let vehicleID: UUID?
+}
+
 @MainActor
 @Observable
 final class AppRouter {
     var selectedTab: AppTab = .dashboard
     var requestedTrip: Trip?
+    var requestedTripsFilter: TripsFilterRequest?
 
     private let repository: any MileageRepository
     private weak var automaticTripCoordinator: AutomaticTripCoordinator?
@@ -48,6 +55,19 @@ final class AppRouter {
 
     func showAutomaticTripReview() {
         selectedTab = .dashboard
+    }
+
+    func showTrips(
+        for interval: DateInterval,
+        classification: Trip.Classification,
+        vehicleID: UUID?
+    ) {
+        requestedTripsFilter = TripsFilterRequest(
+            interval: interval,
+            classification: classification,
+            vehicleID: vehicleID
+        )
+        selectedTab = .trips
     }
 
     func handleNotificationTap(tripID: UUID) async {

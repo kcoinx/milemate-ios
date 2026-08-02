@@ -14,13 +14,16 @@ struct ReportsView: View {
     }
 
     private let repository: any MileageRepository
+    private let router: AppRouter
     @State private var viewModel: ReportsViewModel
     @State private var generatingAction: ExportAction?
     @State private var exportedReport: ExportedReport?
     @State private var exportErrorMessage: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(repository: any MileageRepository) {
+    init(repository: any MileageRepository, router: AppRouter) {
         self.repository = repository
+        self.router = router
         _viewModel = State(initialValue: ReportsViewModel(repository: repository))
     }
 
@@ -271,10 +274,10 @@ struct ReportsView: View {
                 .font(.appHeadline)
                 .foregroundStyle(AppTheme.Color.textPrimary)
                 .multilineTextAlignment(.leading)
+                .frame(minHeight: 42, alignment: .topLeading)
             Text(isGenerating ? "Generating..." : status)
                 .font(.caption2.weight(.bold))
                 .tracking(0.7)
-                .textCase(.uppercase)
                 .foregroundStyle(tint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -369,10 +372,50 @@ struct ReportsView: View {
                             AxisValueLabel()
                         }
                     }
+                    .chartOverlay { proxy in
+                        GeometryReader { geometry in
+                            Rectangle()
+                                .fill(.clear)
+                                .contentShape(Rectangle())
+                                .gesture(
+                                    SpatialTapGesture()
+                                        .onEnded { value in
+                                            handleChartTap(
+                                                at: value.location,
+                                                proxy: proxy,
+                                                geometry: geometry
+                                            )
+                                        }
+                                )
+                        }
+                    }
                     .frame(height: 190)
                     .accessibilityLabel("Business mileage by week")
                 }
             }
+        }
+    }
+
+    private func handleChartTap(
+        at location: CGPoint,
+        proxy: ChartProxy,
+        geometry: GeometryProxy
+    ) {
+        guard let plotFrame = proxy.plotFrame else { return }
+        let frame = geometry[plotFrame]
+        let plotX = location.x - frame.origin.x
+        guard plotX >= 0,
+              plotX <= frame.width,
+              let date = proxy.value(atX: plotX, as: Date.self),
+              let interval = viewModel.businessWeek(containing: date) else {
+            return
+        }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {
+            router.showTrips(
+                for: interval,
+                classification: .business,
+                vehicleID: viewModel.selectedVehicleID
+            )
         }
     }
 

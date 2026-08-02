@@ -26,10 +26,16 @@ struct AppTabView: View {
                 TripsView(
                     repository: dependencies.mileageRepository,
                     requestedTrip: $router.requestedTrip,
+                    requestedFilter: $router.requestedTripsFilter,
                     notificationService: dependencies.notificationService
                 )
             }
-            tab(.reports) { ReportsView(repository: dependencies.mileageRepository) }
+            tab(.reports) {
+                ReportsView(
+                    repository: dependencies.mileageRepository,
+                    router: dependencies.router
+                )
+            }
             tab(.insights) { InsightsView(repository: dependencies.mileageRepository) }
             tab(.settings) {
                 SettingsView(

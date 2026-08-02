@@ -393,6 +393,45 @@ final class MileageReportExportTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testReportWeekSelectionRequiresBusinessTrips() async {
+        let viewModel = ReportsViewModel(repository: MockMileageRepository())
+        await viewModel.load()
+        let businessTrip = MockData.trips.first { trip in
+            trip.classification == .business
+        }
+        let emptyDate = Calendar.current.date(
+            byAdding: .year,
+            value: 10,
+            to: .now
+        ) ?? .distantFuture
+
+        XCTAssertNotNil(
+            businessTrip.flatMap { trip in
+                viewModel.businessWeek(containing: trip.startedAt)
+            }
+        )
+        XCTAssertNil(viewModel.businessWeek(containing: emptyDate))
+    }
+
+    @MainActor
+    func testTripsDateFilterComposesWithExistingFilters() async {
+        let viewModel = TripsViewModel(repository: MockMileageRepository())
+        await viewModel.load()
+        guard let trip = MockData.trips.first else {
+            XCTFail("Mock data must include a trip")
+            return
+        }
+        viewModel.dateFilter = DateInterval(
+            start: trip.startedAt.addingTimeInterval(-1),
+            end: trip.startedAt.addingTimeInterval(1)
+        )
+        viewModel.selection = trip.classification
+
+        XCTAssertEqual(viewModel.filteredTrips.count, 1)
+        XCTAssertEqual(viewModel.filteredTrips.first?.id, trip.id)
+    }
+
     private func selection(
         type: MileageReportType = .monthly,
         interval: DateInterval? = nil,

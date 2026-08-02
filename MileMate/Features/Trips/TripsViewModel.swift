@@ -14,6 +14,7 @@ final class TripsViewModel {
     var selection: Trip.Classification?
     var searchText = ""
     var vehicleFilter = VehicleFilter.all
+    var dateFilter: DateInterval?
     private(set) var trips: [Trip] = []
     private(set) var vehicles: [Vehicle] = []
     private(set) var errorMessage: String?
@@ -25,6 +26,7 @@ final class TripsViewModel {
     var filteredTrips: [Trip] {
         trips.filter { trip in
             let matchesType = selection == nil || trip.classification == selection
+            let matchesDate = dateFilter?.contains(trip.startedAt) ?? true
             let matchesSearch = searchText.isEmpty ||
                 trip.originName.localizedStandardContains(searchText) ||
                 trip.destinationName.localizedStandardContains(searchText) ||
@@ -39,7 +41,7 @@ final class TripsViewModel {
             case .unassigned:
                 matchesVehicle = trip.vehicle == nil
             }
-            return matchesType && matchesSearch && matchesVehicle
+            return matchesType && matchesDate && matchesSearch && matchesVehicle
         }
     }
 

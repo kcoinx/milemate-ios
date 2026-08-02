@@ -4,6 +4,7 @@ struct TripsView: View {
     private let repository: any MileageRepository
     private let notificationService: any TripNotificationScheduling
     @Binding private var requestedTrip: Trip?
+    @Binding private var requestedFilter: TripsFilterRequest?
     @State private var viewModel: TripsViewModel
     @State private var hasAppeared = false
     @State private var tripPendingDeletion: Trip?
@@ -12,11 +13,13 @@ struct TripsView: View {
     init(
         repository: any MileageRepository,
         requestedTrip: Binding<Trip?> = .constant(nil),
+        requestedFilter: Binding<TripsFilterRequest?> = .constant(nil),
         notificationService: any TripNotificationScheduling
     ) {
         self.repository = repository
         self.notificationService = notificationService
         _requestedTrip = requestedTrip
+        _requestedFilter = requestedFilter
         _viewModel = State(initialValue: TripsViewModel(repository: repository))
     }
 
@@ -79,7 +82,11 @@ struct TripsView: View {
         .navigationTitle("Trips")
         .onAppear {
             hasAppeared = true
+            applyRequestedFilter(requestedFilter)
             Task { await viewModel.load() }
+        }
+        .onChange(of: requestedFilter) { _, request in
+            applyRequestedFilter(request)
         }
         .searchable(text: $viewModel.searchText, prompt: "Search destinations")
         .navigationDestination(for: Trip.self) { TripDetailView(trip: $0, repository: repository) }
@@ -114,6 +121,18 @@ struct TripsView: View {
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
+    }
+
+    private func applyRequestedFilter(_ request: TripsFilterRequest?) {
+        guard let request else { return }
+        viewModel.dateFilter = request.interval
+        viewModel.selection = request.classification
+        if let vehicleID = request.vehicleID {
+            viewModel.vehicleFilter = .vehicle(vehicleID)
+        } else {
+            viewModel.vehicleFilter = .all
+        }
+        requestedFilter = nil
     }
 
     private var overview: some View {
@@ -251,7 +270,12 @@ struct TripsView: View {
 
     private func filterButton(_ title: String, selection: Trip.Classification?) -> some View {
         let isSelected = viewModel.selection == selection
-        return Button(title) { viewModel.selection = selection }
+        return Button(title) {
+            viewModel.selection = selection
+            if selection == nil {
+                viewModel.dateFilter = nil
+            }
+        }
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(isSelected ? Color.white : AppTheme.Color.textPrimary)
             .padding(.horizontal, 17)
