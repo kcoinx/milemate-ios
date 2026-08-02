@@ -70,6 +70,10 @@ final class AppRouter {
         selectedTab = .trips
     }
 
+    func showTrackingPermissions() {
+        selectedTab = .settings
+    }
+
     func handleNotificationTap(tripID: UUID) async {
         if automaticTripCoordinator?.pendingTrip?.id == tripID {
             requestedTrip = nil

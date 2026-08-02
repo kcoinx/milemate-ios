@@ -80,6 +80,18 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         coordinator.discardPendingTrip()
     }
 
+    func testReviewPermissionsRouteOpensSettings() {
+        let (coordinator, _, _) = makeCoordinator()
+        let router = AppRouter(
+            repository: MockMileageRepository(),
+            automaticTripCoordinator: coordinator
+        )
+
+        router.showTrackingPermissions()
+
+        XCTAssertEqual(router.selectedTab, .settings)
+    }
+
     private func makeCoordinator(
         stopInterval: TimeInterval = 180
     ) -> (

@@ -19,7 +19,8 @@ struct AppTabView: View {
                     repository: dependencies.mileageRepository,
                     tripCoordinator: dependencies.tripCoordinator,
                     automaticTripCoordinator: dependencies.automaticTripCoordinator,
-                    notificationService: dependencies.notificationService
+                    notificationService: dependencies.notificationService,
+                    router: dependencies.router
                 )
             }
             tab(.trips) {

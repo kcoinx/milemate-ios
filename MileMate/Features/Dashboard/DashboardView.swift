@@ -1,8 +1,10 @@
+import CoreLocation
 import SwiftUI
 
 struct DashboardView: View {
     private let repository: any MileageRepository
     private let notificationService: any TripNotificationScheduling
+    private let router: AppRouter
     @State private var viewModel: DashboardViewModel
     @Bindable private var tripCoordinator: ManualTripCoordinator
     @Bindable private var automaticTripCoordinator: AutomaticTripCoordinator
@@ -18,10 +20,12 @@ struct DashboardView: View {
         repository: any MileageRepository,
         tripCoordinator: ManualTripCoordinator,
         automaticTripCoordinator: AutomaticTripCoordinator,
-        notificationService: any TripNotificationScheduling
+        notificationService: any TripNotificationScheduling,
+        router: AppRouter
     ) {
         self.repository = repository
         self.notificationService = notificationService
+        self.router = router
         _viewModel = State(initialValue: DashboardViewModel(repository: repository))
         _tripCoordinator = Bindable(wrappedValue: tripCoordinator)
         _automaticTripCoordinator = Bindable(wrappedValue: automaticTripCoordinator)
@@ -122,7 +126,7 @@ struct DashboardView: View {
 
     private var deductionHero: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xLarge) {
-            HStack(spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
                 ZStack {
                     Circle()
                         .fill(Color.white.opacity(0.2))
@@ -132,12 +136,24 @@ struct DashboardView: View {
                         .fill(Color.white)
                         .frame(width: 8, height: 8)
                 }
-                Text(trackingStatus)
-                    .font(.caption.weight(.bold))
-                    .tracking(1.2)
-                    .padding(.horizontal, isRecording ? 10 : 0)
-                    .padding(.vertical, isRecording ? 6 : 0)
-                    .background(.white.opacity(isRecording ? 0.14 : 0), in: Capsule())
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xSmall) {
+                    Text(trackingStatus)
+                        .font(.caption.weight(.bold))
+                        .tracking(1.2)
+                        .padding(.horizontal, isRecording ? 10 : 0)
+                        .padding(.vertical, isRecording ? 6 : 0)
+                        .background(
+                            .white.opacity(isRecording ? 0.14 : 0),
+                            in: Capsule()
+                        )
+                    if let trackingSupportingText {
+                        Text(trackingSupportingText)
+                            .font(.footnote)
+                            .foregroundStyle(.white.opacity(0.84))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .accessibilityElement(children: .combine)
                 Spacer()
                 Image(systemName: "location.fill")
             }
@@ -167,6 +183,20 @@ struct DashboardView: View {
                     .foregroundStyle(tripCoordinator.state == .tracking ? Color.red : AppTheme.Color.brand)
                 }
                 .disabled(tripCoordinator.state == .requestingPermission || tripCoordinator.state == .reviewing)
+            }
+
+            if shouldReviewPermissions {
+                Button {
+                    router.showTrackingPermissions()
+                } label: {
+                    Label("Review Permissions", systemImage: "checklist")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 44)
+                        .background(.white, in: Capsule())
+                        .foregroundStyle(AppTheme.Color.brand)
+                }
+                .accessibilityLabel("Review automatic tracking permissions")
             }
 
             if tripCoordinator.state == .permissionDenied {
@@ -425,21 +455,102 @@ struct DashboardView: View {
 
     private var trackingStatus: String {
         if tripCoordinator.state == .tracking {
-            return "MANUAL TRACKING ACTIVE"
+            return "Manual Tracking Active"
         }
         switch automaticTripCoordinator.state {
         case .tracking:
-            return "TRACKING AUTOMATICALLY"
+            return "Recording Trip Automatically"
         case .detecting:
-            return "DETECTING A DRIVE"
-        case .permissionRequired:
-            return "AUTOMATIC TRACKING NEEDS PERMISSION"
+            return "Detecting Drive"
         case .reviewing:
-            return "TRIP READY FOR REVIEW"
+            return "Trip Ready for Review"
+        case .permissionRequired:
+            return missingPermissionStatus
         case .failed:
-            return "AUTOMATIC TRACKING PAUSED"
+            return shouldReviewPermissions
+                ? missingPermissionStatus
+                : "Automatic Tracking Paused"
         default:
-            return automaticTrackingEnabled ? "READY FOR AUTOMATIC TRACKING" : "READY TO TRACK"
+            if shouldReviewPermissions {
+                return missingPermissionStatus
+            }
+            return automaticTrackingEnabled
+                ? "Automatic Tracking Active"
+                : "Ready to Track"
+        }
+    }
+
+    private var trackingSupportingText: String? {
+        if tripCoordinator.state == .tracking {
+            return "Your manually started trip is being recorded."
+        }
+        switch automaticTripCoordinator.state {
+        case .tracking:
+            return "MileMate is recording this qualifying trip automatically."
+        case .detecting:
+            return "MileMate is checking whether this drive qualifies for automatic recording."
+        case .reviewing:
+            return "Review and classify your completed trip."
+        case .permissionRequired:
+            return permissionSupportingText
+        case .failed:
+            return shouldReviewPermissions
+                ? permissionSupportingText
+                : "Automatic tracking is temporarily paused."
+        default:
+            if shouldReviewPermissions {
+                return permissionSupportingText
+            }
+            return automaticTrackingEnabled
+                ? "Drive normally. MileMate will automatically detect and record qualifying trips."
+                : nil
+        }
+    }
+
+    private var permissionSupportingText: String {
+        "Enable Location and Motion permissions to automatically record qualifying trips."
+    }
+
+    private var missingPermissionStatus: String {
+        switch (hasLocationPermission, hasMotionPermission) {
+        case (false, true):
+            return "Location Permission Required"
+        case (true, false):
+            return "Motion & Fitness Permission Required"
+        default:
+            return "Automatic Tracking Needs Permission"
+        }
+    }
+
+    private var shouldReviewPermissions: Bool {
+        guard automaticTrackingEnabled,
+              tripCoordinator.state != .tracking else {
+            return false
+        }
+        switch automaticTripCoordinator.state {
+        case .permissionRequired:
+            return true
+        case .tracking, .detecting, .reviewing:
+            return false
+        default:
+            return !hasLocationPermission || !hasMotionPermission
+        }
+    }
+
+    private var hasLocationPermission: Bool {
+        automaticTripCoordinator.locationAuthorizationStatus ==
+            CLAuthorizationStatus.authorizedAlways
+    }
+
+    private var hasMotionPermission: Bool {
+        switch automaticTripCoordinator.motionPermissionStatus {
+        case MotionPermissionStatus.authorized:
+            return true
+        case MotionPermissionStatus.notDetermined,
+             MotionPermissionStatus.denied,
+             MotionPermissionStatus.restricted,
+             MotionPermissionStatus.unavailable:
+            return false
         }
     }
 
