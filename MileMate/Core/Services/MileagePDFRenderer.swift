@@ -244,7 +244,7 @@ final class MileagePDFRenderer {
         let font = UIFont.systemFont(ofSize: 8)
         let contentHeight = zip(values, columns).map { pair in
             let (value, column) = pair
-            textHeight(value, width: column.width, font: font)
+            return textHeight(value, width: column.width, font: font)
         }.max() ?? CGFloat(16)
         return max(CGFloat(30), ceil(contentHeight) + CGFloat(14))
     }
