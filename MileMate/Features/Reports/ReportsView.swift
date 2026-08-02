@@ -2,7 +2,15 @@ import Charts
 import SwiftUI
 
 struct ReportsView: View {
+    private struct ExportedReport: Identifiable {
+        let url: URL
+        var id: URL { url }
+    }
+
     @State private var viewModel: ReportsViewModel
+    @State private var isGeneratingPDF = false
+    @State private var exportedReport: ExportedReport?
+    @State private var exportErrorMessage: String?
 
     init(repository: any MileageRepository) {
         _viewModel = State(initialValue: ReportsViewModel(repository: repository))
@@ -38,6 +46,25 @@ struct ReportsView: View {
         .onAppear { Task { await viewModel.load() } }
         .onReceive(NotificationCenter.default.publisher(for: .mileageTripsDidChange)) { _ in
             Task { await viewModel.load() }
+        }
+        .sheet(item: $exportedReport) { report in
+            ActivityShareSheet(items: [report.url]) {
+                removeTemporaryReport(report.url)
+                exportedReport = nil
+            }
+        }
+        .alert(
+            "Unable to Export PDF",
+            isPresented: Binding(
+                get: { exportErrorMessage != nil },
+                set: { isPresented in
+                    if !isPresented { exportErrorMessage = nil }
+                }
+            )
+        ) {
+            Button("OK", role: .cancel) { exportErrorMessage = nil }
+        } message: {
+            Text(exportErrorMessage ?? "")
         }
     }
 
@@ -99,7 +126,7 @@ struct ReportsView: View {
                         .tracking(0.8)
                         .foregroundStyle(AppTheme.Color.textSecondary)
                     Text(viewModel.summary.businessMiles.milesFormatted)
-                        .font(.system(size: 43, weight: .bold, design: .rounded))
+                        .font(.system(size: 44, weight: .bold, design: .rounded))
                         .foregroundStyle(AppTheme.Color.brand)
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
@@ -147,7 +174,13 @@ struct ReportsView: View {
         AppCard {
             VStack(spacing: AppTheme.Spacing.large) {
                 HStack(alignment: .top, spacing: AppTheme.Spacing.large) {
-                    actionCell("Export PDF", icon: "doc.richtext", tint: AppTheme.Color.brand)
+                    Button {
+                        generatePDF()
+                    } label: {
+                        exportPDFActionCell
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isGeneratingPDF)
                     Divider()
                     actionCell("Export CSV", icon: "tablecells", tint: AppTheme.Color.positive)
                 }
@@ -159,6 +192,60 @@ struct ReportsView: View {
                 }
             }
         }
+    }
+
+    private var exportPDFActionCell: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
+            Group {
+                if isGeneratingPDF {
+                    ProgressView()
+                } else {
+                    Image(systemName: "doc.richtext")
+                        .font(.title3.weight(.semibold))
+                }
+            }
+            .foregroundStyle(AppTheme.Color.brand)
+            .frame(width: 40, height: 40)
+            .background(AppTheme.Color.brand.opacity(0.12), in: Circle())
+
+            Text("Export PDF")
+                .font(.appHeadline)
+                .foregroundStyle(AppTheme.Color.textPrimary)
+            Text(isGeneratingPDF ? "GENERATING..." : "PREVIEW & SHARE")
+                .font(.caption2.weight(.bold))
+                .tracking(0.7)
+                .foregroundStyle(AppTheme.Color.brand)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            isGeneratingPDF ? "Generating PDF report" : "Export PDF, preview and share"
+        )
+    }
+
+    private func generatePDF() {
+        guard !isGeneratingPDF else { return }
+        isGeneratingPDF = true
+        exportErrorMessage = nil
+        Task {
+            await viewModel.load()
+            do {
+                let report = try viewModel.preparePDFReport()
+                let url = try MileagePDFRenderer().render(report)
+                exportedReport = ExportedReport(url: url)
+            } catch {
+                exportErrorMessage = error.localizedDescription
+            }
+            isGeneratingPDF = false
+        }
+    }
+
+    private func removeTemporaryReport(_ url: URL) {
+        guard url.deletingLastPathComponent() == FileManager.default.temporaryDirectory else {
+            return
+        }
+        try? FileManager.default.removeItem(at: url)
     }
 
     private var mileageChart: some View {

@@ -27,6 +27,8 @@ final class ReportsViewModel {
     private let repository: any MileageRepository
     private(set) var trips: [Trip] = []
     private(set) var vehicles: [Vehicle] = []
+    private(set) var places: [FrequentPlace] = []
+    private(set) var profile: UserProfile?
     var period: Period = .month
     var selectedVehicleID: UUID?
 
@@ -57,8 +59,22 @@ final class ReportsViewModel {
     func load() async {
         async let fetchedTrips = repository.fetchTrips()
         async let fetchedVehicles = repository.fetchVehicles()
+        async let fetchedPlaces = repository.fetchFrequentPlaces()
+        async let fetchedProfile = repository.fetchProfile()
         trips = (try? await fetchedTrips) ?? []
         vehicles = (try? await fetchedVehicles) ?? []
+        places = (try? await fetchedPlaces) ?? []
+        profile = try? await fetchedProfile
+    }
+
+    func preparePDFReport(generatedAt: Date = .now) throws -> MileageReportData {
+        try MileageReportPreparationService.prepare(
+            trips: trips,
+            places: places,
+            profile: profile,
+            selection: reportSelection,
+            generatedAt: generatedAt
+        )
     }
 
     var vehicleBreakdown: [VehicleMileage] {
@@ -82,7 +98,7 @@ final class ReportsViewModel {
         }
     }
 
-    private var selectedInterval: DateInterval {
+    var selectedInterval: DateInterval {
         let calendar = Calendar.current
         switch period {
         case .month:
@@ -102,5 +118,40 @@ final class ReportsViewModel {
 
     private var fallbackInterval: DateInterval {
         DateInterval(start: .distantPast, end: .distantFuture)
+    }
+
+    private var reportSelection: MileageReportSelection {
+        let calendar = Calendar.current
+        let reportType: MileageReportType
+        switch period {
+        case .month:
+            reportType = .monthly
+        case .quarter:
+            reportType = .quarterly
+        case .year:
+            reportType = .annual
+        }
+        let inclusiveEnd = selectedInterval.end.addingTimeInterval(-1)
+        let periodLabel = selectedInterval.start.formatted(
+            .dateTime.month(.wide).day().year()
+        ) + " - " + inclusiveEnd.formatted(.dateTime.month(.wide).day().year())
+        let selectedVehicle = vehicles.first { $0.id == selectedVehicleID }
+        let vehicleLabel: String
+        if let selectedVehicle {
+            vehicleLabel = selectedVehicle.detail.isEmpty
+                ? selectedVehicle.nickname
+                : "\(selectedVehicle.nickname) - \(selectedVehicle.detail)"
+        } else {
+            vehicleLabel = "All Vehicles"
+        }
+        return MileageReportSelection(
+            type: reportType,
+            interval: selectedInterval,
+            periodLabel: periodLabel,
+            taxYear: calendar.component(.year, from: selectedInterval.start),
+            vehicleID: selectedVehicleID,
+            vehicleLabel: vehicleLabel,
+            mileageRate: MileageSettings.mileageRate
+        )
     }
 }
