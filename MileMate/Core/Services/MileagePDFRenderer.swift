@@ -245,8 +245,8 @@ final class MileagePDFRenderer {
         let contentHeight = zip(values, columns).map { pair in
             let (value, column) = pair
             textHeight(value, width: column.width, font: font)
-        }.max() ?? 16
-        return max(30, ceil(contentHeight) + 14)
+        }.max() ?? CGFloat(16)
+        return max(CGFloat(30), ceil(contentHeight) + CGFloat(14))
     }
 
     private func drawRecordSummary(_ report: MileageReportData, at y: CGFloat) {
