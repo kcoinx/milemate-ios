@@ -67,7 +67,7 @@ final class ReportsViewModel {
         profile = try? await fetchedProfile
     }
 
-    func preparePDFReport(generatedAt: Date = .now) throws -> MileageReportData {
+    func prepareReportData(generatedAt: Date = .now) throws -> MileageReportData {
         try MileageReportPreparationService.prepare(
             trips: trips,
             places: places,
@@ -77,10 +77,21 @@ final class ReportsViewModel {
         )
     }
 
+    func preparePDFReport(generatedAt: Date = .now) throws -> MileageReportData {
+        try prepareReportData(generatedAt: generatedAt)
+    }
+
+    var selectedTaxYear: Int {
+        Calendar.current.component(.year, from: selectedInterval.start)
+    }
+
     var vehicleBreakdown: [VehicleMileage] {
-        let business = trips.filter {
-            selectedInterval.contains($0.startedAt) && $0.classification == .business
-        }
+        let business = MileageReportPreparationService.filteredTrips(
+            trips,
+            interval: selectedInterval,
+            vehicleID: nil,
+            classifications: [.business]
+        )
         let grouped = Dictionary(grouping: business) { $0.vehicle?.nickname ?? "No vehicle assigned" }
         return grouped.map { name, trips in
             VehicleMileage(
@@ -92,10 +103,12 @@ final class ReportsViewModel {
     }
 
     private var filteredTrips: [Trip] {
-        trips.filter {
-            selectedInterval.contains($0.startedAt) &&
-            (selectedVehicleID == nil || $0.vehicle?.id == selectedVehicleID)
-        }
+        MileageReportPreparationService.filteredTrips(
+            trips,
+            interval: selectedInterval,
+            vehicleID: selectedVehicleID,
+            classifications: Set(Trip.Classification.allCases)
+        )
     }
 
     var selectedInterval: DateInterval {
@@ -120,7 +133,7 @@ final class ReportsViewModel {
         DateInterval(start: .distantPast, end: .distantFuture)
     }
 
-    private var reportSelection: MileageReportSelection {
+    var reportSelection: MileageReportSelection {
         let calendar = Calendar.current
         let reportType: MileageReportType
         switch period {

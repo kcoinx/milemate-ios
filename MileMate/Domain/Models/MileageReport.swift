@@ -19,12 +19,22 @@ struct MileageReportSelection: Sendable {
 
 struct MileageReportTrip: Identifiable, Sendable {
     let id: UUID
-    let date: Date
+    let startedAt: Date
+    let endedAt: Date
     let start: String
     let end: String
     let distanceMiles: Double
     let purpose: String
+    let notes: String
     let vehicle: String
+
+    var date: Date { startedAt }
+    var durationMinutes: Double {
+        max(
+            endedAt.timeIntervalSince(startedAt),
+            TimeInterval(0)
+        ) / TimeInterval(60)
+    }
 }
 
 struct MileageReportData: Sendable {
@@ -61,15 +71,16 @@ enum MileageReportPreparationService {
         generatedAt: Date = .now,
         reportToken: String = String(UUID().uuidString.prefix(4))
     ) throws -> MileageReportData {
-        let businessTrips = trips
-            .filter {
-                $0.classification == .business &&
-                selection.interval.contains($0.startedAt) &&
-                (selection.vehicleID == nil || $0.vehicle?.id == selection.vehicleID)
-            }
-            .sorted { $0.startedAt < $1.startedAt }
+        let businessTrips = filteredTrips(
+            trips,
+            interval: selection.interval,
+            vehicleID: selection.vehicleID,
+            classifications: [.business]
+        )
 
-        guard !businessTrips.isEmpty else {
+        guard businessTrips.contains(where: { trip in
+            trip.distanceMiles > 0
+        }) else {
             throw MileageReportPreparationError.noBusinessTrips
         }
 
@@ -80,11 +91,13 @@ enum MileageReportPreparationService {
             )
             return MileageReportTrip(
                 id: trip.id,
-                date: trip.startedAt,
+                startedAt: trip.startedAt,
+                endedAt: trip.endedAt,
                 start: matched.start?.label ?? trip.originName,
                 end: matched.end?.label ?? trip.destinationName,
                 distanceMiles: trip.distanceMiles,
                 purpose: trip.purpose,
+                notes: trip.notes,
                 vehicle: vehicleLabel(for: trip.vehicle)
             )
         }
@@ -151,6 +164,125 @@ enum MileageReportPreparationService {
         return "MileMate-\(safeFileComponent(period))\(vehicle)-Mileage-Report.pdf"
     }
 
+    static func csvFileName(for selection: MileageReportSelection) -> String {
+        let period = filePeriod(for: selection)
+        let vehicle = selection.vehicleID == nil
+            ? ""
+            : "-\(safeFileComponent(selection.vehicleLabel))"
+        return "MileMate-\(safeFileComponent(period))\(vehicle)-Business-Mileage.csv"
+    }
+
+    static func irsFileName(for selection: MileageReportSelection) -> String {
+        let period = filePeriod(for: selection)
+        let vehicle = selection.vehicleID == nil
+            ? ""
+            : "-\(safeFileComponent(selection.vehicleLabel))"
+        return "MileMate-\(safeFileComponent(period))\(vehicle)-IRS-Mileage-Report.pdf"
+    }
+
+    static func filteredTrips(
+        _ trips: [Trip],
+        interval: DateInterval,
+        vehicleID: UUID?,
+        classifications: Set<Trip.Classification>
+    ) -> [Trip] {
+        trips
+            .filter { trip in
+                classifications.contains(trip.classification) &&
+                interval.contains(trip.startedAt) &&
+                (vehicleID == nil || trip.vehicle?.id == vehicleID)
+            }
+            .sorted { first, second in
+                first.startedAt < second.startedAt
+            }
+    }
+
+    static func annualSummary(
+        trips: [Trip],
+        year: Int,
+        vehicleID: UUID?,
+        mileageRate: Double,
+        calendar: Calendar = .current
+    ) -> AnnualMileageSummary {
+        let interval = annualInterval(year: year, calendar: calendar)
+        let relevant = filteredTrips(
+            trips,
+            interval: interval,
+            vehicleID: vehicleID,
+            classifications: [.business, .personal]
+        )
+        let business = relevant.filter { trip in
+            trip.classification == .business
+        }
+        let personal = relevant.filter { trip in
+            trip.classification == .personal
+        }
+        let monthly = (1...12).map { month in
+            let miles = business
+                .filter { trip in
+                    calendar.component(.month, from: trip.startedAt) == month
+                }
+                .reduce(0) { result, trip in
+                    result + trip.distanceMiles
+                }
+            return AnnualMonthlyMileage(
+                month: month,
+                label: calendar.shortMonthSymbols[month - 1],
+                miles: miles
+            )
+        }
+        let vehicleGroups = Dictionary(grouping: business) { trip in
+            vehicleLabel(for: trip.vehicle)
+        }
+        let vehicleBreakdown = vehicleGroups.map { label, vehicleTrips in
+            AnnualVehicleMileage(
+                vehicle: label,
+                miles: vehicleTrips.reduce(0) { result, trip in
+                    result + trip.distanceMiles
+                },
+                trips: vehicleTrips.count
+            )
+        }
+        .sorted { first, second in
+            if first.miles == second.miles {
+                return first.vehicle < second.vehicle
+            }
+            return first.miles > second.miles
+        }
+        let businessMiles = business.reduce(0) { result, trip in
+            result + trip.distanceMiles
+        }
+        let personalMiles = personal.reduce(0) { result, trip in
+            result + trip.distanceMiles
+        }
+        let deduction = business.reduce(0) { result, trip in
+            result + MileageDeductionService.deduction(
+                miles: trip.distanceMiles,
+                classification: .business,
+                rate: mileageRate
+            )
+        }
+        let mostActiveMonth = monthly
+            .filter { item in item.miles > 0 }
+            .max { first, second in first.miles < second.miles }
+
+        return AnnualMileageSummary(
+            taxYear: year,
+            businessMiles: businessMiles,
+            businessTrips: business.count,
+            estimatedDeduction: deduction,
+            mileageRate: mileageRate,
+            averageBusinessTripDistance: business.isEmpty
+                ? 0
+                : businessMiles / Double(business.count),
+            mostActiveMonth: mostActiveMonth?.label,
+            primaryVehicle: vehicleBreakdown.first?.vehicle,
+            monthlyMileage: monthly,
+            vehicleBreakdown: vehicleBreakdown,
+            personalMiles: personalMiles
+        )
+    }
+
     private static func vehicleLabel(for snapshot: VehicleSnapshot?) -> String {
         guard let snapshot else { return "No vehicle assigned" }
         if !snapshot.nickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -179,6 +311,56 @@ enum MileageReportPreparationService {
             .filter { !$0.isEmpty }
             .joined(separator: "-")
     }
+
+    private static func filePeriod(for selection: MileageReportSelection) -> String {
+        switch selection.type {
+        case .monthly:
+            return selection.interval.start.formatted(.dateTime.month(.wide).year())
+        case .quarterly:
+            let month = Calendar.current.component(.month, from: selection.interval.start)
+            return "Q\((month - 1) / 3 + 1)-\(selection.taxYear)"
+        case .annual:
+            return "\(selection.taxYear)"
+        }
+    }
+
+    private static func annualInterval(year: Int, calendar: Calendar) -> DateInterval {
+        let start = calendar.date(from: DateComponents(year: year, month: 1, day: 1))
+            ?? .distantPast
+        let end = calendar.date(byAdding: .year, value: 1, to: start)
+            ?? .distantFuture
+        return DateInterval(start: start, end: end)
+    }
+}
+
+struct AnnualMonthlyMileage: Identifiable, Sendable, Equatable {
+    let month: Int
+    let label: String
+    let miles: Double
+
+    var id: Int { month }
+}
+
+struct AnnualVehicleMileage: Identifiable, Sendable, Equatable {
+    let vehicle: String
+    let miles: Double
+    let trips: Int
+
+    var id: String { vehicle }
+}
+
+struct AnnualMileageSummary: Sendable, Equatable {
+    let taxYear: Int
+    let businessMiles: Double
+    let businessTrips: Int
+    let estimatedDeduction: Double
+    let mileageRate: Double
+    let averageBusinessTripDistance: Double
+    let mostActiveMonth: String?
+    let primaryVehicle: String?
+    let monthlyMileage: [AnnualMonthlyMileage]
+    let vehicleBreakdown: [AnnualVehicleMileage]
+    let personalMiles: Double
 }
 
 struct MileageReportPagePlan: Equatable {

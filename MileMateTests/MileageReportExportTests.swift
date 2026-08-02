@@ -147,6 +147,23 @@ final class MileageReportExportTests: XCTestCase {
         }
     }
 
+    func testZeroMileageBusinessTripRejectsExport() {
+        XCTAssertThrowsError(
+            try MileageReportPreparationService.prepare(
+                trips: [trip(classification: .business, miles: 0)],
+                places: [],
+                profile: nil,
+                selection: selection(),
+                reportToken: "TEST"
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? MileageReportPreparationError,
+                .noBusinessTrips
+            )
+        }
+    }
+
     func testLongTripListPaginationPreservesEveryRowAndAddsSummary() {
         let heights = Array(repeating: CGFloat(32), count: 80)
 
@@ -169,7 +186,215 @@ final class MileageReportExportTests: XCTestCase {
         XCTAssertTrue(pages.last?.includesRecordSummary == true)
     }
 
+    func testSharedFilteringSupportsMonthQuarterAndYearIntervals() {
+        let calendar = Calendar(identifier: .gregorian)
+        let january = calendar.date(
+            from: DateComponents(year: 2026, month: 1, day: 15)
+        ) ?? .distantPast
+        let april = calendar.date(
+            from: DateComponents(year: 2026, month: 4, day: 15)
+        ) ?? .distantPast
+        let nextYear = calendar.date(
+            from: DateComponents(year: 2027, month: 1, day: 15)
+        ) ?? .distantPast
+        let trips = [
+            trip(date: january, classification: .business, miles: 1),
+            trip(date: april, classification: .business, miles: 2),
+            trip(date: nextYear, classification: .business, miles: 3)
+        ]
+        let month = calendar.dateInterval(of: .month, for: january)
+            ?? DateInterval(start: january, duration: 2_592_000)
+        let quarter = DateInterval(
+            start: calendar.date(
+                from: DateComponents(year: 2026, month: 1, day: 1)
+            ) ?? january,
+            end: calendar.date(
+                from: DateComponents(year: 2026, month: 4, day: 1)
+            ) ?? april
+        )
+        let year = calendar.dateInterval(of: .year, for: january)
+            ?? DateInterval(start: january, duration: 31_536_000)
+
+        XCTAssertEqual(
+            MileageReportPreparationService.filteredTrips(
+                trips,
+                interval: month,
+                vehicleID: nil,
+                classifications: [.business]
+            ).count,
+            1
+        )
+        XCTAssertEqual(
+            MileageReportPreparationService.filteredTrips(
+                trips,
+                interval: quarter,
+                vehicleID: nil,
+                classifications: [.business]
+            ).count,
+            1
+        )
+        XCTAssertEqual(
+            MileageReportPreparationService.filteredTrips(
+                trips,
+                interval: year,
+                vehicleID: nil,
+                classifications: [.business]
+            ).count,
+            2
+        )
+    }
+
+    func testCSVCorrectlyEscapesQuotesCommasAndLineBreaks() {
+        XCTAssertEqual(MileageCSVRenderer.escape("Plain"), "Plain")
+        XCTAssertEqual(MileageCSVRenderer.escape("A, B"), "\"A, B\"")
+        XCTAssertEqual(
+            MileageCSVRenderer.escape("He said \"Hi\""),
+            "\"He said \"\"Hi\"\"\""
+        )
+        XCTAssertEqual(
+            MileageCSVRenderer.escape("Line 1\nLine 2"),
+            "\"Line 1\nLine 2\""
+        )
+    }
+
+    func testCSVFilenameUsesSelectedPeriodAndSafeVehicleName() {
+        let monthly = MileageReportPreparationService.csvFileName(
+            for: selection(
+                vehicleID: UUID(),
+                vehicleLabel: "Work Van / Primary"
+            )
+        )
+        let quarterly = MileageReportPreparationService.csvFileName(
+            for: selection(type: .quarterly)
+        )
+        let annual = MileageReportPreparationService.csvFileName(
+            for: selection(type: .annual)
+        )
+
+        XCTAssertEqual(
+            monthly,
+            "MileMate-August-2026-Work-Van-Primary-Business-Mileage.csv"
+        )
+        XCTAssertEqual(quarterly, "MileMate-Q3-2026-Business-Mileage.csv")
+        XCTAssertEqual(annual, "MileMate-2026-Business-Mileage.csv")
+    }
+
+    func testCSVAndIRSUsePreparedBusinessReportData() throws {
+        var business = trip(classification: .business, miles: 10)
+        business.notes = "Receipt, toll"
+        let report = try MileageReportPreparationService.prepare(
+            trips: [
+                trip(classification: .personal, miles: 20),
+                business
+            ],
+            places: [],
+            profile: nil,
+            selection: selection(rate: 0.70),
+            reportToken: "IRS1"
+        )
+        let csv = MileageCSVRenderer.csvString(for: report)
+        let irsName = MileageReportPreparationService.irsFileName(
+            for: report.selection
+        )
+
+        XCTAssertEqual(report.businessMiles, 10, accuracy: 0.001)
+        XCTAssertEqual(report.estimatedDeduction, 7, accuracy: 0.001)
+        XCTAssertEqual(report.businessTripCount, 1)
+        XCTAssertTrue(csv.contains(",Business,"))
+        XCTAssertTrue(csv.contains("\"Receipt, toll\""))
+        XCTAssertTrue(irsName.hasSuffix("-IRS-Mileage-Report.pdf"))
+    }
+
+    func testAnnualSummaryAggregatesMonthsAndMostActiveMonth() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "en_US")
+        let january = calendar.date(
+            from: DateComponents(year: 2026, month: 1, day: 10)
+        ) ?? .distantPast
+        let march = calendar.date(
+            from: DateComponents(year: 2026, month: 3, day: 10)
+        ) ?? .distantPast
+        let summary = MileageReportPreparationService.annualSummary(
+            trips: [
+                trip(date: january, classification: .business, miles: 4),
+                trip(date: march, classification: .business, miles: 12),
+                trip(date: march, classification: .personal, miles: 7)
+            ],
+            year: 2026,
+            vehicleID: nil,
+            mileageRate: 0.70,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(summary.businessMiles, 16, accuracy: 0.001)
+        XCTAssertEqual(summary.businessTrips, 2)
+        XCTAssertEqual(summary.estimatedDeduction, 11.2, accuracy: 0.001)
+        XCTAssertEqual(summary.monthlyMileage[0].miles, 4, accuracy: 0.001)
+        XCTAssertEqual(summary.monthlyMileage[2].miles, 12, accuracy: 0.001)
+        XCTAssertEqual(summary.mostActiveMonth, "Mar")
+        XCTAssertEqual(summary.personalMiles, 7, accuracy: 0.001)
+    }
+
+    func testAnnualSummaryFindsPrimaryVehicleAndBreakdown() {
+        let primary = Vehicle(nickname: "Work Van")
+        let secondary = Vehicle(nickname: "Sedan")
+        var first = trip(classification: .business, miles: 20)
+        first.vehicle = primary.snapshot
+        var second = trip(classification: .business, miles: 5)
+        second.vehicle = secondary.snapshot
+
+        let summary = MileageReportPreparationService.annualSummary(
+            trips: [second, first],
+            year: 2026,
+            vehicleID: nil,
+            mileageRate: 0.70
+        )
+
+        XCTAssertEqual(summary.primaryVehicle, "Work Van")
+        XCTAssertEqual(summary.vehicleBreakdown.count, 2)
+        XCTAssertEqual(summary.vehicleBreakdown.first?.miles, 20)
+    }
+
+    func testAnnualSummaryHandlesLegacyTripWithoutVehicle() {
+        let summary = MileageReportPreparationService.annualSummary(
+            trips: [trip(classification: .business, miles: 3)],
+            year: 2026,
+            vehicleID: nil,
+            mileageRate: 0.70
+        )
+
+        XCTAssertEqual(summary.primaryVehicle, "No vehicle assigned")
+        XCTAssertEqual(
+            summary.vehicleBreakdown.first?.vehicle,
+            "No vehicle assigned"
+        )
+    }
+
+    func testPreparedTotalsMatchReportsSummaryCalculation() throws {
+        let business = trip(classification: .business, miles: 9)
+        let report = try MileageReportPreparationService.prepare(
+            trips: [business, trip(classification: .personal, miles: 4)],
+            places: [],
+            profile: nil,
+            selection: selection(rate: MileageSettings.mileageRate),
+            reportToken: "MATCH"
+        )
+        let screenSummary = MileageSummaryCalculator.summary(for: [business])
+
+        XCTAssertEqual(
+            report.businessMiles,
+            screenSummary.businessMiles,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            report.estimatedDeduction,
+            screenSummary.estimatedDeduction,
+            accuracy: 0.001
+        )
+    }
+
     private func selection(
+        type: MileageReportType = .monthly,
         interval: DateInterval? = nil,
         vehicleID: UUID? = nil,
         vehicleLabel: String = "All Vehicles",
@@ -177,7 +402,7 @@ final class MileageReportExportTests: XCTestCase {
     ) -> MileageReportSelection {
         let interval = interval ?? dateInterval()
         return MileageReportSelection(
-            type: .monthly,
+            type: type,
             interval: interval,
             periodLabel: "August 1, 2026 - August 31, 2026",
             taxYear: 2026,

@@ -2,17 +2,25 @@ import Charts
 import SwiftUI
 
 struct ReportsView: View {
+    private enum ExportAction: Equatable {
+        case professionalPDF
+        case csv
+        case irsPDF
+    }
+
     private struct ExportedReport: Identifiable {
         let url: URL
         var id: URL { url }
     }
 
+    private let repository: any MileageRepository
     @State private var viewModel: ReportsViewModel
-    @State private var isGeneratingPDF = false
+    @State private var generatingAction: ExportAction?
     @State private var exportedReport: ExportedReport?
     @State private var exportErrorMessage: String?
 
     init(repository: any MileageRepository) {
+        self.repository = repository
         _viewModel = State(initialValue: ReportsViewModel(repository: repository))
     }
 
@@ -33,7 +41,7 @@ struct ReportsView: View {
                     vehicleBreakdown
                 }
 
-                SectionHeader(title: "Quick actions")
+                SectionHeader(title: "Exports & Reports")
                 quickActions
 
                 yearSummary
@@ -54,7 +62,7 @@ struct ReportsView: View {
             }
         }
         .alert(
-            "Unable to Export PDF",
+            "Unable to Create Report",
             isPresented: Binding(
                 get: { exportErrorMessage != nil },
                 set: { isPresented in
@@ -175,69 +183,146 @@ struct ReportsView: View {
             VStack(spacing: AppTheme.Spacing.large) {
                 HStack(alignment: .top, spacing: AppTheme.Spacing.large) {
                     Button {
-                        generatePDF()
+                        generate(.professionalPDF)
                     } label: {
-                        exportPDFActionCell
+                        reportActionCell(
+                            "Export PDF",
+                            icon: "doc.richtext",
+                            tint: AppTheme.Color.brand,
+                            status: "Preview & Share",
+                            isGenerating: generatingAction == .professionalPDF
+                        )
                     }
                     .buttonStyle(.plain)
-                    .disabled(isGeneratingPDF)
+                    .disabled(generatingAction != nil)
                     Divider()
-                    actionCell("Export CSV", icon: "tablecells", tint: AppTheme.Color.positive)
+                    Button {
+                        generate(.csv)
+                    } label: {
+                        reportActionCell(
+                            "Export CSV",
+                            icon: "tablecells",
+                            tint: AppTheme.Color.positive,
+                            status: "Export & Share",
+                            isGenerating: generatingAction == .csv
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(generatingAction != nil)
                 }
                 Divider()
                 HStack(alignment: .top, spacing: AppTheme.Spacing.large) {
-                    actionCell("IRS Mileage Report", icon: "building.columns", tint: AppTheme.Color.warning)
+                    Button {
+                        generate(.irsPDF)
+                    } label: {
+                        reportActionCell(
+                            "IRS Mileage Report",
+                            icon: "building.columns",
+                            tint: AppTheme.Color.warning,
+                            status: "Preview & Share",
+                            isGenerating: generatingAction == .irsPDF
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(generatingAction != nil)
                     Divider()
-                    actionCell("Year Summary", icon: "calendar", tint: AppTheme.Color.textPrimary)
+                    NavigationLink {
+                        AnnualSummaryView(
+                            repository: repository,
+                            initialYear: viewModel.selectedTaxYear,
+                            vehicleID: viewModel.selectedVehicleID
+                        )
+                    } label: {
+                        reportActionCell(
+                            "Annual Summary",
+                            icon: "calendar",
+                            tint: AppTheme.Color.textPrimary,
+                            status: "Open Summary",
+                            isGenerating: false
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
     }
 
-    private var exportPDFActionCell: some View {
+    private func reportActionCell(
+        _ title: String,
+        icon: String,
+        tint: Color,
+        status: String,
+        isGenerating: Bool
+    ) -> some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
             Group {
-                if isGeneratingPDF {
+                if isGenerating {
                     ProgressView()
                 } else {
-                    Image(systemName: "doc.richtext")
+                    Image(systemName: icon)
                         .font(.title3.weight(.semibold))
                 }
             }
-            .foregroundStyle(AppTheme.Color.brand)
+            .foregroundStyle(tint)
             .frame(width: 40, height: 40)
-            .background(AppTheme.Color.brand.opacity(0.12), in: Circle())
+            .background(tint.opacity(0.12), in: Circle())
 
-            Text("Export PDF")
+            Text(title)
                 .font(.appHeadline)
                 .foregroundStyle(AppTheme.Color.textPrimary)
-            Text(isGeneratingPDF ? "GENERATING..." : "PREVIEW & SHARE")
+                .multilineTextAlignment(.leading)
+            Text(isGenerating ? "Generating..." : status)
                 .font(.caption2.weight(.bold))
                 .tracking(0.7)
-                .foregroundStyle(AppTheme.Color.brand)
+                .textCase(.uppercase)
+                .foregroundStyle(tint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            isGeneratingPDF ? "Generating PDF report" : "Export PDF, preview and share"
+            isGenerating ? "Generating \(title)" : "\(title), \(status.lowercased())"
         )
     }
 
-    private func generatePDF() {
-        guard !isGeneratingPDF else { return }
-        isGeneratingPDF = true
+    private func generate(_ action: ExportAction) {
+        guard generatingAction == nil else { return }
+        generatingAction = action
         exportErrorMessage = nil
         Task {
             await viewModel.load()
             do {
-                let report = try viewModel.preparePDFReport()
-                let url = try MileagePDFRenderer().render(report)
+                let report = try viewModel.prepareReportData()
+                let url: URL
+                switch action {
+                case .professionalPDF:
+                    url = try MileagePDFRenderer().render(report)
+                case .csv:
+                    url = try MileageCSVRenderer.render(report)
+                case .irsPDF:
+                    url = try IRSMileagePDFRenderer().render(report)
+                }
                 exportedReport = ExportedReport(url: url)
+            } catch let error as MileageReportPreparationError {
+                switch error {
+                case .noBusinessTrips:
+                    exportErrorMessage = noDataMessage(for: action)
+                }
             } catch {
                 exportErrorMessage = error.localizedDescription
             }
-            isGeneratingPDF = false
+            generatingAction = nil
+        }
+    }
+
+    private func noDataMessage(for action: ExportAction) -> String {
+        switch action {
+        case .professionalPDF:
+            return "Add or classify at least one Business trip in the selected period before exporting."
+        case .csv:
+            return "No business mileage is available for the selected period. Complete and classify at least one trip with recorded mileage before exporting."
+        case .irsPDF:
+            return "No business mileage is available for the selected period. Complete and classify at least one trip with recorded mileage before creating an IRS Mileage Report."
         }
     }
 
@@ -289,27 +374,6 @@ struct ReportsView: View {
                 }
             }
         }
-    }
-
-    private func actionCell(_ title: String, icon: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
-            Image(systemName: icon)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(tint)
-                .frame(width: 40, height: 40)
-                .background(tint.opacity(0.12), in: Circle())
-            Text(title)
-                .font(.appHeadline)
-                .foregroundStyle(AppTheme.Color.textPrimary)
-                .multilineTextAlignment(.leading)
-            Text("COMING SOON")
-                .font(.caption2.weight(.bold))
-                .tracking(0.7)
-                .foregroundStyle(AppTheme.Color.textSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(title), coming soon")
     }
 
     private var yearSummary: some View {
