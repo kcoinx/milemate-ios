@@ -99,7 +99,7 @@ struct ReportsView: View {
                         .tracking(0.8)
                         .foregroundStyle(AppTheme.Color.textSecondary)
                     Text(viewModel.summary.businessMiles.milesFormatted)
-                        .font(.system(size: 42, weight: .bold, design: .rounded))
+                        .font(.system(size: 43, weight: .bold, design: .rounded))
                         .foregroundStyle(AppTheme.Color.brand)
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
@@ -122,7 +122,8 @@ struct ReportsView: View {
                         reportMetric(
                             "IRS RATE",
                             value: MileageSettings.mileageRate.formatted(.currency(code: "USD"))
-                                + " / mile"
+                                + " / mile",
+                            isReference: true
                         )
                         Color.clear
                     }
@@ -131,7 +132,7 @@ struct ReportsView: View {
                 Label(
                     viewModel.summary.businessMiles > 0
                         ? "Estimated deduction is based on your business miles and configured mileage rate."
-                        : "Classify trips as Business to include them in your estimated deduction.",
+                        : "Only Business trips contribute to your estimated deduction.",
                     systemImage: "info.circle"
                 )
                 .font(.footnote)
@@ -239,7 +240,11 @@ struct ReportsView: View {
         }
     }
 
-    private func reportMetric(_ title: String, value: String) -> some View {
+    private func reportMetric(
+        _ title: String,
+        value: String,
+        isReference: Bool = false
+    ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.caption2.weight(.semibold))
@@ -247,7 +252,11 @@ struct ReportsView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Text(value)
-                .font(.headline.weight(.semibold).monospacedDigit())
+                .font(
+                    isReference
+                        ? .subheadline.weight(.semibold).monospacedDigit()
+                        : .headline.weight(.semibold).monospacedDigit()
+                )
                 .foregroundStyle(AppTheme.Color.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
