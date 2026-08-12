@@ -74,6 +74,10 @@ final class AppRouter {
         selectedTab = .settings
     }
 
+    func showManualTracking() {
+        selectedTab = .dashboard
+    }
+
     func resolveTripDetails(tripID: UUID) async -> Trip? {
         let trips = (try? await repository.fetchTrips()) ?? []
         guard let trip = trips.first(where: { $0.id == tripID }) else {

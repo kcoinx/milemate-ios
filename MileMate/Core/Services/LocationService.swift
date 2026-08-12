@@ -18,6 +18,7 @@ enum LocationServiceEvent: Sendable {
 @MainActor
 protocol LocationService: AnyObject {
     var authorizationStatus: CLAuthorizationStatus { get }
+    var backgroundCapabilityAvailable: Bool { get }
     var eventHandler: ((LocationServiceEvent) -> Void)? { get set }
     func requestWhenInUseAuthorization()
     func requestAlwaysAuthorization()
@@ -43,6 +44,10 @@ final class CoreLocationService: NSObject, LocationService, CLLocationManagerDel
         manager.authorizationStatus
     }
 
+    var backgroundCapabilityAvailable: Bool {
+        BackgroundLocationCapability.isAvailable
+    }
+
     func requestWhenInUseAuthorization() {
         manager.requestWhenInUseAuthorization()
     }
@@ -53,14 +58,13 @@ final class CoreLocationService: NSObject, LocationService, CLLocationManagerDel
 
     @discardableResult
     func startUpdatingLocation() -> Bool {
-        let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String]
-        guard authorizationStatus == .authorizedAlways,
-              modes?.contains("location") == true else {
+        if authorizationStatus == .authorizedAlways,
+           backgroundCapabilityAvailable {
+            manager.allowsBackgroundLocationUpdates = true
+            TrackingDiagnostics.log("background tracking activated")
+        } else {
             TrackingDiagnostics.log("background tracking unavailable")
-            return false
         }
-        manager.allowsBackgroundLocationUpdates = true
-        TrackingDiagnostics.log("background tracking activated")
         manager.startUpdatingLocation()
         return true
     }
@@ -154,6 +158,7 @@ struct LocationSampleProcessor {
 @MainActor
 final class MockLocationService: LocationService {
     var authorizationStatus: CLAuthorizationStatus = .authorizedWhenInUse
+    var backgroundCapabilityAvailable = true
     var eventHandler: ((LocationServiceEvent) -> Void)?
     private(set) var isUpdating = false
 

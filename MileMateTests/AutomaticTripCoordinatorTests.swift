@@ -65,6 +65,84 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         XCTAssertFalse(location.isPreciseTracking)
     }
 
+    func testTrackingReadinessRequiresAlwaysMotionAndCapability() {
+        XCTAssertEqual(
+            AutomaticTrackingReadiness.evaluate(
+                location: .authorizedAlways,
+                motion: .authorized,
+                backgroundCapabilityAvailable: true
+            ),
+            .ready
+        )
+        XCTAssertEqual(
+            AutomaticTrackingReadiness.evaluate(
+                location: .authorizedAlways,
+                motion: .authorized,
+                backgroundCapabilityAvailable: false
+            ),
+            .backgroundCapabilityUnavailable
+        )
+        XCTAssertEqual(
+            AutomaticTrackingReadiness.evaluate(
+                location: .authorizedWhenInUse,
+                motion: .authorized,
+                backgroundCapabilityAvailable: true
+            ),
+            .locationPermissionRequired
+        )
+        XCTAssertEqual(
+            AutomaticTrackingReadiness.evaluate(
+                location: .authorizedAlways,
+                motion: .denied,
+                backgroundCapabilityAvailable: true
+            ),
+            .motionPermissionRequired
+        )
+    }
+
+    func testBackgroundCapabilityAcceptsGeneratedPlistRepresentations() {
+        XCTAssertTrue(BackgroundLocationCapability.containsLocationMode(["location"]))
+        XCTAssertTrue(BackgroundLocationCapability.containsLocationMode("location"))
+        XCTAssertFalse(BackgroundLocationCapability.containsLocationMode(["fetch"]))
+        XCTAssertFalse(BackgroundLocationCapability.containsLocationMode(nil))
+    }
+
+    func testMissingBackgroundCapabilityPreventsPreciseAutomaticTracking() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let location = MockAutomaticLocationService()
+        location.backgroundCapabilityAvailable = false
+        let motion = MockMotionActivityService()
+        let coordinator = AutomaticTripCoordinator(
+            locationService: location,
+            motionService: motion,
+            repository: MockMileageRepository(),
+            notificationService: MockTripNotificationService(),
+            isManualTrackingActive: { false }
+        )
+
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .high))
+
+        XCTAssertEqual(coordinator.trackingReadiness, .backgroundCapabilityUnavailable)
+        XCTAssertEqual(coordinator.state, .permissionRequired)
+        XCTAssertFalse(location.isPreciseTracking)
+    }
+
+    func testManualTrackingRowActionabilityAndRouting() {
+        XCTAssertTrue(ManualTrackingRowState(automaticTrackingEnabled: false).isActionable)
+        XCTAssertFalse(ManualTrackingRowState(automaticTrackingEnabled: true).isActionable)
+
+        let (coordinator, _, _) = makeCoordinator()
+        let router = AppRouter(
+            repository: MockMileageRepository(),
+            automaticTripCoordinator: coordinator
+        )
+        router.selectedTab = .settings
+        router.showManualTracking()
+        XCTAssertEqual(router.selectedTab, .dashboard)
+    }
+
     func testShortAutomaticTripIsDiscarded() async {
         enableAutomaticTracking(minimumDistance: 0.30)
         defer { clearAutomaticTrackingState() }

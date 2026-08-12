@@ -2,10 +2,22 @@ import CoreLocation
 import SwiftUI
 import UIKit
 
+enum ManualTrackingRowState: Equatable {
+    case actionable
+    case automaticModeActive
+
+    init(automaticTrackingEnabled: Bool) {
+        self = automaticTrackingEnabled ? .automaticModeActive : .actionable
+    }
+
+    var isActionable: Bool { self == .actionable }
+}
+
 struct SettingsView: View {
     @State private var viewModel: SettingsViewModel
     @Bindable private var automaticTripCoordinator: AutomaticTripCoordinator
     private let notificationService: any TripNotificationScheduling
+    private let router: AppRouter
     @AppStorage("appAppearance") private var appearance = AppAppearance.system.rawValue
     @AppStorage(AutomaticTrackingSettings.enabledKey) private var automaticTrackingEnabled = false
     @AppStorage(AutomaticTrackingSettings.minimumDistanceKey)
@@ -24,11 +36,13 @@ struct SettingsView: View {
     init(
         repository: any MileageRepository,
         automaticTripCoordinator: AutomaticTripCoordinator,
-        notificationService: any TripNotificationScheduling
+        notificationService: any TripNotificationScheduling,
+        router: AppRouter
     ) {
         _viewModel = State(initialValue: SettingsViewModel(repository: repository))
         _automaticTripCoordinator = Bindable(wrappedValue: automaticTripCoordinator)
         self.notificationService = notificationService
+        self.router = router
     }
 
     var body: some View {
@@ -48,11 +62,33 @@ struct SettingsView: View {
                     automaticTripCoordinator.state == .reviewing
                 )
 
-                LabeledContent {
-                    Text(automaticTrackingEnabled ? "Switch modes to use" : "Available")
-                        .foregroundStyle(AppTheme.Color.textSecondary)
-                } label: {
-                    settingLabel("Manual Tracking", icon: "play.circle.fill", tint: AppTheme.Color.brand)
+                if manualTrackingRowState == .automaticModeActive {
+                    LabeledContent {
+                        Text("Switch modes to use")
+                            .foregroundStyle(AppTheme.Color.textSecondary)
+                    } label: {
+                        settingLabel("Manual Tracking", icon: "play.circle.fill", tint: AppTheme.Color.brand)
+                    }
+                    .accessibilityElement(children: .combine)
+                } else {
+                    Button {
+                        router.showManualTracking()
+                    } label: {
+                        HStack {
+                            settingLabel("Manual Tracking", icon: "play.circle.fill", tint: AppTheme.Color.brand)
+                            Spacer()
+                            Text("Start from Dashboard")
+                                .font(.subheadline)
+                                .foregroundStyle(AppTheme.Color.textSecondary)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Manual Tracking")
+                    .accessibilityValue("Start from Dashboard")
+                    .accessibilityHint("Opens the Dashboard manual Start Trip flow")
                 }
 
                 Toggle(isOn: $tripFeedbackEnabled) {
@@ -85,10 +121,13 @@ struct SettingsView: View {
                         status: motionPermissionText,
                         icon: "figure.walk.motion"
                     )
+                    permissionRow(
+                        "Background Recording",
+                        status: backgroundCapabilityText,
+                        icon: "location.viewfinder"
+                    )
 
-                    if automaticTripCoordinator.state == .permissionRequired ||
-                        automaticTripCoordinator.locationAuthorizationStatus ==
-                        CLAuthorizationStatus.authorizedWhenInUse {
+                    if automaticTripCoordinator.trackingReadiness != .ready {
                         Button {
                             guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
                             openURL(url)
@@ -302,6 +341,10 @@ struct SettingsView: View {
         )
     }
 
+    private var manualTrackingRowState: ManualTrackingRowState {
+        ManualTrackingRowState(automaticTrackingEnabled: automaticTrackingEnabled)
+    }
+
     private var locationPermissionText: String {
         switch automaticTripCoordinator.locationAuthorizationStatus {
         case CLAuthorizationStatus.authorizedAlways:
@@ -332,6 +375,10 @@ struct SettingsView: View {
         case MotionPermissionStatus.unavailable:
             return "Unavailable"
         }
+    }
+
+    private var backgroundCapabilityText: String {
+        automaticTripCoordinator.backgroundCapabilityAvailable ? "Available" : "Unavailable"
     }
 
     private var notificationPermissionText: String {

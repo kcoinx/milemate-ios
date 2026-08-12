@@ -65,6 +65,25 @@ final class TrackingStabilityTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .tracking)
     }
 
+    func testManualTripContinuesWithLimitedBackgroundReadiness() {
+        UserDefaults.standard.removeObject(forKey: "manualActiveTrip")
+        defer { UserDefaults.standard.removeObject(forKey: "manualActiveTrip") }
+        let location = StabilityLocationService()
+        location.backgroundCapabilityAvailable = false
+        let coordinator = ManualTripCoordinator(
+            locationService: location,
+            repository: MockMileageRepository()
+        )
+
+        coordinator.startTrip()
+        coordinator.appDidEnterBackground()
+
+        XCTAssertEqual(coordinator.state, .tracking)
+        XCTAssertFalse(coordinator.backgroundRecordingAvailable)
+        XCTAssertTrue(location.isUpdating)
+        XCTAssertNil(coordinator.pendingTrip)
+    }
+
     func testLongRunningReminderHasSessionCooldownAndCancelsAtTripEnd() async {
         UserDefaults.standard.removeObject(forKey: "manualActiveTrip")
         defer { UserDefaults.standard.removeObject(forKey: "manualActiveTrip") }
@@ -102,6 +121,7 @@ final class TrackingStabilityTests: XCTestCase {
 @MainActor
 private final class StabilityLocationService: LocationService {
     var authorizationStatus: CLAuthorizationStatus = .authorizedAlways
+    var backgroundCapabilityAvailable = true
     var eventHandler: ((LocationServiceEvent) -> Void)?
     private(set) var isUpdating = false
 

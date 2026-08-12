@@ -42,7 +42,8 @@ struct AppTabView: View {
                 SettingsView(
                     repository: dependencies.mileageRepository,
                     automaticTripCoordinator: dependencies.automaticTripCoordinator,
-                    notificationService: dependencies.notificationService
+                    notificationService: dependencies.notificationService,
+                    router: dependencies.router
                 )
             }
         }

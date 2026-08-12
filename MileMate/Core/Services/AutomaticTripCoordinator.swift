@@ -117,6 +117,18 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         motionService.permissionStatus
     }
 
+    var backgroundCapabilityAvailable: Bool {
+        locationService.backgroundCapabilityAvailable
+    }
+
+    var trackingReadiness: AutomaticTrackingReadiness {
+        AutomaticTrackingReadiness.evaluate(
+            location: locationService.authorizationStatus,
+            motion: motionService.permissionStatus,
+            backgroundCapabilityAvailable: locationService.backgroundCapabilityAvailable
+        )
+    }
+
     func startIfEnabled() {
         guard AutomaticTrackingSettings.isEnabled else {
             state = .disabled
@@ -297,7 +309,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     }
 
     private func beginDetecting() {
-        guard locationService.authorizationStatus == CLAuthorizationStatus.authorizedAlways else {
+        guard trackingReadiness == .ready else {
             state = .permissionRequired
             return
         }
@@ -522,9 +534,12 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
 
     private func restoreActiveTrip() {
         guard AutomaticTrackingSettings.isEnabled,
-              locationService.authorizationStatus == .authorizedAlways,
               let data = UserDefaults.standard.data(forKey: Self.activeTripKey),
               let envelope = try? JSONDecoder().decode(ActiveTripEnvelope.self, from: data) else {
+            return
+        }
+        guard trackingReadiness == .ready else {
+            state = .permissionRequired
             return
         }
         candidateStartedAt = envelope.startedAt

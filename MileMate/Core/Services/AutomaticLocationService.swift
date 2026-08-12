@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 protocol AutomaticLocationService: AnyObject {
     var authorizationStatus: CLAuthorizationStatus { get }
+    var backgroundCapabilityAvailable: Bool { get }
     var eventHandler: ((LocationServiceEvent) -> Void)? { get set }
     func requestWhenInUseAuthorization()
     func requestAlwaysAuthorization()
@@ -29,6 +30,10 @@ final class CoreAutomaticLocationService: NSObject, AutomaticLocationService, CL
 
     var authorizationStatus: CLAuthorizationStatus {
         manager.authorizationStatus
+    }
+
+    var backgroundCapabilityAvailable: Bool {
+        BackgroundLocationCapability.isAvailable
     }
 
     func requestWhenInUseAuthorization() {
@@ -59,7 +64,7 @@ final class CoreAutomaticLocationService: NSObject, AutomaticLocationService, CL
         manager.distanceFilter = 5
         manager.activityType = .automotiveNavigation
         manager.pausesLocationUpdatesAutomatically = true
-        if supportsBackgroundLocationMode {
+        if backgroundCapabilityAvailable {
             manager.allowsBackgroundLocationUpdates = true
             TrackingDiagnostics.log("background tracking activated")
         } else {
@@ -69,11 +74,6 @@ final class CoreAutomaticLocationService: NSObject, AutomaticLocationService, CL
         }
         manager.startUpdatingLocation()
         return true
-    }
-
-    private var supportsBackgroundLocationMode: Bool {
-        let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String]
-        return modes?.contains("location") == true
     }
 
     func stopPreciseTracking() {
@@ -120,6 +120,7 @@ final class CoreAutomaticLocationService: NSObject, AutomaticLocationService, CL
 @MainActor
 final class MockAutomaticLocationService: AutomaticLocationService {
     var authorizationStatus: CLAuthorizationStatus = CLAuthorizationStatus.authorizedAlways
+    var backgroundCapabilityAvailable = true
     var eventHandler: ((LocationServiceEvent) -> Void)?
     private(set) var isLowPowerMonitoring = false
     private(set) var isPreciseTracking = false
@@ -136,7 +137,8 @@ final class MockAutomaticLocationService: AutomaticLocationService {
     func stopLowPowerMonitoring() { isLowPowerMonitoring = false }
     @discardableResult
     func startPreciseTracking() -> Bool {
-        guard authorizationStatus == .authorizedAlways else { return false }
+        guard authorizationStatus == .authorizedAlways,
+              backgroundCapabilityAvailable else { return false }
         isPreciseTracking = true
         return true
     }

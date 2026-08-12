@@ -497,7 +497,9 @@ struct DashboardView: View {
 
     private var trackingSupportingText: String? {
         if tripCoordinator.state == .tracking {
-            return "Your manually started trip is being recorded."
+            return tripCoordinator.backgroundRecordingAvailable
+                ? "Your manually started trip is being recorded."
+                : "This trip is recording, but background recording may be limited until Always Location access is enabled."
         }
         switch automaticTripCoordinator.state {
         case .tracking:
@@ -523,17 +525,28 @@ struct DashboardView: View {
     }
 
     private var permissionSupportingText: String {
-        "Enable Location and Motion permissions to automatically record qualifying trips."
+        switch automaticTripCoordinator.trackingReadiness {
+        case .ready:
+            return "Drive normally. MileMate will automatically detect and record qualifying trips."
+        case .locationPermissionRequired:
+            return "Allow Always Location access to record qualifying trips in the background."
+        case .motionPermissionRequired:
+            return "Allow Motion & Fitness access so MileMate can recognize driving."
+        case .backgroundCapabilityUnavailable:
+            return "This build does not include background location recording support."
+        }
     }
 
     private var missingPermissionStatus: String {
-        switch (hasLocationPermission, hasMotionPermission) {
-        case (false, true):
+        switch automaticTripCoordinator.trackingReadiness {
+        case .ready:
+            return "Automatic Tracking Active"
+        case .locationPermissionRequired:
             return "Location Permission Required"
-        case (true, false):
+        case .motionPermissionRequired:
             return "Motion & Fitness Permission Required"
-        default:
-            return "Automatic Tracking Needs Permission"
+        case .backgroundCapabilityUnavailable:
+            return "Background Recording Unavailable"
         }
     }
 
@@ -544,28 +557,11 @@ struct DashboardView: View {
         }
         switch automaticTripCoordinator.state {
         case .permissionRequired:
-            return true
+            return automaticTripCoordinator.trackingReadiness != .ready
         case .tracking, .detecting, .reviewing:
             return false
         default:
-            return !hasLocationPermission || !hasMotionPermission
-        }
-    }
-
-    private var hasLocationPermission: Bool {
-        automaticTripCoordinator.locationAuthorizationStatus ==
-            CLAuthorizationStatus.authorizedAlways
-    }
-
-    private var hasMotionPermission: Bool {
-        switch automaticTripCoordinator.motionPermissionStatus {
-        case MotionPermissionStatus.authorized:
-            return true
-        case MotionPermissionStatus.notDetermined,
-             MotionPermissionStatus.denied,
-             MotionPermissionStatus.restricted,
-             MotionPermissionStatus.unavailable:
-            return false
+            return automaticTripCoordinator.trackingReadiness != .ready
         }
     }
 

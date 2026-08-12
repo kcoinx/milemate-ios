@@ -93,6 +93,11 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         }
     }
 
+    var backgroundRecordingAvailable: Bool {
+        locationService.authorizationStatus == .authorizedAlways &&
+            locationService.backgroundCapabilityAvailable
+    }
+
     func startTrip() {
         guard state != .tracking else { return }
         switch locationService.authorizationStatus {
@@ -214,7 +219,7 @@ final class ManualTripCoordinator: TripReviewCoordinating {
                 locationService.requestAlwaysAuthorization()
             } else if pendingStart && status == .authorizedWhenInUse {
                 pendingStart = false
-                state = .failed("Always Location access is required for reliable background recording. Review Location permissions in Settings.")
+                beginTracking()
             } else if status == .denied || status == .restricted {
                 pendingStart = false
                 state = .permissionDenied
