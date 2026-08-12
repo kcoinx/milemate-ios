@@ -126,6 +126,47 @@ final class TripNotificationTests: XCTestCase {
         XCTAssertFalse(defaults.bool(forKey: TripNotificationSettings.remindersEnabledKey))
     }
 
+    func testEnabledNotificationPreferencesPersistAcrossViewRecreation() throws {
+        let suiteName = "TripNotificationTests.Enabled.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        TripNotificationSettings.registerDefaults(in: defaults)
+        defaults.set(true, forKey: TripNotificationSettings.completionEnabledKey)
+        defaults.set(true, forKey: TripNotificationSettings.remindersEnabledKey)
+
+        let recreatedDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        XCTAssertTrue(recreatedDefaults.bool(forKey: TripNotificationSettings.completionEnabledKey))
+        XCTAssertTrue(recreatedDefaults.bool(forKey: TripNotificationSettings.remindersEnabledKey))
+    }
+
+    func testRegisteringDefaultsNeverOverwritesExistingPreferences() throws {
+        let suiteName = "TripNotificationTests.Existing.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(false, forKey: TripNotificationSettings.completionEnabledKey)
+        defaults.set(true, forKey: TripNotificationSettings.remindersEnabledKey)
+
+        TripNotificationSettings.registerDefaults(in: defaults)
+
+        XCTAssertFalse(defaults.bool(forKey: TripNotificationSettings.completionEnabledKey))
+        XCTAssertTrue(defaults.bool(forKey: TripNotificationSettings.remindersEnabledKey))
+    }
+
+    func testAuthorizationStateChangesDoNotOverwritePreferences() throws {
+        let suiteName = "TripNotificationTests.Authorization.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        TripNotificationSettings.registerDefaults(in: defaults)
+        defaults.set(true, forKey: TripNotificationSettings.completionEnabledKey)
+        defaults.set(false, forKey: TripNotificationSettings.remindersEnabledKey)
+
+        _ = NotificationSettingsRecovery(status: .denied)
+        _ = NotificationSettingsRecovery(status: .authorized)
+
+        XCTAssertTrue(defaults.bool(forKey: TripNotificationSettings.completionEnabledKey))
+        XCTAssertFalse(defaults.bool(forKey: TripNotificationSettings.remindersEnabledKey))
+    }
+
     func testDeliveryPlanRespectsIndividualPreferencesAndSystemPermission() {
         XCTAssertEqual(
             TripNotificationDeliveryPlan.make(
