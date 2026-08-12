@@ -102,6 +102,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
 
     func testBackgroundCapabilityAcceptsGeneratedPlistRepresentations() {
         XCTAssertTrue(BackgroundLocationCapability.containsLocationMode(["location"]))
+        XCTAssertTrue(BackgroundLocationCapability.containsLocationMode(["location"] as [Any]))
         XCTAssertTrue(BackgroundLocationCapability.containsLocationMode("location"))
         XCTAssertFalse(BackgroundLocationCapability.containsLocationMode(["fetch"]))
         XCTAssertFalse(BackgroundLocationCapability.containsLocationMode(nil))
@@ -141,6 +142,19 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         router.selectedTab = .settings
         router.showManualTracking()
         XCTAssertEqual(router.selectedTab, .dashboard)
+    }
+
+    func testPermissionCTAIsUserActionableOnly() {
+        XCTAssertEqual(
+            TrackingPermissionAction(readiness: .locationPermissionRequired)?.title,
+            "Review Location"
+        )
+        XCTAssertEqual(
+            TrackingPermissionAction(readiness: .motionPermissionRequired)?.title,
+            "Review Motion & Fitness"
+        )
+        XCTAssertNil(TrackingPermissionAction(readiness: .ready))
+        XCTAssertNil(TrackingPermissionAction(readiness: .backgroundCapabilityUnavailable))
     }
 
     func testShortAutomaticTripIsDiscarded() async {

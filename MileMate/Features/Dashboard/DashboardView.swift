@@ -190,18 +190,18 @@ struct DashboardView: View {
                 .disabled(tripCoordinator.state == .requestingPermission || tripCoordinator.state == .reviewing)
             }
 
-            if shouldReviewPermissions {
+            if let permissionAction {
                 Button {
                     router.showTrackingPermissions()
                 } label: {
-                    Label("Review Permissions", systemImage: "checklist")
+                    Label(permissionAction.title, systemImage: "checklist")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .frame(minHeight: 44)
                         .background(.white, in: Capsule())
                         .foregroundStyle(AppTheme.Color.brand)
                 }
-                .accessibilityLabel("Review automatic tracking permissions")
+                .accessibilityLabel(permissionAction.title)
             }
 
             if tripCoordinator.state == .permissionDenied {
@@ -499,7 +499,7 @@ struct DashboardView: View {
         if tripCoordinator.state == .tracking {
             return tripCoordinator.backgroundRecordingAvailable
                 ? "Your manually started trip is being recorded."
-                : "This trip is recording, but background recording may be limited until Always Location access is enabled."
+                : "This trip is tracking mileage, but updates may be limited when MileMate is not open until Always Location access is enabled."
         }
         switch automaticTripCoordinator.state {
         case .tracking:
@@ -529,11 +529,11 @@ struct DashboardView: View {
         case .ready:
             return "Drive normally. MileMate will automatically detect and record qualifying trips."
         case .locationPermissionRequired:
-            return "Allow Always Location access to record qualifying trips in the background."
+            return "Allow Always Location access so MileMate can automatically track trips."
         case .motionPermissionRequired:
-            return "Allow Motion & Fitness access so MileMate can recognize driving."
+            return "Allow Motion & Fitness so MileMate can detect when you are driving."
         case .backgroundCapabilityUnavailable:
-            return "This build does not include background location recording support."
+            return "MileMate could not start automatic tracking. Please try again after updating the app."
         }
     }
 
@@ -542,11 +542,11 @@ struct DashboardView: View {
         case .ready:
             return "Automatic Tracking Active"
         case .locationPermissionRequired:
-            return "Location Permission Required"
+            return "Location Needed"
         case .motionPermissionRequired:
-            return "Motion & Fitness Permission Required"
+            return "Motion & Fitness Needed"
         case .backgroundCapabilityUnavailable:
-            return "Background Recording Unavailable"
+            return "Automatic Tracking Unavailable"
         }
     }
 
@@ -563,6 +563,12 @@ struct DashboardView: View {
         default:
             return automaticTripCoordinator.trackingReadiness != .ready
         }
+    }
+
+    private var permissionAction: TrackingPermissionAction? {
+        guard automaticTrackingEnabled,
+              tripCoordinator.state != .tracking else { return nil }
+        return TrackingPermissionAction(readiness: automaticTripCoordinator.trackingReadiness)
     }
 
     private var activeDistanceMiles: Double {

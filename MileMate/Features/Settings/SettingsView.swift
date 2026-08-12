@@ -121,13 +121,9 @@ struct SettingsView: View {
                         status: motionPermissionText,
                         icon: "figure.walk.motion"
                     )
-                    permissionRow(
-                        "Background Recording",
-                        status: backgroundCapabilityText,
-                        icon: "location.viewfinder"
-                    )
-
-                    if automaticTripCoordinator.trackingReadiness != .ready {
+                    if TrackingPermissionAction(
+                        readiness: automaticTripCoordinator.trackingReadiness
+                    ) != nil {
                         Button {
                             guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
                             openURL(url)
@@ -375,10 +371,6 @@ struct SettingsView: View {
         case MotionPermissionStatus.unavailable:
             return "Unavailable"
         }
-    }
-
-    private var backgroundCapabilityText: String {
-        automaticTripCoordinator.backgroundCapabilityAvailable ? "Available" : "Unavailable"
     }
 
     private var notificationPermissionText: String {

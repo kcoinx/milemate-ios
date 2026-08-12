@@ -3,16 +3,15 @@ import Foundation
 
 enum BackgroundLocationCapability {
     static var isAvailable: Bool {
-        #if MILEMATE_BACKGROUND_LOCATION
         containsLocationMode(Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes"))
-        #else
-        false
-        #endif
     }
 
     static func containsLocationMode(_ plistValue: Any?) -> Bool {
         if let modes = plistValue as? [String] {
             return modes.contains("location")
+        }
+        if let modes = plistValue as? [Any] {
+            return modes.contains { ($0 as? String) == "location" }
         }
         if let mode = plistValue as? String {
             return mode.split(whereSeparator: { $0.isWhitespace || $0 == "," })
@@ -43,5 +42,28 @@ enum AutomaticTrackingReadiness: Equatable {
             return .backgroundCapabilityUnavailable
         }
         return .ready
+    }
+}
+
+enum TrackingPermissionAction: Equatable {
+    case location
+    case motion
+
+    init?(readiness: AutomaticTrackingReadiness) {
+        switch readiness {
+        case .locationPermissionRequired:
+            self = .location
+        case .motionPermissionRequired:
+            self = .motion
+        case .ready, .backgroundCapabilityUnavailable:
+            return nil
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .location: "Review Location"
+        case .motion: "Review Motion & Fitness"
+        }
     }
 }
