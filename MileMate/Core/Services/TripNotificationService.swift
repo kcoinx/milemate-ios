@@ -5,12 +5,63 @@ enum TripNotificationSettings {
     static let completionEnabledKey = "tripDetectedNotificationsEnabled"
     static let remindersEnabledKey = "tripReviewRemindersEnabled"
 
+    static func registerDefaults(in defaults: UserDefaults = .standard) {
+        defaults.register(defaults: [
+            completionEnabledKey: true,
+            remindersEnabledKey: true
+        ])
+    }
+
     static var completionNotificationsEnabled: Bool {
-        UserDefaults.standard.object(forKey: completionEnabledKey) as? Bool ?? true
+        UserDefaults.standard.bool(forKey: completionEnabledKey)
     }
 
     static var remindersEnabled: Bool {
-        UserDefaults.standard.object(forKey: remindersEnabledKey) as? Bool ?? true
+        UserDefaults.standard.bool(forKey: remindersEnabledKey)
+    }
+}
+
+struct TripNotificationDeliveryPlan: Equatable {
+    let sendsTripDetected: Bool
+    let sendsReviewReminder: Bool
+
+    static func make(
+        authorizationStatus: NotificationPermissionStatus,
+        tripDetectedEnabled: Bool,
+        reviewRemindersEnabled: Bool
+    ) -> TripNotificationDeliveryPlan {
+        let authorized = authorizationStatus.allowsScheduling
+        return TripNotificationDeliveryPlan(
+            sendsTripDetected: authorized && tripDetectedEnabled,
+            sendsReviewReminder: authorized && reviewRemindersEnabled
+        )
+    }
+
+    static func current(
+        authorizationStatus: NotificationPermissionStatus
+    ) -> TripNotificationDeliveryPlan {
+        make(
+            authorizationStatus: authorizationStatus,
+            tripDetectedEnabled: TripNotificationSettings.completionNotificationsEnabled,
+            reviewRemindersEnabled: TripNotificationSettings.remindersEnabled
+        )
+    }
+}
+
+enum NotificationSettingsRecovery: Equatable {
+    case none
+    case requestPermission
+    case openSystemSettings
+
+    init(status: NotificationPermissionStatus) {
+        switch status {
+        case .authorized, .provisional, .ephemeral:
+            self = .none
+        case .notDetermined:
+            self = .requestPermission
+        case .denied, .unavailable:
+            self = .openSystemSettings
+        }
     }
 }
 
@@ -76,7 +127,10 @@ final class LocalTripNotificationService: TripNotificationScheduling {
 
     func scheduleTripCompletion(for trip: Trip) async {
         await refreshAuthorizationStatus()
-        guard authorizationStatus.allowsScheduling else { return }
+        let deliveryPlan = TripNotificationDeliveryPlan.current(
+            authorizationStatus: authorizationStatus
+        )
+        guard deliveryPlan.sendsTripDetected || deliveryPlan.sendsReviewReminder else { return }
 
         let pending = await center.pendingNotificationRequests()
         let delivered = await center.deliveredNotifications()
@@ -85,7 +139,7 @@ final class LocalTripNotificationService: TripNotificationScheduling {
         )
         let userInfo = [TripNotificationUserInfo.tripIDKey: trip.id.uuidString]
 
-        if TripNotificationSettings.completionNotificationsEnabled {
+        if deliveryPlan.sendsTripDetected {
             let identifier = Identifier.completion(trip.id)
             if !scheduledCompletionTripIDs.contains(trip.id),
                !existingIdentifiers.contains(identifier) {
@@ -102,7 +156,7 @@ final class LocalTripNotificationService: TripNotificationScheduling {
             }
         }
 
-        if TripNotificationSettings.remindersEnabled {
+        if deliveryPlan.sendsReviewReminder {
             let identifier = Identifier.reminder(trip.id)
             if !scheduledReminderTripIDs.contains(trip.id),
                !existingIdentifiers.contains(identifier) {
@@ -214,7 +268,7 @@ final class LocalTripNotificationService: TripNotificationScheduling {
     }
 }
 
-private extension NotificationPermissionStatus {
+extension NotificationPermissionStatus {
     var allowsScheduling: Bool {
         switch self {
         case .authorized, .provisional, .ephemeral:

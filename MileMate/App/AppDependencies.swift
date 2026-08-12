@@ -11,6 +11,7 @@ struct AppDependencies {
     let modelContainer: ModelContainer
 
     static func live() -> AppDependencies {
+        TripNotificationSettings.registerDefaults()
         do {
             let container = try ModelContainer(
                 for: StoredTrip.self,
