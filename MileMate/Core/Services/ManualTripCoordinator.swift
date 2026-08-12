@@ -19,6 +19,13 @@ protocol TripReviewCoordinating: AnyObject, Observable {
 @MainActor
 @Observable
 final class ManualTripCoordinator: TripReviewCoordinating {
+    private struct ActiveSession: Codable {
+        let startedAt: Date
+        let samples: [LocationSample]
+        let distanceMeters: Double
+        let lastMeaningfulMovementAt: Date?
+        let reminderScheduled: Bool?
+    }
     enum State: Equatable {
         case ready
         case requestingPermission
@@ -30,12 +37,21 @@ final class ManualTripCoordinator: TripReviewCoordinating {
 
     private let locationService: any LocationService
     private let repository: any MileageRepository
+    private let notificationService: (any TripNotificationScheduling)?
     private var processor = LocationSampleProcessor()
     private var elapsedTask: Task<Void, Never>?
     private var geocodeTask: Task<Void, Never>?
+    private var safeguardTask: Task<Void, Never>?
     private var startedAt: Date?
     private var lastGeocodedAt: Date?
     private var pendingStart = false
+    private var requestedAlwaysAuthorization = false
+    private var lastMeaningfulMovementAt: Date?
+    private var reminderScheduled = false
+    private static let activeSessionKey = "manualActiveTrip"
+    private let reminderEligibilityDuration: TimeInterval
+    private let inactivityReminderDelay: TimeInterval
+    private let safeguardCheckInterval: TimeInterval
 
     private(set) var state: State = .ready
     private(set) var distanceMeters = 0.0
@@ -43,12 +59,24 @@ final class ManualTripCoordinator: TripReviewCoordinating {
     private(set) var currentLocationLabel: String?
     var pendingTrip: Trip?
 
-    init(locationService: any LocationService, repository: any MileageRepository) {
+    init(
+        locationService: any LocationService,
+        repository: any MileageRepository,
+        notificationService: (any TripNotificationScheduling)? = nil,
+        reminderEligibilityDuration: TimeInterval = 4 * 60 * 60,
+        inactivityReminderDelay: TimeInterval = 30 * 60,
+        safeguardCheckInterval: TimeInterval = 60
+    ) {
         self.locationService = locationService
         self.repository = repository
+        self.notificationService = notificationService
+        self.reminderEligibilityDuration = reminderEligibilityDuration
+        self.inactivityReminderDelay = inactivityReminderDelay
+        self.safeguardCheckInterval = safeguardCheckInterval
         self.locationService.eventHandler = { [weak self] event in
             self?.handle(event)
         }
+        restoreActiveSession()
     }
 
     var distanceMiles: Double {
@@ -68,8 +96,13 @@ final class ManualTripCoordinator: TripReviewCoordinating {
     func startTrip() {
         guard state != .tracking else { return }
         switch locationService.authorizationStatus {
-        case .authorizedAlways, .authorizedWhenInUse:
+        case .authorizedAlways:
             beginTracking()
+        case .authorizedWhenInUse:
+            pendingStart = true
+            state = .requestingPermission
+            requestedAlwaysAuthorization = true
+            locationService.requestAlwaysAuthorization()
         case .notDetermined:
             pendingStart = true
             state = .requestingPermission
@@ -103,6 +136,11 @@ final class ManualTripCoordinator: TripReviewCoordinating {
             route: route
         )
         state = .reviewing
+        notificationService?.cancelLongRunningTripReminder()
+        reminderScheduled = false
+        clearPersistedSession()
+        TripFeedback.completed()
+        TrackingDiagnostics.log("manual trip ended")
         assignDefaultVehicleToPendingTrip()
         reverseGeocodePendingTrip()
     }
@@ -136,9 +174,9 @@ final class ManualTripCoordinator: TripReviewCoordinating {
     }
 
     func appDidEnterBackground() {
-        if state == .tracking {
-            stopTrip()
-        }
+        guard state == .tracking else { return }
+        persistActiveSession()
+        TrackingDiagnostics.log("manual trip preserved in background")
     }
 
     private func beginTracking() {
@@ -148,33 +186,55 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         currentLocationLabel = nil
         lastGeocodedAt = nil
         startedAt = .now
+        lastMeaningfulMovementAt = startedAt
+        reminderScheduled = false
         state = .tracking
-        locationService.startUpdatingLocation()
-        elapsedTask?.cancel()
-        elapsedTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
-                guard let self, let startedAt = self.startedAt else { return }
-                self.elapsedTime = Date().timeIntervalSince(startedAt)
-            }
+        guard locationService.startUpdatingLocation() else {
+            startedAt = nil
+            state = .failed("Background location is unavailable. Review Location permissions and try again.")
+            return
         }
+        persistActiveSession()
+        TripFeedback.started()
+        TrackingDiagnostics.log("manual tracking started")
+        startElapsedTimer()
+        startSafeguardTimer()
     }
 
     private func handle(_ event: LocationServiceEvent) {
         switch event {
         case .authorizationChanged(let status):
-            if pendingStart && (status == .authorizedAlways || status == .authorizedWhenInUse) {
+            TrackingDiagnostics.log("location authorization changed: \(status.rawValue)")
+            if pendingStart && status == .authorizedAlways {
                 pendingStart = false
                 beginTracking()
+            } else if pendingStart && status == .authorizedWhenInUse &&
+                        !requestedAlwaysAuthorization {
+                requestedAlwaysAuthorization = true
+                locationService.requestAlwaysAuthorization()
+            } else if pendingStart && status == .authorizedWhenInUse {
+                pendingStart = false
+                state = .failed("Always Location access is required for reliable background recording. Review Location permissions in Settings.")
             } else if status == .denied || status == .restricted {
                 pendingStart = false
                 state = .permissionDenied
             }
         case .locations(let samples):
             guard state == .tracking else { return }
+            var acceptedMovement = false
             for sample in samples where processor.process(sample) {
+                acceptedMovement = true
                 distanceMeters = processor.distanceMeters
                 updateCurrentLocationContext(using: sample)
+            }
+            persistActiveSession()
+            if acceptedMovement {
+                lastMeaningfulMovementAt = .now
+                if reminderScheduled {
+                    notificationService?.cancelLongRunningTripReminder()
+                    reminderScheduled = false
+                }
+                persistActiveSession()
             }
         case .failed(let message):
             guard state == .tracking else { return }
@@ -189,7 +249,10 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         elapsedTask = nil
         geocodeTask?.cancel()
         geocodeTask = nil
+        safeguardTask?.cancel()
+        safeguardTask = nil
         pendingStart = false
+        requestedAlwaysAuthorization = false
     }
 
     private func resetSession() {
@@ -199,7 +262,91 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         currentLocationLabel = nil
         lastGeocodedAt = nil
         startedAt = nil
+        lastMeaningfulMovementAt = nil
+        reminderScheduled = false
+        clearPersistedSession()
+        notificationService?.cancelLongRunningTripReminder()
         state = .ready
+    }
+
+    private func persistActiveSession() {
+        guard state == .tracking, let startedAt else { return }
+        let session = ActiveSession(
+            startedAt: startedAt,
+            samples: processor.acceptedSamples,
+            distanceMeters: distanceMeters,
+            lastMeaningfulMovementAt: lastMeaningfulMovementAt,
+            reminderScheduled: reminderScheduled
+        )
+        if let data = try? JSONEncoder().encode(session) {
+            UserDefaults.standard.set(data, forKey: Self.activeSessionKey)
+        }
+    }
+
+    private func restoreActiveSession() {
+        guard let data = UserDefaults.standard.data(forKey: Self.activeSessionKey),
+              let session = try? JSONDecoder().decode(ActiveSession.self, from: data) else {
+            return
+        }
+        startedAt = session.startedAt
+        processor.restore(samples: session.samples, distanceMeters: session.distanceMeters)
+        distanceMeters = session.distanceMeters
+        elapsedTime = Date().timeIntervalSince(session.startedAt)
+        lastMeaningfulMovementAt = session.lastMeaningfulMovementAt ?? session.startedAt
+        reminderScheduled = session.reminderScheduled ?? false
+        state = .tracking
+        guard locationService.startUpdatingLocation() else {
+            state = .failed("Background location is unavailable. Your active trip remains saved for recovery.")
+            return
+        }
+        startElapsedTimer()
+        startSafeguardTimer()
+        TrackingDiagnostics.log("active manual trip state restored")
+    }
+
+    private func clearPersistedSession() {
+        UserDefaults.standard.removeObject(forKey: Self.activeSessionKey)
+    }
+
+    private func startElapsedTimer() {
+        elapsedTask?.cancel()
+        elapsedTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, let startedAt = self.startedAt else { return }
+                self.elapsedTime = Date().timeIntervalSince(startedAt)
+            }
+        }
+    }
+
+    private func startSafeguardTimer() {
+        safeguardTask?.cancel()
+        safeguardTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                try? await Task.sleep(for: .seconds(self.safeguardCheckInterval))
+                self.evaluateLongRunningReminder()
+            }
+        }
+    }
+
+    private func evaluateLongRunningReminder(now: Date = .now) {
+        guard state == .tracking,
+              !reminderScheduled,
+              let startedAt,
+              let lastMeaningfulMovementAt,
+              now.timeIntervalSince(startedAt) >= reminderEligibilityDuration,
+              now.timeIntervalSince(lastMeaningfulMovementAt) >= inactivityReminderDelay else {
+            return
+        }
+        reminderScheduled = true
+        persistActiveSession()
+        Task { [weak self] in
+            guard let self else { return }
+            await self.notificationService?.scheduleLongRunningTripReminder(
+                after: 1
+            )
+        }
     }
 
     private func updateCurrentLocationContext(using sample: LocationSample) {

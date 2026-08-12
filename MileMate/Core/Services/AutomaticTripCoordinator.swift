@@ -34,6 +34,15 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         let trip: Trip
     }
 
+    private struct ActiveTripEnvelope: Codable {
+        let startedAt: Date
+        let samples: [LocationSample]
+        let distanceMeters: Double
+        let automotiveConfirmed: Bool
+        let highestObservedSpeed: Double
+        let isTracking: Bool
+    }
+
     private let locationService: any AutomaticLocationService
     private let motionService: any MotionActivityService
     private let repository: any MileageRepository
@@ -55,6 +64,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     var pendingTrip: Trip?
 
     private static let pendingTripKey = "automaticPendingTrip"
+    private static let activeTripKey = "automaticActiveTrip"
     private static let confirmationDistanceMeters = 80.0
     private static let minimumDrivingSpeed = 4.0
 
@@ -80,6 +90,9 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             self?.handleMotion(activity)
         }
         restorePendingTrip()
+        if pendingTrip == nil {
+            restoreActiveTrip()
+        }
     }
 
     var distanceMiles: Double {
@@ -192,6 +205,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     private func handleLocation(_ event: LocationServiceEvent) {
         switch event {
         case .authorizationChanged(let status):
+            TrackingDiagnostics.log("location authorization changed: \(status.rawValue)")
             switch status {
             case CLAuthorizationStatus.authorizedAlways:
                 locationService.startLowPowerMonitoring()
@@ -215,6 +229,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
                 return
             }
             process(samples)
+            persistActiveTrip()
 
         case .failed(let message):
             guard state == .detecting || state == .tracking else { return }
@@ -226,6 +241,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
 
     private func startMotionMonitoring() {
         motionService.startUpdates()
+        TrackingDiagnostics.log("motion authorization state: \(motionService.permissionStatus)")
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(1))
             guard let self,
@@ -291,8 +307,14 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         candidateStartedAt = nil
         highestObservedSpeed = 0
         state = .detecting
+        TrackingDiagnostics.log("automatic detector entered detecting")
         locationService.stopLowPowerMonitoring()
-        locationService.startPreciseTracking()
+        guard locationService.startPreciseTracking() else {
+            state = .permissionRequired
+            locationService.startLowPowerMonitoring()
+            return
+        }
+        persistActiveTrip()
         detectionTimeoutTask?.cancel()
         detectionTimeoutTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(120))
@@ -337,6 +359,9 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         detectionTimeoutTask?.cancel()
         detectionTimeoutTask = nil
         state = .tracking
+        TrackingDiagnostics.log("automatic detector entered tracking")
+        TripFeedback.started()
+        persistActiveTrip()
         elapsedTask?.cancel()
         elapsedTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -367,6 +392,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         let route = currentRoute
         let miles = distanceMiles
         stopPreciseSession()
+        clearPersistedActiveTrip()
 
         guard miles >= AutomaticTrackingSettings.minimumDistance else {
             resetToIdle()
@@ -435,6 +461,8 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         }
         pendingTrip = trip
         state = .reviewing
+        TripFeedback.completed()
+        TrackingDiagnostics.log("automatic trip ended")
         Task { [notificationService] in
             await notificationService.scheduleTripCompletion(for: trip)
         }
@@ -459,6 +487,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     }
 
     private func resetToIdle() {
+        clearPersistedActiveTrip()
         stopPreciseSession()
         processor.reset()
         distanceMeters = 0
@@ -470,6 +499,71 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             state = .idle
         } else {
             state = .disabled
+        }
+    }
+
+    private func persistActiveTrip() {
+        guard state == .detecting || state == .tracking,
+              let startedAt = candidateStartedAt ?? processor.acceptedSamples.first?.timestamp else {
+            return
+        }
+        let envelope = ActiveTripEnvelope(
+            startedAt: startedAt,
+            samples: processor.acceptedSamples,
+            distanceMeters: distanceMeters,
+            automotiveConfirmed: automotiveConfirmed,
+            highestObservedSpeed: highestObservedSpeed,
+            isTracking: state == .tracking
+        )
+        if let data = try? JSONEncoder().encode(envelope) {
+            UserDefaults.standard.set(data, forKey: Self.activeTripKey)
+        }
+    }
+
+    private func restoreActiveTrip() {
+        guard AutomaticTrackingSettings.isEnabled,
+              locationService.authorizationStatus == .authorizedAlways,
+              let data = UserDefaults.standard.data(forKey: Self.activeTripKey),
+              let envelope = try? JSONDecoder().decode(ActiveTripEnvelope.self, from: data) else {
+            return
+        }
+        candidateStartedAt = envelope.startedAt
+        processor.restore(samples: envelope.samples, distanceMeters: envelope.distanceMeters)
+        distanceMeters = envelope.distanceMeters
+        automotiveConfirmed = envelope.automotiveConfirmed
+        highestObservedSpeed = envelope.highestObservedSpeed
+        elapsedTime = Date().timeIntervalSince(envelope.startedAt)
+        guard locationService.startPreciseTracking() else {
+            state = .permissionRequired
+            return
+        }
+        locationService.stopLowPowerMonitoring()
+        state = envelope.isTracking ? .tracking : .detecting
+        startMotionMonitoring()
+        if envelope.isTracking { startElapsedTimer() }
+        if !envelope.isTracking {
+            detectionTimeoutTask?.cancel()
+            detectionTimeoutTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(120))
+                guard let self, self.state == .detecting else { return }
+                self.resetToIdle()
+            }
+        }
+        TrackingDiagnostics.log("active automatic trip state restored")
+    }
+
+    private func clearPersistedActiveTrip() {
+        UserDefaults.standard.removeObject(forKey: Self.activeTripKey)
+    }
+
+    private func startElapsedTimer() {
+        elapsedTask?.cancel()
+        elapsedTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, let startedAt = self.candidateStartedAt else { return }
+                self.elapsedTime = Date().timeIntervalSince(startedAt)
+            }
         }
     }
 

@@ -32,6 +32,7 @@ struct InsightsView: View {
             .offset(y: ringProgress > 0 ? 0 : 8)
         }
         .background(AppTheme.Color.canvas)
+        .scrollIndicators(.hidden)
         .navigationTitle("Insights")
         .onAppear {
             Task { await viewModel.load() }

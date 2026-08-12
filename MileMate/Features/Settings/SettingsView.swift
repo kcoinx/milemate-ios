@@ -18,6 +18,7 @@ struct SettingsView: View {
     private var automaticClassificationEnabled = false
     @State private var showingAutomaticTrackingExplanation = false
     @State private var notificationPermissionStatus = NotificationPermissionStatus.notDetermined
+    @AppStorage(TripFeedbackSettings.enabledKey) private var tripFeedbackEnabled = true
     @Environment(\.openURL) private var openURL
 
     init(
@@ -52,6 +53,14 @@ struct SettingsView: View {
                         .foregroundStyle(AppTheme.Color.textSecondary)
                 } label: {
                     settingLabel("Manual Tracking", icon: "play.circle.fill", tint: AppTheme.Color.brand)
+                }
+
+                Toggle(isOn: $tripFeedbackEnabled) {
+                    settingLabel(
+                        "Trip Sounds & Haptics",
+                        icon: "waveform.and.speaker.fill",
+                        tint: AppTheme.Color.brand
+                    )
                 }
 
                 if automaticTrackingEnabled {
@@ -201,6 +210,7 @@ struct SettingsView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
+        .scrollIndicators(.hidden)
         .background(AppTheme.Color.canvas)
         .navigationTitle("Settings")
         .task {
@@ -376,6 +386,7 @@ private struct ProfileSettingsView: View {
                 TextField("Occupation", text: $occupation)
             }
         }
+        .scrollIndicators(.hidden)
         .navigationTitle("Profile")
     }
 }
@@ -396,6 +407,7 @@ private struct TaxSettingsView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .scrollIndicators(.hidden)
         .navigationTitle("IRS Rate")
     }
 }

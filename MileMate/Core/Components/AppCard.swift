@@ -76,6 +76,8 @@ struct RouteMapView: View {
     let origin: String
     let destination: String
     var route: [TripCoordinate] = []
+    var startCoordinate: TripCoordinate?
+    var endCoordinate: TripCoordinate?
     var height: CGFloat = 220
     var interactive = true
     var showsUserLocation = false
@@ -84,7 +86,11 @@ struct RouteMapView: View {
     @State private var position: MapCameraPosition = .automatic
 
     private var coordinates: [CLLocationCoordinate2D] {
-        route.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+        RouteMapRegionCalculator.displayCoordinates(
+            route: route,
+            start: startCoordinate,
+            end: endCoordinate
+        )
     }
 
     @ViewBuilder
@@ -145,23 +151,60 @@ struct RouteMapView: View {
             return
         }
 
-        var mapRect = MKMapRect.null
-        for coordinate in coordinates {
-            let point = MKMapPoint(coordinate)
-            let pointRect = MKMapRect(x: point.x, y: point.y, width: 1, height: 1)
-            mapRect = mapRect.union(pointRect)
-        }
+        position = .rect(RouteMapRegionCalculator.mapRect(for: coordinates))
+    }
+}
 
+enum RouteMapRegionCalculator {
+    static func displayCoordinates(
+        route: [TripCoordinate],
+        start: TripCoordinate?,
+        end: TripCoordinate?
+    ) -> [CLLocationCoordinate2D] {
+        var points = route.filter { $0.isValid }.map { $0.clLocationCoordinate }
+        if let start, start.isValid, !route.contains(start) {
+            points.insert(start.clLocationCoordinate, at: 0)
+        }
+        if let end, end.isValid, !route.contains(end) {
+            points.append(end.clLocationCoordinate)
+        }
+        return points
+    }
+
+    static func mapRect(for coordinates: [CLLocationCoordinate2D]) -> MKMapRect {
+        var mapRect = coordinates.reduce(into: MKMapRect.null) { result, coordinate in
+            let point = MKMapPoint(coordinate)
+            result = result.union(MKMapRect(x: point.x, y: point.y, width: 1, height: 1))
+        }
         let minimumSpan = 1_500.0
-        if mapRect.width < minimumSpan || mapRect.height < minimumSpan {
-            let center = MKMapPoint(coordinates[coordinates.count / 2])
+        if mapRect.width < minimumSpan {
+            let centerX = mapRect.midX
             mapRect = MKMapRect(
-                x: center.x - minimumSpan / 2,
-                y: center.y - minimumSpan / 2,
+                x: centerX - minimumSpan / 2,
+                y: mapRect.origin.y,
                 width: minimumSpan,
+                height: mapRect.height
+            )
+        }
+        if mapRect.height < minimumSpan {
+            let centerY = mapRect.midY
+            mapRect = MKMapRect(
+                x: mapRect.origin.x,
+                y: centerY - minimumSpan / 2,
+                width: mapRect.width,
                 height: minimumSpan
             )
         }
-        position = .rect(mapRect.insetBy(dx: -mapRect.width * 0.18, dy: -mapRect.height * 0.18))
+        return mapRect.insetBy(dx: -mapRect.width * 0.18, dy: -mapRect.height * 0.18)
+    }
+}
+
+private extension TripCoordinate {
+    var isValid: Bool {
+        CLLocationCoordinate2DIsValid(clLocationCoordinate)
+    }
+
+    var clLocationCoordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
 }

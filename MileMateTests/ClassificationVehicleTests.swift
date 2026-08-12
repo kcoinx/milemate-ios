@@ -315,4 +315,6 @@ private final class QueueNotificationService: TripNotificationScheduling {
     func cancelCompletionNotifications() {}
     func cancelReminderNotifications() {}
     func cancelAllTripNotifications() {}
+    func scheduleLongRunningTripReminder(after delay: TimeInterval) async {}
+    func cancelLongRunningTripReminder() {}
 }

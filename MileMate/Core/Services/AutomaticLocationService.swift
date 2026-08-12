@@ -9,7 +9,7 @@ protocol AutomaticLocationService: AnyObject {
     func requestAlwaysAuthorization()
     func startLowPowerMonitoring()
     func stopLowPowerMonitoring()
-    func startPreciseTracking()
+    @discardableResult func startPreciseTracking() -> Bool
     func stopPreciseTracking()
 }
 
@@ -48,13 +48,32 @@ final class CoreAutomaticLocationService: NSObject, AutomaticLocationService, CL
         manager.stopMonitoringSignificantLocationChanges()
     }
 
-    func startPreciseTracking() {
+    @discardableResult
+    func startPreciseTracking() -> Bool {
+        guard authorizationStatus == .authorizedAlways else {
+            TrackingDiagnostics.log("background tracking unavailable: Always Location is required")
+            eventHandler?(.authorizationChanged(authorizationStatus))
+            return false
+        }
         manager.desiredAccuracy = kCLLocationAccuracyBest
         manager.distanceFilter = 5
         manager.activityType = .automotiveNavigation
         manager.pausesLocationUpdatesAutomatically = true
-        manager.allowsBackgroundLocationUpdates = true
+        if supportsBackgroundLocationMode {
+            manager.allowsBackgroundLocationUpdates = true
+            TrackingDiagnostics.log("background tracking activated")
+        } else {
+            TrackingDiagnostics.log("background tracking unavailable: location background mode missing")
+            eventHandler?(.failed("Background location capability is unavailable."))
+            return false
+        }
         manager.startUpdatingLocation()
+        return true
+    }
+
+    private var supportsBackgroundLocationMode: Bool {
+        let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String]
+        return modes?.contains("location") == true
     }
 
     func stopPreciseTracking() {
@@ -115,7 +134,12 @@ final class MockAutomaticLocationService: AutomaticLocationService {
 
     func startLowPowerMonitoring() { isLowPowerMonitoring = true }
     func stopLowPowerMonitoring() { isLowPowerMonitoring = false }
-    func startPreciseTracking() { isPreciseTracking = true }
+    @discardableResult
+    func startPreciseTracking() -> Bool {
+        guard authorizationStatus == .authorizedAlways else { return false }
+        isPreciseTracking = true
+        return true
+    }
     func stopPreciseTracking() { isPreciseTracking = false }
 
     func send(_ samples: [LocationSample]) {

@@ -34,11 +34,14 @@ protocol TripNotificationScheduling: AnyObject {
     func cancelCompletionNotifications()
     func cancelReminderNotifications()
     func cancelAllTripNotifications()
+    func scheduleLongRunningTripReminder(after delay: TimeInterval) async
+    func cancelLongRunningTripReminder()
 }
 
 @MainActor
 final class LocalTripNotificationService: TripNotificationScheduling {
     private enum Identifier {
+        static let activeTrip = "active-trip-reminder"
         static func completion(_ tripID: UUID) -> String {
             "trip-completion-\(tripID.uuidString)"
         }
@@ -135,8 +138,11 @@ final class LocalTripNotificationService: TripNotificationScheduling {
     func cancelAllTripNotifications() {
         scheduledCompletionTripIDs.removeAll()
         scheduledReminderTripIDs.removeAll()
+        cancelLongRunningTripReminder()
         cancelPendingNotifications { identifier in
-            identifier.hasPrefix("trip-completion-") || identifier.hasPrefix("trip-reminder-")
+            identifier.hasPrefix("trip-completion-") ||
+                identifier.hasPrefix("trip-reminder-") ||
+                identifier == Identifier.activeTrip
         }
     }
 
@@ -148,6 +154,35 @@ final class LocalTripNotificationService: TripNotificationScheduling {
     func cancelReminderNotifications() {
         scheduledReminderTripIDs.removeAll()
         cancelPendingNotifications { $0.hasPrefix("trip-reminder-") }
+    }
+
+    func scheduleLongRunningTripReminder(after delay: TimeInterval) async {
+        await refreshAuthorizationStatus()
+        guard authorizationStatus.allowsScheduling else { return }
+        center.removePendingNotificationRequests(withIdentifiers: [Identifier.activeTrip])
+        let content = UNMutableNotificationContent()
+        content.title = "Still driving?"
+        content.body = "MileMate is still recording this trip. Open the app to review or stop tracking."
+        content.sound = .default
+        content.categoryIdentifier = TripNotificationUserInfo.activeTripCategoryIdentifier
+        content.userInfo = [TripNotificationUserInfo.activeTripKey: true]
+        let trigger = UNTimeIntervalNotificationTrigger(
+            timeInterval: max(delay, 60),
+            repeats: false
+        )
+        try? await center.add(
+            UNNotificationRequest(
+                identifier: Identifier.activeTrip,
+                content: content,
+                trigger: trigger
+            )
+        )
+        TrackingDiagnostics.log("long-running trip notification scheduled")
+    }
+
+    func cancelLongRunningTripReminder() {
+        center.removePendingNotificationRequests(withIdentifiers: [Identifier.activeTrip])
+        center.removeDeliveredNotifications(withIdentifiers: [Identifier.activeTrip])
     }
 
     private func cancelPendingNotifications(
@@ -193,4 +228,6 @@ private extension NotificationPermissionStatus {
 enum TripNotificationUserInfo {
     static let tripIDKey = "tripID"
     static let categoryIdentifier = "MILEMATE_TRIP_REVIEW"
+    static let activeTripKey = "activeTrip"
+    static let activeTripCategoryIdentifier = "MILEMATE_ACTIVE_TRIP"
 }

@@ -74,6 +74,15 @@ final class AppRouter {
         selectedTab = .settings
     }
 
+    func resolveTripDetails(tripID: UUID) async -> Trip? {
+        let trips = (try? await repository.fetchTrips()) ?? []
+        guard let trip = trips.first(where: { $0.id == tripID }) else {
+            selectedTab = .trips
+            return nil
+        }
+        return trip
+    }
+
     func handleNotificationTap(tripID: UUID) async {
         if automaticTripCoordinator?.pendingTrip?.id == tripID {
             requestedTrip = nil

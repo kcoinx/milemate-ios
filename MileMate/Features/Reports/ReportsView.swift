@@ -53,6 +53,7 @@ struct ReportsView: View {
             .padding(.bottom, AppTheme.Spacing.xxLarge)
         }
         .background(AppTheme.Color.canvas)
+        .scrollIndicators(.hidden)
         .navigationTitle("Reports")
         .onAppear { Task { await viewModel.load() } }
         .onReceive(NotificationCenter.default.publisher(for: .mileageTripsDidChange)) { _ in

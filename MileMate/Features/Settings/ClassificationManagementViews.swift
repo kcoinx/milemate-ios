@@ -110,6 +110,7 @@ struct VehicleManagementView: View {
                 }
             }
         }
+        .scrollIndicators(.hidden)
         .navigationTitle("Vehicles")
         .toolbar {
             Button {
@@ -192,6 +193,7 @@ private struct VehicleEditorView: View {
                 TextField("License plate nickname (optional)", text: $plate)
                 Toggle("Default vehicle", isOn: $isDefault)
             }
+            .scrollIndicators(.hidden)
             .navigationTitle(original == nil ? "Add Vehicle" : "Edit Vehicle")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -301,6 +303,7 @@ struct FrequentPlacesManagementView: View {
                 }
             }
         }
+        .scrollIndicators(.hidden)
         .navigationTitle("Frequent Places")
         .toolbar {
             Button {
@@ -367,6 +370,7 @@ private struct PlaceEditorView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+            .scrollIndicators(.hidden)
             .navigationTitle(original == nil ? "Add Place" : "Edit Place")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -442,6 +446,7 @@ struct ClassificationRulesView: View {
                 }
             }
         }
+        .scrollIndicators(.hidden)
         .navigationTitle("Classification Rules")
         .toolbar {
             if viewModel.places.count >= 2 {
@@ -492,6 +497,7 @@ private struct RuleEditorView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+            .scrollIndicators(.hidden)
             .navigationTitle("Add Rule")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

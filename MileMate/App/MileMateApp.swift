@@ -17,6 +17,9 @@ struct MileMateApp: App {
                 await dependencies.router.handleNotificationTap(tripID: tripID)
             }
         }
+        notificationDelegate.activeTripTapHandler = {
+            dependencies.router.selectedTab = .dashboard
+        }
     }
 
     var body: some Scene {

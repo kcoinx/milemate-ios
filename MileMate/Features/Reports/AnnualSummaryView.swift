@@ -80,6 +80,7 @@ struct AnnualSummaryView: View {
             .padding(.bottom, AppTheme.Spacing.xxLarge)
         }
         .background(AppTheme.Color.canvas)
+        .scrollIndicators(.hidden)
         .navigationTitle("Annual Summary")
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.load() }

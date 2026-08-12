@@ -44,6 +44,27 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         XCTAssertFalse(location.isPreciseTracking)
     }
 
+    func testInvalidLocationAuthorizationFailsDetectionSafely() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let location = MockAutomaticLocationService()
+        location.authorizationStatus = .authorizedWhenInUse
+        let motion = MockMotionActivityService()
+        let coordinator = AutomaticTripCoordinator(
+            locationService: location,
+            motionService: motion,
+            repository: MockMileageRepository(),
+            notificationService: MockTripNotificationService(),
+            isManualTrackingActive: { false }
+        )
+
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .high))
+
+        XCTAssertEqual(coordinator.state, .permissionRequired)
+        XCTAssertFalse(location.isPreciseTracking)
+    }
+
     func testShortAutomaticTripIsDiscarded() async {
         enableAutomaticTracking(minimumDistance: 0.30)
         defer { clearAutomaticTrackingState() }
@@ -92,6 +113,22 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         XCTAssertEqual(router.selectedTab, .settings)
     }
 
+    func testRecentTripResolutionReturnsExactTripAndFallsBackWhenMissing() async {
+        let (coordinator, _, _) = makeCoordinator()
+        let router = AppRouter(
+            repository: MockMileageRepository(),
+            automaticTripCoordinator: coordinator
+        )
+        let expected = MockData.trips[0]
+
+        let resolved = await router.resolveTripDetails(tripID: expected.id)
+        XCTAssertEqual(resolved?.id, expected.id)
+
+        let missing = await router.resolveTripDetails(tripID: UUID())
+        XCTAssertNil(missing)
+        XCTAssertEqual(router.selectedTab, .trips)
+    }
+
     private func makeCoordinator(
         stopInterval: TimeInterval = 180
     ) -> (
@@ -116,12 +153,14 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         UserDefaults.standard.set(true, forKey: enabledKey)
         UserDefaults.standard.set(minimumDistance, forKey: minimumDistanceKey)
         UserDefaults.standard.removeObject(forKey: pendingTripKey)
+        UserDefaults.standard.removeObject(forKey: "automaticActiveTrip")
     }
 
     private func clearAutomaticTrackingState() {
         UserDefaults.standard.removeObject(forKey: enabledKey)
         UserDefaults.standard.removeObject(forKey: minimumDistanceKey)
         UserDefaults.standard.removeObject(forKey: pendingTripKey)
+        UserDefaults.standard.removeObject(forKey: "automaticActiveTrip")
     }
 
     private func activity(

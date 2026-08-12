@@ -39,6 +39,8 @@ struct TripDetailView: View {
                     origin: trip.originName,
                     destination: trip.destinationName,
                     route: trip.route,
+                    startCoordinate: trip.startCoordinate,
+                    endCoordinate: trip.endCoordinate,
                     height: 330
                 )
 
@@ -63,6 +65,7 @@ struct TripDetailView: View {
             .padding(AppTheme.Spacing.large)
         }
         .background(AppTheme.Color.canvas)
+        .scrollIndicators(.hidden)
         .navigationTitle("Trip Details")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

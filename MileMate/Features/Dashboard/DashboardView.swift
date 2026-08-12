@@ -11,6 +11,7 @@ struct DashboardView: View {
     @AppStorage(AutomaticTrackingSettings.enabledKey) private var automaticTrackingEnabled = false
     @State private var isPulsing = false
     @State private var hasAppeared = false
+    @State private var selectedRecentTrip: Trip?
     @ScaledMetric(relativeTo: .headline) private var secondaryMetricValueSize: CGFloat = 22
     @ScaledMetric(relativeTo: .subheadline) private var compactMetricValueSize: CGFloat = 22
     @ScaledMetric(relativeTo: .title2) private var activeMetricValueSize: CGFloat = 25
@@ -47,6 +48,7 @@ struct DashboardView: View {
             .padding(.bottom, AppTheme.Spacing.xxLarge)
         }
         .background(AppTheme.Color.canvas)
+        .scrollIndicators(.hidden)
         .toolbar(.hidden, for: .navigationBar)
         .sheet(item: $tripCoordinator.pendingTrip) { trip in
             TripReviewView(trip: trip, repository: repository, coordinator: tripCoordinator) {
@@ -73,6 +75,9 @@ struct DashboardView: View {
         .onChange(of: automaticTripCoordinator.state) { _, _ in updateTrackingPulse() }
         .onReceive(NotificationCenter.default.publisher(for: .mileageTripsDidChange)) { _ in
             Task { await viewModel.load() }
+        }
+        .navigationDestination(item: $selectedRecentTrip) { trip in
+            TripDetailView(trip: trip, repository: repository)
         }
     }
 
@@ -368,7 +373,9 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
             SectionHeader(title: "Recent Trip")
             if let trip = viewModel.recentTrips.first {
-                NavigationLink(value: trip) {
+                Button {
+                    Task { await openRecentTrip(trip) }
+                } label: {
                     AppCard {
                         HStack(spacing: AppTheme.Spacing.large) {
                             VStack(spacing: 3) {
@@ -392,6 +399,8 @@ struct DashboardView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Recent trip from \(trip.originName) to \(trip.destinationName)")
+                .accessibilityHint("Opens this trip's details")
             } else {
                 AppCard {
                     Label {
@@ -408,7 +417,11 @@ struct DashboardView: View {
                 }
             }
         }
-        .navigationDestination(for: Trip.self) { TripDetailView(trip: $0, repository: repository) }
+    }
+
+    private func openRecentTrip(_ trip: Trip) async {
+        guard let resolvedTrip = await router.resolveTripDetails(tripID: trip.id) else { return }
+        selectedRecentTrip = resolvedTrip
     }
 
     private func updateTrackingPulse() {
@@ -441,6 +454,8 @@ struct DashboardView: View {
                     origin: trip.originName,
                     destination: trip.destinationName,
                     route: trip.route,
+                    startCoordinate: trip.startCoordinate,
+                    endCoordinate: trip.endCoordinate,
                     height: 260
                 )
             } else {

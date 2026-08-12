@@ -46,6 +46,15 @@ struct TripReviewView<Coordinator: TripReviewCoordinating>: View {
         NavigationStack {
             Form {
                 Section("Route") {
+                    RouteMapView(
+                        origin: coordinator.pendingTrip?.originName ?? trip.originName,
+                        destination: coordinator.pendingTrip?.destinationName ?? trip.destinationName,
+                        route: coordinator.pendingTrip?.route ?? trip.route,
+                        startCoordinate: coordinator.pendingTrip?.startCoordinate ?? trip.startCoordinate,
+                        endCoordinate: coordinator.pendingTrip?.endCoordinate ?? trip.endCoordinate,
+                        height: 190,
+                        interactive: false
+                    )
                     LabeledContent("Start", value: coordinator.pendingTrip?.originName ?? trip.originName)
                     LabeledContent("End", value: coordinator.pendingTrip?.destinationName ?? trip.destinationName)
                     LabeledContent("Distance", value: trip.distanceMiles.milesFormatted)
@@ -135,6 +144,7 @@ struct TripReviewView<Coordinator: TripReviewCoordinating>: View {
                     }
                 }
             }
+            .scrollIndicators(.hidden)
             .navigationTitle("Review Trip")
             .navigationBarTitleDisplayMode(.inline)
             .task { await loadReviewContext() }

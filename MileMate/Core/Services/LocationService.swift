@@ -20,7 +20,8 @@ protocol LocationService: AnyObject {
     var authorizationStatus: CLAuthorizationStatus { get }
     var eventHandler: ((LocationServiceEvent) -> Void)? { get set }
     func requestWhenInUseAuthorization()
-    func startUpdatingLocation()
+    func requestAlwaysAuthorization()
+    @discardableResult func startUpdatingLocation() -> Bool
     func stopUpdatingLocation()
 }
 
@@ -46,12 +47,27 @@ final class CoreLocationService: NSObject, LocationService, CLLocationManagerDel
         manager.requestWhenInUseAuthorization()
     }
 
-    func startUpdatingLocation() {
+    func requestAlwaysAuthorization() {
+        manager.requestAlwaysAuthorization()
+    }
+
+    @discardableResult
+    func startUpdatingLocation() -> Bool {
+        let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String]
+        guard authorizationStatus == .authorizedAlways,
+              modes?.contains("location") == true else {
+            TrackingDiagnostics.log("background tracking unavailable")
+            return false
+        }
+        manager.allowsBackgroundLocationUpdates = true
+        TrackingDiagnostics.log("background tracking activated")
         manager.startUpdatingLocation()
+        return true
     }
 
     func stopUpdatingLocation() {
         manager.stopUpdatingLocation()
+        manager.allowsBackgroundLocationUpdates = false
     }
 
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
@@ -145,8 +161,14 @@ final class MockLocationService: LocationService {
         eventHandler?(.authorizationChanged(authorizationStatus))
     }
 
-    func startUpdatingLocation() {
+    func requestAlwaysAuthorization() {
+        eventHandler?(.authorizationChanged(authorizationStatus))
+    }
+
+    @discardableResult
+    func startUpdatingLocation() -> Bool {
         isUpdating = true
+        return true
     }
 
     func stopUpdatingLocation() {

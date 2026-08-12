@@ -167,6 +167,7 @@ struct ReviewQueueView: View {
             }
         }
         .background(AppTheme.Color.canvas)
+        .scrollIndicators(.hidden)
         .navigationTitle("Review Trips")
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.load() }
@@ -225,6 +226,8 @@ struct ReviewQueueView: View {
                         origin: trip.originName,
                         destination: trip.destinationName,
                         route: trip.route,
+                        startCoordinate: trip.startCoordinate,
+                        endCoordinate: trip.endCoordinate,
                         height: 190,
                         interactive: false
                     )

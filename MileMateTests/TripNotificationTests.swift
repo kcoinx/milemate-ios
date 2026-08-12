@@ -168,6 +168,8 @@ final class MockTripNotificationService: TripNotificationScheduling {
     private(set) var scheduledTripIDs: [UUID] = []
     private(set) var cancelledTripIDs: Set<UUID> = []
     private(set) var pendingWasPersistedWhenScheduled = false
+    private(set) var longRunningReminderCount = 0
+    private(set) var longRunningReminderCancelled = false
 
     init(authorizationStatus: NotificationPermissionStatus = .authorized) {
         self.authorizationStatus = authorizationStatus
@@ -198,4 +200,11 @@ final class MockTripNotificationService: TripNotificationScheduling {
     func cancelCompletionNotifications() {}
     func cancelReminderNotifications() {}
     func cancelAllTripNotifications() {}
+    func scheduleLongRunningTripReminder(after delay: TimeInterval) async {
+        longRunningReminderCount += 1
+        longRunningReminderCancelled = false
+    }
+    func cancelLongRunningTripReminder() {
+        longRunningReminderCancelled = true
+    }
 }

@@ -11,6 +11,10 @@ final class NotificationDelegate: NSObject, UIApplicationDelegate {
         get { routeHandler.tripTapHandler }
         set { routeHandler.tripTapHandler = newValue }
     }
+    var activeTripTapHandler: (@MainActor () -> Void)? {
+        get { routeHandler.activeTripTapHandler }
+        set { routeHandler.activeTripTapHandler = newValue }
+    }
 
     func application(
         _ application: UIApplication,
@@ -24,9 +28,14 @@ final class NotificationDelegate: NSObject, UIApplicationDelegate {
 @MainActor
 private final class NotificationRouteHandler {
     var tripTapHandler: (@MainActor (UUID) -> Void)?
+    var activeTripTapHandler: (@MainActor () -> Void)?
 
     func route(to tripID: UUID) {
         tripTapHandler?(tripID)
+    }
+
+    func routeToActiveTrip() {
+        activeTripTapHandler?()
     }
 }
 
@@ -57,13 +66,20 @@ private final class UserNotificationDelegate: NSObject, UNUserNotificationCenter
     ) {
         let value = response.notification.request.content.userInfo[TripNotificationUserInfo.tripIDKey]
         let tripID = (value as? String).flatMap(UUID.init(uuidString:))
+        let isActiveTrip = response.notification.request.content.userInfo[
+            TripNotificationUserInfo.activeTripKey
+        ] as? Bool == true
         completionHandler()
 
-        guard let tripID else {
+        guard tripID != nil || isActiveTrip else {
             return
         }
         Task { @MainActor [routeHandler] in
-            routeHandler.route(to: tripID)
+            if isActiveTrip {
+                routeHandler.routeToActiveTrip()
+            } else if let tripID {
+                routeHandler.route(to: tripID)
+            }
         }
     }
 }

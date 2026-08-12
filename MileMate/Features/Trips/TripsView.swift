@@ -78,6 +78,7 @@ struct TripsView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .scrollIndicators(.hidden)
         .background(AppTheme.Color.canvas)
         .navigationTitle("Trips")
         .onAppear {
@@ -194,6 +195,8 @@ struct TripsView: View {
                         origin: trip.originName,
                         destination: trip.destinationName,
                         route: trip.route,
+                        startCoordinate: trip.startCoordinate,
+                        endCoordinate: trip.endCoordinate,
                         height: 148,
                         interactive: false
                     )
