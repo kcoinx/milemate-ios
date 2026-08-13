@@ -225,7 +225,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         XCTAssertNil(coordinator.pendingTrip)
     }
 
-    func testQualifyingAutomaticTripMovesToReview() async {
+    func testQualifyingAutomaticTripReturnsToIdleForFutureDetection() async {
         enableAutomaticTracking(minimumDistance: 0.30)
         defer { clearAutomaticTrackingState() }
         let (coordinator, location, motion) = makeCoordinator(stopInterval: 0.01)
@@ -238,10 +238,28 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         motion.send(activity(.stationary, confidence: .high))
         try? await Task.sleep(for: .milliseconds(50))
 
-        XCTAssertEqual(coordinator.state, .reviewing)
-        XCTAssertNotNil(coordinator.pendingTrip)
-        XCTAssertGreaterThan(coordinator.pendingTrip?.distanceMiles ?? 0, 0.30)
-        coordinator.discardPendingTrip()
+        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertNil(coordinator.pendingTrip)
+    }
+
+    func testAutomotiveResumptionCancelsCandidateStop() async {
+        enableAutomaticTracking(minimumDistance: 0.30)
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, location, motion) = makeCoordinator(stopInterval: 0.03)
+
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .high))
+        location.send(drivingSamples(latitudeDelta: 0.005))
+        motion.send(activity(.stationary, confidence: .high))
+        try? await Task.sleep(for: .milliseconds(15))
+        motion.send(activity(.automotive, confidence: .high))
+        try? await Task.sleep(for: .milliseconds(60))
+
+        XCTAssertEqual(coordinator.state, .tracking)
+
+        motion.send(activity(.stationary, confidence: .high))
+        try? await Task.sleep(for: .milliseconds(80))
+        XCTAssertEqual(coordinator.state, .idle)
     }
 
     func testReviewPermissionsRouteOpensSettings() {

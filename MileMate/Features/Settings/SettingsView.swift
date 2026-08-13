@@ -155,7 +155,7 @@ struct SettingsView: View {
             settingsSection("Notifications") {
                 Toggle(isOn: $tripDetectedNotificationsEnabled) {
                     settingLabel(
-                        "Trip Detected Notifications",
+                        "Trip Completion Notifications",
                         icon: "bell.badge.fill",
                         tint: AppTheme.Color.brand
                     )
@@ -167,6 +167,9 @@ struct SettingsView: View {
                         requestNotificationAuthorizationIfNeeded()
                     }
                 }
+                Text("Get notified when MileMate finishes recording an automatic trip.")
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.Color.textSecondary)
 
                 Toggle(isOn: $tripReviewRemindersEnabled) {
                     settingLabel(
@@ -180,8 +183,12 @@ struct SettingsView: View {
                         notificationService.cancelReminderNotifications()
                     } else {
                         requestNotificationAuthorizationIfNeeded()
+                        Task { await notificationService.reconcileReviewReminder() }
                     }
                 }
+                Text("Remind me later about trips that still need classification.")
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.Color.textSecondary)
 
                 if notificationRecovery == .openSystemSettings {
                     Text("Notifications are disabled in iPhone Settings.")
@@ -264,6 +271,7 @@ struct SettingsView: View {
             await viewModel.loadFrequentPlaces()
             await notificationService.refreshAuthorizationStatus()
             notificationPermissionStatus = notificationService.authorizationStatus
+            await notificationService.reconcileReviewReminder()
         }
         .onReceive(NotificationCenter.default.publisher(for: .mileageTripsDidChange)) { _ in
             Task { await viewModel.loadFrequentPlaces() }
@@ -273,6 +281,7 @@ struct SettingsView: View {
             Task {
                 await notificationService.refreshAuthorizationStatus()
                 notificationPermissionStatus = notificationService.authorizationStatus
+                await notificationService.reconcileReviewReminder()
             }
         }
         .confirmationDialog(

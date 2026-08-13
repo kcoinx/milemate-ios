@@ -21,7 +21,7 @@ struct AppDependencies {
             )
             let repository = SwiftDataMileageRepository(modelContainer: container)
             let locationService = CoreLocationService()
-            let notificationService = LocalTripNotificationService()
+            let notificationService = LocalTripNotificationService(repository: repository)
             let manualCoordinator = ManualTripCoordinator(
                 locationService: locationService,
                 repository: repository,

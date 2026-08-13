@@ -311,6 +311,7 @@ private final class QueueNotificationService: TripNotificationScheduling {
     func refreshAuthorizationStatus() async {}
     func requestAuthorization() async {}
     func scheduleTripCompletion(for trip: Trip) async {}
+    func reconcileReviewReminder() async {}
     func cancelNotifications(for tripID: UUID) { cancelledTripIDs.insert(tripID) }
     func cancelCompletionNotifications() {}
     func cancelReminderNotifications() {}

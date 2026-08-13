@@ -5,6 +5,7 @@ struct TripsView: View {
     private let notificationService: any TripNotificationScheduling
     @Binding private var requestedTrip: Trip?
     @Binding private var requestedFilter: TripsFilterRequest?
+    @Binding private var requestedReviewQueue: Bool
     @State private var viewModel: TripsViewModel
     @State private var hasAppeared = false
     @State private var tripPendingDeletion: Trip?
@@ -14,13 +15,20 @@ struct TripsView: View {
         repository: any MileageRepository,
         requestedTrip: Binding<Trip?> = .constant(nil),
         requestedFilter: Binding<TripsFilterRequest?> = .constant(nil),
+        requestedReviewQueue: Binding<Bool> = .constant(false),
         notificationService: any TripNotificationScheduling
     ) {
         self.repository = repository
         self.notificationService = notificationService
         _requestedTrip = requestedTrip
         _requestedFilter = requestedFilter
-        _viewModel = State(initialValue: TripsViewModel(repository: repository))
+        _requestedReviewQueue = requestedReviewQueue
+        _viewModel = State(
+            initialValue: TripsViewModel(
+                repository: repository,
+                notificationService: notificationService
+            )
+        )
     }
 
     var body: some View {
@@ -90,9 +98,22 @@ struct TripsView: View {
             applyRequestedFilter(request)
         }
         .searchable(text: $viewModel.searchText, prompt: "Search destinations")
-        .navigationDestination(for: Trip.self) { TripDetailView(trip: $0, repository: repository) }
+        .navigationDestination(for: Trip.self) {
+            TripDetailView(
+                trip: $0,
+                repository: repository,
+                notificationService: notificationService
+            )
+        }
         .navigationDestination(item: $requestedTrip) {
-            TripDetailView(trip: $0, repository: repository)
+            TripDetailView(
+                trip: $0,
+                repository: repository,
+                notificationService: notificationService
+            )
+        }
+        .navigationDestination(isPresented: $requestedReviewQueue) {
+            ReviewQueueView(repository: repository, notificationService: notificationService)
         }
         .confirmationDialog(
             "Delete this trip?",

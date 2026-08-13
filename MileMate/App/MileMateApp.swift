@@ -20,6 +20,9 @@ struct MileMateApp: App {
         notificationDelegate.activeTripTapHandler = {
             dependencies.router.selectedTab = .dashboard
         }
+        notificationDelegate.reviewQueueTapHandler = {
+            dependencies.router.showReviewQueue()
+        }
     }
 
     var body: some Scene {

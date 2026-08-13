@@ -41,6 +41,7 @@ final class AppRouter {
     var selectedTab: AppTab = .dashboard
     var requestedTrip: Trip?
     var requestedTripsFilter: TripsFilterRequest?
+    var requestedReviewQueue = false
 
     private let repository: any MileageRepository
     private weak var automaticTripCoordinator: AutomaticTripCoordinator?
@@ -72,6 +73,11 @@ final class AppRouter {
 
     func showTrackingPermissions() {
         selectedTab = .settings
+    }
+
+    func showReviewQueue() {
+        requestedReviewQueue = true
+        selectedTab = .trips
     }
 
     func showManualTracking() {

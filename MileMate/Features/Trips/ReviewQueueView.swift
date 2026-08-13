@@ -51,6 +51,7 @@ final class ReviewQueueViewModel {
         do {
             try await repository.update(trip)
             notificationService.cancelNotifications(for: trip.id)
+            await notificationService.reconcileReviewReminder()
             history.removeAll { $0.id == trip.id }
             history.append(trip)
             proposedRule = ruleProposal(afterConfirming: trip)
@@ -133,6 +134,7 @@ final class ReviewQueueViewModel {
 
 struct ReviewQueueView: View {
     private let repository: any MileageRepository
+    private let notificationService: any TripNotificationScheduling
     @State private var viewModel: ReviewQueueViewModel
 
     init(
@@ -140,6 +142,7 @@ struct ReviewQueueView: View {
         notificationService: any TripNotificationScheduling
     ) {
         self.repository = repository
+        self.notificationService = notificationService
         _viewModel = State(
             initialValue: ReviewQueueViewModel(
                 repository: repository,
@@ -292,7 +295,11 @@ struct ReviewQueueView: View {
                 Spacer()
                 if let trip = viewModel.currentTrip {
                     NavigationLink {
-                        TripDetailView(trip: trip, repository: repository)
+                        TripDetailView(
+                            trip: trip,
+                            repository: repository,
+                            notificationService: notificationService
+                        )
                     } label: {
                         Label("Edit details", systemImage: "pencil")
                     }

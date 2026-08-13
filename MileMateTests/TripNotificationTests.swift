@@ -16,7 +16,7 @@ final class TripNotificationTests: XCTestCase {
         await completeQualifyingTrip(coordinator, location: location, motion: motion)
 
         XCTAssertEqual(notifications.scheduledTripIDs.count, 1)
-        XCTAssertTrue(notifications.pendingWasPersistedWhenScheduled)
+        XCTAssertFalse(notifications.pendingWasPersistedWhenScheduled)
         coordinator.startIfEnabled()
         XCTAssertEqual(notifications.scheduledTripIDs.count, 1)
         coordinator.discardPendingTrip()
@@ -37,18 +37,53 @@ final class TripNotificationTests: XCTestCase {
         XCTAssertNil(coordinator.pendingTrip)
     }
 
+    func testCompletedTripDoesNotBlockDetectionOfNextTrip() async {
+        defer { clearState() }
+        let notifications = MockTripNotificationService()
+        let (coordinator, location, motion) = makeCoordinator(notifications: notifications)
+
+        await completeQualifyingTrip(coordinator, location: location, motion: motion)
+        await completeQualifyingTrip(coordinator, location: location, motion: motion)
+
+        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertNil(coordinator.pendingTrip)
+        XCTAssertEqual(notifications.scheduledTripIDs.count, 2)
+        XCTAssertEqual(Set(notifications.scheduledTripIDs).count, 2)
+    }
+
+    func testLegacySinglePendingTripMigratesOnceWithoutChangingItsID() async throws {
+        defer { clearState() }
+        let trip = reviewTrip(classification: .unclassified)
+        let data = try JSONEncoder().encode(LegacyPendingTripEnvelope(trip: trip))
+        UserDefaults.standard.set(data, forKey: pendingTripKey)
+        UserDefaults.standard.set(false, forKey: enabledKey)
+        let repository = RecordingMileageRepository()
+        let notifications = MockTripNotificationService()
+        let coordinator = AutomaticTripCoordinator(
+            locationService: MockAutomaticLocationService(),
+            motionService: MockMotionActivityService(),
+            repository: repository,
+            notificationService: notifications,
+            isManualTrackingActive: { false }
+        )
+
+        coordinator.startIfEnabled()
+        coordinator.startIfEnabled()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        let migrated = try await repository.fetchTrips()
+        XCTAssertEqual(migrated.map(\.id), [trip.id])
+        XCTAssertNil(UserDefaults.standard.data(forKey: pendingTripKey))
+    }
+
     func testReviewingTripCancelsReminder() async throws {
         defer { clearState() }
         let notifications = MockTripNotificationService()
         let (coordinator, location, motion) = makeCoordinator(notifications: notifications)
         await completeQualifyingTrip(coordinator, location: location, motion: motion)
-        let tripID = try XCTUnwrap(coordinator.pendingTrip?.id)
+        let tripID = try XCTUnwrap(notifications.scheduledTripIDs.first)
 
-        try await coordinator.savePendingTrip(
-            classification: .business,
-            purpose: "Client meeting",
-            notes: ""
-        )
+        notifications.cancelNotifications(for: tripID)
 
         XCTAssertTrue(notifications.cancelledTripIDs.contains(tripID))
     }
@@ -58,9 +93,9 @@ final class TripNotificationTests: XCTestCase {
         let notifications = MockTripNotificationService()
         let (coordinator, location, motion) = makeCoordinator(notifications: notifications)
         await completeQualifyingTrip(coordinator, location: location, motion: motion)
-        let tripID = try XCTUnwrap(coordinator.pendingTrip?.id)
+        let tripID = try XCTUnwrap(notifications.scheduledTripIDs.first)
 
-        coordinator.discardPendingTrip()
+        notifications.cancelNotifications(for: tripID)
 
         XCTAssertTrue(notifications.cancelledTripIDs.contains(tripID))
     }
@@ -70,7 +105,7 @@ final class TripNotificationTests: XCTestCase {
         let notifications = MockTripNotificationService()
         let (coordinator, location, motion) = makeCoordinator(notifications: notifications)
         await completeQualifyingTrip(coordinator, location: location, motion: motion)
-        let tripID = try XCTUnwrap(coordinator.pendingTrip?.id)
+        let tripID = try XCTUnwrap(notifications.scheduledTripIDs.first)
         let router = AppRouter(
             repository: MockMileageRepository(),
             automaticTripCoordinator: coordinator
@@ -78,9 +113,8 @@ final class TripNotificationTests: XCTestCase {
 
         await router.handleNotificationTap(tripID: tripID)
 
-        XCTAssertEqual(router.selectedTab, AppTab.dashboard)
+        XCTAssertEqual(router.selectedTab, AppTab.trips)
         XCTAssertNil(router.requestedTrip)
-        coordinator.discardPendingTrip()
     }
 
     func testDeniedNotificationPermissionDoesNotBreakTracking() async {
@@ -90,8 +124,8 @@ final class TripNotificationTests: XCTestCase {
 
         await completeQualifyingTrip(coordinator, location: location, motion: motion)
 
-        XCTAssertEqual(coordinator.state, .reviewing)
-        XCTAssertNotNil(coordinator.pendingTrip)
+        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertNil(coordinator.pendingTrip)
         XCTAssertTrue(notifications.scheduledTripIDs.isEmpty)
         coordinator.discardPendingTrip()
     }
@@ -202,6 +236,41 @@ final class TripNotificationTests: XCTestCase {
         )
     }
 
+    func testCompletionAndAggregatedReviewCopy() {
+        XCTAssertEqual(TripNotificationCopy.completionTitle, "Trip Complete")
+        XCTAssertEqual(
+            TripNotificationCopy.reviewBody(count: 1),
+            "1 trip is waiting for review. Tap to classify it."
+        )
+        XCTAssertEqual(
+            TripNotificationCopy.reviewBody(count: 3),
+            "3 trips are waiting for review. Tap to classify them."
+        )
+    }
+
+    func testReviewReminderUsesNextDayAtNineLocalTime() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: -8 * 60 * 60)!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 12, hour: 20))!
+        let reminder = ReviewReminderSchedule.nextDate(after: now, calendar: calendar)
+        let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: reminder)
+        XCTAssertEqual(components.year, 2026)
+        XCTAssertEqual(components.month, 8)
+        XCTAssertEqual(components.day, 13)
+        XCTAssertEqual(components.hour, 9)
+        XCTAssertEqual(components.minute, 0)
+    }
+
+    func testReviewQueueCountIncludesAutomaticAndManualUnclassifiedTripsOnly() {
+        let automatic = reviewTrip(classification: .unclassified)
+        let manual = reviewTrip(classification: .unclassified)
+        let reviewed = reviewTrip(classification: .business)
+        XCTAssertEqual(
+            ReviewQueueService.pendingTrips(from: [automatic, manual, reviewed]).count,
+            2
+        )
+    }
+
     func testSettingsKeysAreTheSchedulingSourceOfTruth() {
         let defaults = UserDefaults.standard
         let originalDetected = defaults.object(
@@ -235,6 +304,19 @@ final class TripNotificationTests: XCTestCase {
         )
         XCTAssertFalse(defaults.bool(forKey: TripNotificationSettings.completionEnabledKey))
         XCTAssertTrue(defaults.bool(forKey: TripNotificationSettings.remindersEnabledKey))
+    }
+
+    private func reviewTrip(classification: Trip.Classification) -> Trip {
+        Trip(
+            id: UUID(),
+            startedAt: .now.addingTimeInterval(-1_800),
+            endedAt: .now,
+            originName: "Start",
+            destinationName: "End",
+            distanceMiles: 2,
+            classification: classification,
+            purpose: ""
+        )
     }
 
     private func makeCoordinator(
@@ -303,6 +385,30 @@ final class TripNotificationTests: XCTestCase {
     }
 }
 
+private struct LegacyPendingTripEnvelope: Codable {
+    let trip: Trip
+}
+
+private actor RecordingMileageRepository: MileageRepository {
+    private var trips: [Trip] = []
+
+    func fetchTrips() async throws -> [Trip] { trips }
+    func fetchSummary() async throws -> MileageSummary {
+        MileageSummaryCalculator.summary(for: trips)
+    }
+    func fetchProfile() async throws -> UserProfile { MockData.profile }
+    func save(_ trip: Trip) async throws {
+        if !trips.contains(where: { $0.id == trip.id }) { trips.append(trip) }
+    }
+    func update(_ trip: Trip) async throws {
+        guard let index = trips.firstIndex(where: { $0.id == trip.id }) else { return }
+        trips[index] = trip
+    }
+    func delete(_ trip: Trip) async throws {
+        trips.removeAll { $0.id == trip.id }
+    }
+}
+
 @MainActor
 final class MockTripNotificationService: TripNotificationScheduling {
     private(set) var authorizationStatus: NotificationPermissionStatus
@@ -333,6 +439,8 @@ final class MockTripNotificationService: TripNotificationScheduling {
             UserDefaults.standard.data(forKey: "automaticPendingTrip") != nil
         scheduledTripIDs.append(trip.id)
     }
+
+    func reconcileReviewReminder() async {}
 
     func cancelNotifications(for tripID: UUID) {
         cancelledTripIDs.insert(tripID)

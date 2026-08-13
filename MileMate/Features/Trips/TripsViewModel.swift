@@ -11,6 +11,7 @@ final class TripsViewModel {
     }
 
     private let repository: any MileageRepository
+    private let notificationService: (any TripNotificationScheduling)?
     var selection: Trip.Classification?
     var searchText = ""
     var vehicleFilter = VehicleFilter.all
@@ -19,8 +20,12 @@ final class TripsViewModel {
     private(set) var vehicles: [Vehicle] = []
     private(set) var errorMessage: String?
 
-    init(repository: any MileageRepository) {
+    init(
+        repository: any MileageRepository,
+        notificationService: (any TripNotificationScheduling)? = nil
+    ) {
         self.repository = repository
+        self.notificationService = notificationService
     }
 
     var filteredTrips: [Trip] {
@@ -90,6 +95,8 @@ final class TripsViewModel {
 
         do {
             try await repository.delete(trip)
+            notificationService?.cancelNotifications(for: trip.id)
+            await notificationService?.reconcileReviewReminder()
             errorMessage = nil
             NotificationCenter.default.post(name: .mileageTripsDidChange, object: trip.id)
         } catch {

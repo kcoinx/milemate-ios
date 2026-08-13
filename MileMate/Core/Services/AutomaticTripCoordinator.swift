@@ -41,6 +41,9 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         let automotiveConfirmed: Bool
         let highestObservedSpeed: Double
         let isTracking: Bool
+        let candidateStopStartedAt: Date?
+        let motionStopEvidence: Bool?
+        let lowSpeedStopEvidence: Bool?
     }
 
     private let locationService: any AutomaticLocationService
@@ -57,6 +60,10 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     private var stopTask: Task<Void, Never>?
     private var detectionTimeoutTask: Task<Void, Never>?
     private var requestedAlwaysAuthorization = false
+    private var legacyPendingMigrationStarted = false
+    private var candidateStopStartedAt: Date?
+    private var motionStopEvidence = false
+    private var lowSpeedStopEvidence = false
 
     private(set) var state: State = .disabled
     private(set) var elapsedTime: TimeInterval = 0
@@ -90,9 +97,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             self?.handleMotion(activity)
         }
         restorePendingTrip()
-        if pendingTrip == nil {
-            restoreActiveTrip()
-        }
+        restoreActiveTrip()
     }
 
     var distanceMiles: Double {
@@ -145,6 +150,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
 
     func startIfEnabled() {
         TrackingDiagnostics.log(readinessSnapshot.diagnosticDescription)
+        migrateLegacyPendingTripIfNeeded()
         guard AutomaticTrackingSettings.isEnabled else {
             state = .disabled
             return
@@ -153,9 +159,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
 
         requestLocationAuthorizationIfNeeded()
 
-        if pendingTrip != nil {
-            state = .reviewing
-        } else if locationService.authorizationStatus == CLAuthorizationStatus.authorizedAlways {
+        if locationService.authorizationStatus == CLAuthorizationStatus.authorizedAlways {
             locationService.startLowPowerMonitoring()
             startMotionMonitoring()
             state = .idle
@@ -195,8 +199,14 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         trip.classificationSource = classificationSource
         trip.appliedRuleID = appliedRuleID
         trip.updatedAt = .now
-        try await repository.save(trip)
+        let existing = (try? await repository.fetchTrips()) ?? []
+        if existing.contains(where: { $0.id == trip.id }) {
+            try await repository.update(trip)
+        } else {
+            try await repository.save(trip)
+        }
         notificationService.cancelNotifications(for: trip.id)
+        await notificationService.reconcileReviewReminder()
         NotificationCenter.default.post(name: .mileageTripsDidChange, object: trip.id)
         pendingTrip = nil
         clearPersistedPendingTrip()
@@ -204,8 +214,14 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     }
 
     func discardPendingTrip() {
-        if let tripID = pendingTrip?.id {
+        if let trip = pendingTrip {
+            let tripID = trip.id
             notificationService.cancelNotifications(for: tripID)
+            Task { [repository, notificationService] in
+                try? await repository.delete(trip)
+                await notificationService.reconcileReviewReminder()
+                NotificationCenter.default.post(name: .mileageTripsDidChange, object: tripID)
+            }
         }
         pendingTrip = nil
         clearPersistedPendingTrip()
@@ -221,7 +237,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             locationService.requestAlwaysAuthorization()
         case CLAuthorizationStatus.authorizedAlways:
             locationService.startLowPowerMonitoring()
-            if pendingTrip == nil { state = .idle }
+            state = .idle
         case CLAuthorizationStatus.denied, CLAuthorizationStatus.restricted:
             state = .permissionRequired
         @unknown default:
@@ -236,10 +252,8 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             switch status {
             case CLAuthorizationStatus.authorizedAlways:
                 locationService.startLowPowerMonitoring()
-                if pendingTrip == nil {
-                    startMotionMonitoring()
-                    state = .idle
-                }
+                startMotionMonitoring()
+                state = .idle
             case CLAuthorizationStatus.authorizedWhenInUse where !requestedAlwaysAuthorization:
                 requestedAlwaysAuthorization = true
                 locationService.requestAlwaysAuthorization()
@@ -273,7 +287,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             try? await Task.sleep(for: .seconds(1))
             guard let self,
                   AutomaticTrackingSettings.isEnabled,
-                  self.pendingTrip == nil else { return }
+                  !self.isManualTrackingActive() else { return }
             switch self.motionService.permissionStatus {
             case MotionPermissionStatus.denied,
                  MotionPermissionStatus.restricted,
@@ -288,7 +302,6 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
 
     private func handleMotion(_ activity: MotionActivitySample) {
         guard AutomaticTrackingSettings.isEnabled,
-              pendingTrip == nil,
               !isManualTrackingActive() else {
             return
         }
@@ -310,11 +323,11 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             if state == .detecting {
                 resetToIdle()
             } else if state == .tracking {
-                scheduleStopCountdown()
+                scheduleStopCountdown(motionEvidence: true)
             }
         case .stationary:
             if state == .tracking {
-                scheduleStopCountdown()
+                scheduleStopCountdown(motionEvidence: true)
             } else if state == .detecting {
                 resetToIdle()
             }
@@ -356,7 +369,9 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             if sample.speed >= 0 {
                 highestObservedSpeed = max(highestObservedSpeed, sample.speed)
                 if state == .tracking {
-                    reportsStationarySpeed ? scheduleStopCountdown() : cancelStopCountdown()
+                    reportsStationarySpeed
+                        ? scheduleStopCountdown(lowSpeedEvidence: true)
+                        : cancelStopCountdown()
                 }
             }
 
@@ -399,12 +414,27 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         }
     }
 
-    private func scheduleStopCountdown() {
-        guard state == .tracking, stopTask == nil else { return }
+    private func scheduleStopCountdown(
+        motionEvidence: Bool = false,
+        lowSpeedEvidence: Bool = false
+    ) {
+        guard state == .tracking else { return }
+        self.motionStopEvidence = self.motionStopEvidence || motionEvidence
+        self.lowSpeedStopEvidence = self.lowSpeedStopEvidence || lowSpeedEvidence
+        candidateStopStartedAt = candidateStopStartedAt ?? .now
+        persistActiveTrip()
+        guard stopTask == nil else { return }
+        let elapsed = Date().timeIntervalSince(candidateStopStartedAt ?? .now)
+        let remaining = max(stopInterval - elapsed, 0)
         stopTask = Task { [weak self] in
             guard let self else { return }
-            try? await Task.sleep(for: .seconds(self.stopInterval))
+            try? await Task.sleep(for: .seconds(remaining))
             guard !Task.isCancelled, self.state == .tracking else { return }
+            if !(self.motionStopEvidence && self.lowSpeedStopEvidence) {
+                let grace = min(TimeInterval(60), max(self.stopInterval / 3, 0.01))
+                try? await Task.sleep(for: .seconds(grace))
+                guard !Task.isCancelled, self.state == .tracking else { return }
+            }
             self.finishAutomaticTrip()
         }
     }
@@ -412,6 +442,10 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     private func cancelStopCountdown() {
         stopTask?.cancel()
         stopTask = nil
+        candidateStopStartedAt = nil
+        motionStopEvidence = false
+        lowSpeedStopEvidence = false
+        if state == .tracking { persistActiveTrip() }
     }
 
     private func finishAutomaticTrip() {
@@ -439,6 +473,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             endCoordinate: route.last,
             route: route
         )
+        resetToIdle()
         Task { [weak self] in
             guard let self else { return }
             var assignedTrip = trip
@@ -470,30 +505,34 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
                             name: .mileageTripsDidChange,
                             object: classifiedTrip.id
                         )
-                        self.resetToIdle()
+                        await self.notificationService.scheduleTripCompletion(for: classifiedTrip)
+                        self.reverseGeocodeStoredTrip(classifiedTrip)
                         return
                     } catch {
                         // Fall through to review so a persistence failure never loses the trip.
                     }
                 }
             }
-            self.completeAutomaticTrip(assignedTrip)
+            do {
+                try await self.repository.save(assignedTrip)
+                NotificationCenter.default.post(
+                    name: .mileageTripsDidChange,
+                    object: assignedTrip.id
+                )
+                self.completeAutomaticTrip(assignedTrip)
+                self.reverseGeocodeStoredTrip(assignedTrip)
+            } catch {
+                TrackingDiagnostics.log("automatic trip could not be persisted")
+            }
         }
     }
 
     private func completeAutomaticTrip(_ trip: Trip) {
-        guard persistPendingTrip(trip) else {
-            resetToIdle()
-            return
-        }
-        pendingTrip = trip
-        state = .reviewing
         TripFeedback.completed()
         TrackingDiagnostics.log("automatic trip ended")
         Task { [notificationService] in
             await notificationService.scheduleTripCompletion(for: trip)
         }
-        reverseGeocodePendingTrip()
     }
 
     private func stopDetection() {
@@ -516,6 +555,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     private func resetToIdle() {
         clearPersistedActiveTrip()
         stopPreciseSession()
+        clearPersistedActiveTrip()
         processor.reset()
         distanceMeters = 0
         elapsedTime = 0
@@ -540,7 +580,10 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             distanceMeters: distanceMeters,
             automotiveConfirmed: automotiveConfirmed,
             highestObservedSpeed: highestObservedSpeed,
-            isTracking: state == .tracking
+            isTracking: state == .tracking,
+            candidateStopStartedAt: candidateStopStartedAt,
+            motionStopEvidence: motionStopEvidence,
+            lowSpeedStopEvidence: lowSpeedStopEvidence
         )
         if let data = try? JSONEncoder().encode(envelope) {
             UserDefaults.standard.set(data, forKey: Self.activeTripKey)
@@ -562,6 +605,9 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         distanceMeters = envelope.distanceMeters
         automotiveConfirmed = envelope.automotiveConfirmed
         highestObservedSpeed = envelope.highestObservedSpeed
+        candidateStopStartedAt = envelope.candidateStopStartedAt
+        motionStopEvidence = envelope.motionStopEvidence ?? false
+        lowSpeedStopEvidence = envelope.lowSpeedStopEvidence ?? false
         elapsedTime = Date().timeIntervalSince(envelope.startedAt)
         guard locationService.startPreciseTracking() else {
             state = .permissionRequired
@@ -570,7 +616,15 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         locationService.stopLowPowerMonitoring()
         state = envelope.isTracking ? .tracking : .detecting
         startMotionMonitoring()
-        if envelope.isTracking { startElapsedTimer() }
+        if envelope.isTracking {
+            startElapsedTimer()
+            if candidateStopStartedAt != nil {
+                scheduleStopCountdown(
+                    motionEvidence: motionStopEvidence,
+                    lowSpeedEvidence: lowSpeedStopEvidence
+                )
+            }
+        }
         if !envelope.isTracking {
             detectionTimeoutTask?.cancel()
             detectionTimeoutTask = Task { [weak self] in
@@ -615,6 +669,20 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         state = .reviewing
     }
 
+    private func migrateLegacyPendingTripIfNeeded() {
+        guard !legacyPendingMigrationStarted, let trip = pendingTrip else { return }
+        legacyPendingMigrationStarted = true
+        Task { [weak self, repository, notificationService] in
+            let existing = (try? await repository.fetchTrips()) ?? []
+            if !existing.contains(where: { $0.id == trip.id }) {
+                try? await repository.save(trip)
+            }
+            self?.clearPersistedPendingTrip()
+            NotificationCenter.default.post(name: .mileageTripsDidChange, object: trip.id)
+            await notificationService.reconcileReviewReminder()
+        }
+    }
+
     private func clearPersistedPendingTrip() {
         UserDefaults.standard.removeObject(forKey: Self.pendingTripKey)
     }
@@ -629,6 +697,20 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             updated.destinationName = endName
             pendingTrip = updated
             persistPendingTrip(updated)
+            try? await repository.update(updated)
+        }
+    }
+
+    private func reverseGeocodeStoredTrip(_ trip: Trip) {
+        Task { [repository] in
+            async let startName = Self.locationName(for: trip.startCoordinate)
+            async let endName = Self.locationName(for: trip.endCoordinate)
+            var updated = trip
+            updated.originName = await startName
+            updated.destinationName = await endName
+            updated.updatedAt = .now
+            try? await repository.update(updated)
+            NotificationCenter.default.post(name: .mileageTripsDidChange, object: updated.id)
         }
     }
 

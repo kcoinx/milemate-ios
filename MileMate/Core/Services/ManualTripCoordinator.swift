@@ -167,6 +167,7 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         trip.appliedRuleID = appliedRuleID
         trip.updatedAt = .now
         try await repository.save(trip)
+        await notificationService?.reconcileReviewReminder()
         NotificationCenter.default.post(name: .mileageTripsDidChange, object: trip.id)
         pendingTrip = nil
         resetSession()

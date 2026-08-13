@@ -28,6 +28,7 @@ struct AppTabView: View {
                     repository: dependencies.mileageRepository,
                     requestedTrip: $router.requestedTrip,
                     requestedFilter: $router.requestedTripsFilter,
+                    requestedReviewQueue: $router.requestedReviewQueue,
                     notificationService: dependencies.notificationService
                 )
             }
@@ -57,6 +58,7 @@ struct AppTabView: View {
                    trip.classification != .unclassified {
                     dependencies.notificationService.cancelNotifications(for: tripID)
                 }
+                await dependencies.notificationService.reconcileReviewReminder()
             }
         }
         .onChange(of: dependencies.automaticTripCoordinator.pendingTrip?.id) { _, tripID in

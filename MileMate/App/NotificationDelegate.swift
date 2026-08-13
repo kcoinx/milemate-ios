@@ -15,6 +15,10 @@ final class NotificationDelegate: NSObject, UIApplicationDelegate {
         get { routeHandler.activeTripTapHandler }
         set { routeHandler.activeTripTapHandler = newValue }
     }
+    var reviewQueueTapHandler: (@MainActor () -> Void)? {
+        get { routeHandler.reviewQueueTapHandler }
+        set { routeHandler.reviewQueueTapHandler = newValue }
+    }
 
     func application(
         _ application: UIApplication,
@@ -29,6 +33,7 @@ final class NotificationDelegate: NSObject, UIApplicationDelegate {
 private final class NotificationRouteHandler {
     var tripTapHandler: (@MainActor (UUID) -> Void)?
     var activeTripTapHandler: (@MainActor () -> Void)?
+    var reviewQueueTapHandler: (@MainActor () -> Void)?
 
     func route(to tripID: UUID) {
         tripTapHandler?(tripID)
@@ -36,6 +41,10 @@ private final class NotificationRouteHandler {
 
     func routeToActiveTrip() {
         activeTripTapHandler?()
+    }
+
+    func routeToReviewQueue() {
+        reviewQueueTapHandler?()
     }
 }
 
@@ -69,14 +78,19 @@ private final class UserNotificationDelegate: NSObject, UNUserNotificationCenter
         let isActiveTrip = response.notification.request.content.userInfo[
             TripNotificationUserInfo.activeTripKey
         ] as? Bool == true
+        let isReviewQueue = response.notification.request.content.userInfo[
+            TripNotificationUserInfo.reviewQueueKey
+        ] as? Bool == true
         completionHandler()
 
-        guard tripID != nil || isActiveTrip else {
+        guard tripID != nil || isActiveTrip || isReviewQueue else {
             return
         }
         Task { @MainActor [routeHandler] in
             if isActiveTrip {
                 routeHandler.routeToActiveTrip()
+            } else if isReviewQueue {
+                routeHandler.routeToReviewQueue()
             } else if let tripID {
                 routeHandler.route(to: tripID)
             }

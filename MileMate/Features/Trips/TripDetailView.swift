@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TripDetailView: View {
     private let repository: any MileageRepository
+    private let notificationService: (any TripNotificationScheduling)?
     private let originalClassification: Trip.Classification
     private let originalRuleID: UUID?
     @State private var trip: Trip
@@ -15,8 +16,13 @@ struct TripDetailView: View {
     @State private var overriddenRule: ClassificationRule?
     @Environment(\.dismiss) private var dismiss
 
-    init(trip: Trip, repository: any MileageRepository) {
+    init(
+        trip: Trip,
+        repository: any MileageRepository,
+        notificationService: (any TripNotificationScheduling)? = nil
+    ) {
         self.repository = repository
+        self.notificationService = notificationService
         self.originalClassification = trip.classification
         self.originalRuleID = trip.appliedRuleID
         _trip = State(initialValue: trip)
@@ -301,6 +307,8 @@ struct TripDetailView: View {
         Task {
             do {
                 try await repository.delete(trip)
+                notificationService?.cancelNotifications(for: trip.id)
+                await notificationService?.reconcileReviewReminder()
                 NotificationCenter.default.post(name: .mileageTripsDidChange, object: trip.id)
                 dismiss()
             } catch {

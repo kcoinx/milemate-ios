@@ -1,6 +1,38 @@
 @preconcurrency import UserNotifications
 import Foundation
 
+enum TripNotificationCopy {
+    static let completionTitle = "Trip Complete"
+    static let reviewTitle = "Trips Waiting for Review"
+
+    static func completionBody(for trip: Trip) -> String {
+        let miles = trip.distanceMiles.formatted(.number.precision(.fractionLength(1)))
+        if trip.classification == .unclassified {
+            return "\(miles) miles recorded. Tap to review."
+        }
+        return "\(miles) miles recorded and classified as \(trip.classification.rawValue)."
+    }
+
+    static func reviewBody(count: Int) -> String {
+        count == 1
+            ? "1 trip is waiting for review. Tap to classify it."
+            : "\(count) trips are waiting for review. Tap to classify them."
+    }
+}
+
+enum ReviewReminderSchedule {
+    static func nextDate(
+        after date: Date = .now,
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> Date {
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: date) ?? date
+        var components = calendar.dateComponents([.year, .month, .day], from: tomorrow)
+        components.hour = 9
+        components.minute = 0
+        return calendar.date(from: components) ?? tomorrow
+    }
+}
+
 enum TripNotificationSettings {
     static let completionEnabledKey = "tripDetectedNotificationsEnabled"
     static let remindersEnabledKey = "tripReviewRemindersEnabled"
@@ -81,6 +113,7 @@ protocol TripNotificationScheduling: AnyObject {
     func refreshAuthorizationStatus() async
     func requestAuthorization() async
     func scheduleTripCompletion(for trip: Trip) async
+    func reconcileReviewReminder() async
     func cancelNotifications(for tripID: UUID)
     func cancelCompletionNotifications()
     func cancelReminderNotifications()
@@ -93,6 +126,7 @@ protocol TripNotificationScheduling: AnyObject {
 final class LocalTripNotificationService: TripNotificationScheduling {
     private enum Identifier {
         static let activeTrip = "active-trip-reminder"
+        static let reviewQueue = "review-queue-reminder"
         static func completion(_ tripID: UUID) -> String {
             "trip-completion-\(tripID.uuidString)"
         }
@@ -103,12 +137,17 @@ final class LocalTripNotificationService: TripNotificationScheduling {
     }
 
     private let center: UNUserNotificationCenter
+    private let repository: any MileageRepository
     private var scheduledCompletionTripIDs: Set<UUID> = []
     private var scheduledReminderTripIDs: Set<UUID> = []
     private(set) var authorizationStatus: NotificationPermissionStatus = .notDetermined
 
-    init(center: UNUserNotificationCenter = .current()) {
+    init(
+        center: UNUserNotificationCenter = .current(),
+        repository: any MileageRepository
+    ) {
         self.center = center
+        self.repository = repository
     }
 
     func refreshAuthorizationStatus() async {
@@ -123,6 +162,10 @@ final class LocalTripNotificationService: TripNotificationScheduling {
             // Notification permission never controls automatic trip tracking.
         }
         await refreshAuthorizationStatus()
+        if authorizationStatus.allowsScheduling,
+           TripNotificationSettings.remindersEnabled {
+            await reconcileReviewReminder()
+        }
     }
 
     func scheduleTripCompletion(for trip: Trip) async {
@@ -144,8 +187,8 @@ final class LocalTripNotificationService: TripNotificationScheduling {
             if !scheduledCompletionTripIDs.contains(trip.id),
                !existingIdentifiers.contains(identifier) {
                 let content = UNMutableNotificationContent()
-                content.title = "Trip Detected"
-                content.body = "\(trip.distanceMiles.formatted(.number.precision(.fractionLength(1)))) miles recorded. Tap to review and classify your trip."
+                content.title = TripNotificationCopy.completionTitle
+                content.body = TripNotificationCopy.completionBody(for: trip)
                 content.sound = .default
                 content.categoryIdentifier = TripNotificationUserInfo.categoryIdentifier
                 content.userInfo = userInfo
@@ -156,26 +199,55 @@ final class LocalTripNotificationService: TripNotificationScheduling {
             }
         }
 
-        if deliveryPlan.sendsReviewReminder {
-            let identifier = Identifier.reminder(trip.id)
-            if !scheduledReminderTripIDs.contains(trip.id),
-               !existingIdentifiers.contains(identifier) {
-                let content = UNMutableNotificationContent()
-                content.title = "Trip Waiting for Review"
-                content.body = "Classify your recorded trip to keep your mileage records complete."
-                content.sound = .default
-                content.categoryIdentifier = TripNotificationUserInfo.categoryIdentifier
-                content.userInfo = userInfo
-                let trigger = UNTimeIntervalNotificationTrigger(
-                    timeInterval: 6 * 60 * 60,
-                    repeats: false
-                )
-                try? await center.add(
-                    UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
-                )
-                scheduledReminderTripIDs.insert(trip.id)
-            }
+        if deliveryPlan.sendsReviewReminder { await reconcileReviewReminder() }
+    }
+
+    func reconcileReviewReminder() async {
+        await refreshAuthorizationStatus()
+        let deliveryPlan = TripNotificationDeliveryPlan.current(
+            authorizationStatus: authorizationStatus
+        )
+        guard deliveryPlan.sendsReviewReminder else {
+            cancelReminderNotifications()
+            return
         }
+        let trips = (try? await repository.fetchTrips()) ?? []
+        let count = ReviewQueueService.pendingTrips(from: trips).count
+        let pendingRequests = await center.pendingNotificationRequests()
+        let deliveredNotifications = await center.deliveredNotifications()
+        let legacyPendingIDs = pendingRequests
+            .map(\.identifier)
+            .filter { $0.hasPrefix("trip-reminder-") }
+        let legacyDeliveredIDs = deliveredNotifications
+            .map { $0.request.identifier }
+            .filter { $0.hasPrefix("trip-reminder-") }
+        center.removePendingNotificationRequests(withIdentifiers: legacyPendingIDs)
+        center.removeDeliveredNotifications(withIdentifiers: legacyDeliveredIDs)
+        let existingReminderDate = pendingRequests
+            .first(where: { $0.identifier == Identifier.reviewQueue })
+            .flatMap { ($0.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate() }
+        center.removePendingNotificationRequests(withIdentifiers: [Identifier.reviewQueue])
+        guard count > 0 else {
+            center.removeDeliveredNotifications(withIdentifiers: [Identifier.reviewQueue])
+            return
+        }
+        let content = UNMutableNotificationContent()
+        content.title = TripNotificationCopy.reviewTitle
+        content.body = TripNotificationCopy.reviewBody(count: count)
+        content.sound = .default
+        content.categoryIdentifier = TripNotificationUserInfo.categoryIdentifier
+        content.userInfo = [TripNotificationUserInfo.reviewQueueKey: true]
+        let calendar = Calendar.autoupdatingCurrent
+        let reminderDate = existingReminderDate
+            ?? ReviewReminderSchedule.nextDate(calendar: calendar)
+        let components = calendar.dateComponents(
+            [.year, .month, .day, .hour, .minute],
+            from: reminderDate
+        )
+        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+        try? await center.add(
+            UNNotificationRequest(identifier: Identifier.reviewQueue, content: content, trigger: trigger)
+        )
     }
 
     func cancelNotifications(for tripID: UUID) {
@@ -193,21 +265,24 @@ final class LocalTripNotificationService: TripNotificationScheduling {
         scheduledCompletionTripIDs.removeAll()
         scheduledReminderTripIDs.removeAll()
         cancelLongRunningTripReminder()
-        cancelPendingNotifications { identifier in
+        cancelPendingAndDeliveredNotifications { identifier in
             identifier.hasPrefix("trip-completion-") ||
                 identifier.hasPrefix("trip-reminder-") ||
+                identifier == Identifier.reviewQueue ||
                 identifier == Identifier.activeTrip
         }
     }
 
     func cancelCompletionNotifications() {
         scheduledCompletionTripIDs.removeAll()
-        cancelPendingNotifications { $0.hasPrefix("trip-completion-") }
+        cancelPendingAndDeliveredNotifications { $0.hasPrefix("trip-completion-") }
     }
 
     func cancelReminderNotifications() {
         scheduledReminderTripIDs.removeAll()
-        cancelPendingNotifications { $0.hasPrefix("trip-reminder-") }
+        cancelPendingAndDeliveredNotifications {
+            $0.hasPrefix("trip-reminder-") || $0 == Identifier.reviewQueue
+        }
     }
 
     func scheduleLongRunningTripReminder(after delay: TimeInterval) async {
@@ -250,6 +325,19 @@ final class LocalTripNotificationService: TripNotificationScheduling {
         }
     }
 
+    private func cancelPendingAndDeliveredNotifications(
+        matching predicate: @escaping @Sendable (String) -> Bool
+    ) {
+        Task {
+            async let pending = center.pendingNotificationRequests()
+            async let delivered = center.deliveredNotifications()
+            let pendingIDs = (await pending).map(\.identifier).filter(predicate)
+            let deliveredIDs = (await delivered).map { $0.request.identifier }.filter(predicate)
+            center.removePendingNotificationRequests(withIdentifiers: pendingIDs)
+            center.removeDeliveredNotifications(withIdentifiers: deliveredIDs)
+        }
+    }
+
     private static func map(_ status: UNAuthorizationStatus) -> NotificationPermissionStatus {
         switch status {
         case UNAuthorizationStatus.notDetermined:
@@ -284,4 +372,5 @@ enum TripNotificationUserInfo {
     static let categoryIdentifier = "MILEMATE_TRIP_REVIEW"
     static let activeTripKey = "activeTrip"
     static let activeTripCategoryIdentifier = "MILEMATE_ACTIVE_TRIP"
+    static let reviewQueueKey = "reviewQueue"
 }
