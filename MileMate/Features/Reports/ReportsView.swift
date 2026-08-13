@@ -37,6 +37,10 @@ struct ReportsView: View {
                 }
                 .pickerStyle(.segmented)
 
+                if viewModel.period == .custom {
+                    customDateRange
+                }
+
                 vehiclePicker
                 monthlySummary
                 mileageChart
@@ -77,6 +81,36 @@ struct ReportsView: View {
             Button("OK", role: .cancel) { exportErrorMessage = nil }
         } message: {
             Text(exportErrorMessage ?? "")
+        }
+    }
+
+    private var customDateRange: some View {
+        AppCard {
+            VStack(spacing: AppTheme.Spacing.medium) {
+                DatePicker(
+                    "From",
+                    selection: Binding(
+                        get: { viewModel.customStartDate },
+                        set: { viewModel.setCustomStartDate($0) }
+                    ),
+                    displayedComponents: .date
+                )
+                Divider()
+                DatePicker(
+                    "To",
+                    selection: Binding(
+                        get: { viewModel.customEndDate },
+                        set: { viewModel.setCustomEndDate($0) }
+                    ),
+                    displayedComponents: .date
+                )
+                Divider()
+                Text(viewModel.reportSelection.periodLabel)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppTheme.Color.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel("Selected period: \(viewModel.reportSelection.periodLabel)")
+            }
         }
     }
 
@@ -121,7 +155,7 @@ struct ReportsView: View {
                             .font(.caption.weight(.bold))
                             .tracking(1.1)
                             .foregroundStyle(AppTheme.Color.textSecondary)
-                        Text("Monthly Summary")
+                        Text(viewModel.period == .custom ? "Custom Summary" : "Monthly Summary")
                             .font(.appTitle)
                     }
                     Spacer()
@@ -469,6 +503,8 @@ struct ReportsView: View {
             return "Quarter \(quarter), \(Calendar.current.component(.year, from: .now))"
         case .year:
             return Date.now.formatted(.dateTime.year())
+        case .custom:
+            return viewModel.reportSelection.periodLabel
         }
     }
 

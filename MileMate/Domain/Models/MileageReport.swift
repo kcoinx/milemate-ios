@@ -5,6 +5,7 @@ enum MileageReportType: String, Sendable {
     case monthly = "Monthly Report"
     case quarterly = "Quarterly Report"
     case annual = "Annual Report"
+    case custom = "Custom Report"
 }
 
 struct MileageReportSelection: Sendable {
@@ -140,6 +141,12 @@ enum MileageReportPreparationService {
             period = "Q\((month - 1) / 3 + 1)"
         case .annual:
             period = "YR"
+        case .custom:
+            let formatter = DateFormatter()
+            formatter.calendar = Calendar.current
+            formatter.dateFormat = "yyyyMMdd"
+            let inclusiveEnd = interval.end.addingTimeInterval(-1)
+            period = "\(formatter.string(from: interval.start))-\(formatter.string(from: inclusiveEnd))"
         }
         return "MM-\(year)-\(period)-\(sanitizedToken(token))"
     }
@@ -154,6 +161,8 @@ enum MileageReportPreparationService {
             period = "Q\((month - 1) / 3 + 1)-\(selection.taxYear)"
         case .annual:
             period = "\(selection.taxYear)"
+        case .custom:
+            period = selection.periodLabel
         }
         let vehicle = selection.vehicleID == nil
             ? ""
@@ -353,6 +362,8 @@ enum MileageReportPreparationService {
             return "Q\((month - 1) / 3 + 1)-\(selection.taxYear)"
         case .annual:
             return "\(selection.taxYear)"
+        case .custom:
+            return selection.periodLabel
         }
     }
 

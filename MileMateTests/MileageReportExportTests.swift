@@ -438,6 +438,120 @@ final class MileageReportExportTests: XCTestCase {
     }
 
     @MainActor
+    func testReportPresetIntervalsRemainCalendarBased() {
+        let viewModel = ReportsViewModel(repository: MockMileageRepository())
+        let calendar = Calendar.current
+
+        viewModel.period = .month
+        XCTAssertEqual(viewModel.selectedInterval, calendar.dateInterval(of: .month, for: .now))
+        viewModel.period = .quarter
+        XCTAssertEqual(
+            calendar.component(.month, from: viewModel.selectedInterval.start),
+            ((calendar.component(.month, from: .now) - 1) / 3) * 3 + 1
+        )
+        viewModel.period = .year
+        XCTAssertEqual(viewModel.selectedInterval, calendar.dateInterval(of: .year, for: .now))
+    }
+
+    @MainActor
+    func testCustomRangeIsInclusiveAndRepairsInvalidDates() {
+        let viewModel = ReportsViewModel(repository: MockMileageRepository())
+        let calendar = Calendar(identifier: .gregorian)
+        let start = calendar.date(from: DateComponents(year: 2025, month: 12, day: 31))!
+        let end = calendar.date(from: DateComponents(year: 2026, month: 2, day: 2))!
+
+        viewModel.period = .custom
+        viewModel.setCustomStartDate(start)
+        viewModel.setCustomEndDate(end)
+
+        XCTAssertEqual(viewModel.selectedInterval.start, calendar.startOfDay(for: start))
+        XCTAssertTrue(viewModel.selectedInterval.contains(end.addingTimeInterval(86_399)))
+        XCTAssertEqual(viewModel.reportSelection.type, .custom)
+
+        viewModel.setCustomStartDate(end.addingTimeInterval(86_400))
+        XCTAssertEqual(viewModel.customStartDate, viewModel.customEndDate)
+    }
+
+    func testCustomRangeFilteringTotalsVehiclesAndExportData() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let start = calendar.date(from: DateComponents(year: 2026, month: 1, day: 15))!
+        let finalDay = calendar.date(from: DateComponents(year: 2026, month: 3, day: 3))!
+        let end = calendar.date(byAdding: .day, value: 1, to: finalDay)!
+        let vehicle = Vehicle(nickname: "Work Car")
+        var included = trip(date: start.addingTimeInterval(3_600), classification: .business, miles: 8)
+        included.vehicle = vehicle.snapshot
+        var finalDayTrip = trip(date: finalDay.addingTimeInterval(80_000), classification: .business, miles: 2)
+        finalDayTrip.vehicle = vehicle.snapshot
+        var otherVehicle = trip(date: start.addingTimeInterval(7_200), classification: .business, miles: 20)
+        otherVehicle.vehicle = Vehicle(nickname: "Other Car").snapshot
+        let outside = trip(date: end, classification: .business, miles: 30)
+        let interval = DateInterval(start: start, end: end)
+        let trips = [included, finalDayTrip, otherVehicle, outside]
+
+        let summary = MileageReportPreparationService.reportingSummary(
+            trips: trips,
+            interval: interval,
+            vehicleID: vehicle.id,
+            mileageRate: 0.70
+        )
+        XCTAssertEqual(summary.tripCount, 2)
+        XCTAssertEqual(summary.businessMiles, 10, accuracy: 0.001)
+
+        let report = try MileageReportPreparationService.prepare(
+            trips: trips,
+            places: [],
+            profile: nil,
+            selection: selection(
+                type: .custom,
+                interval: interval,
+                vehicleID: vehicle.id,
+                vehicleLabel: vehicle.nickname
+            ),
+            reportToken: "RANGE"
+        )
+        XCTAssertEqual(report.trips.count, 2)
+        XCTAssertEqual(report.businessMiles, summary.businessMiles, accuracy: 0.001)
+        XCTAssertTrue(report.fileName.contains("Mileage-Report"))
+        XCTAssertTrue(MileageReportPreparationService.csvFileName(for: report.selection).contains("Business-Mileage"))
+        XCTAssertTrue(MileageReportPreparationService.irsFileName(for: report.selection).contains("IRS-Mileage-Report"))
+    }
+
+    func testSameDayCustomRangeIncludesTheEntireSelectedDay() {
+        let calendar = Calendar(identifier: .gregorian)
+        let day = calendar.date(from: DateComponents(year: 2026, month: 8, day: 12))!
+        let interval = DateInterval(
+            start: day,
+            end: calendar.date(byAdding: .day, value: 1, to: day)!
+        )
+        let lateTrip = trip(
+            date: day.addingTimeInterval(86_399),
+            classification: .business,
+            miles: 3
+        )
+
+        let summary = MileageReportPreparationService.reportingSummary(
+            trips: [lateTrip],
+            interval: interval,
+            vehicleID: nil,
+            mileageRate: 0.70
+        )
+        XCTAssertEqual(summary.tripCount, 1)
+        XCTAssertEqual(summary.businessMiles, 3, accuracy: 0.001)
+    }
+
+    func testEmptyCustomRangeProducesHonestZeroSummary() {
+        let summary = MileageReportPreparationService.reportingSummary(
+            trips: [],
+            interval: dateInterval(),
+            vehicleID: nil,
+            mileageRate: 0.70
+        )
+        XCTAssertEqual(summary.tripCount, 0)
+        XCTAssertEqual(summary.businessMiles, 0)
+        XCTAssertEqual(summary.estimatedDeduction, 0)
+    }
+
+    @MainActor
     func testTripsDateFilterComposesWithExistingFilters() async {
         let viewModel = TripsViewModel(repository: MockMileageRepository())
         await viewModel.load()

@@ -22,6 +22,7 @@ final class ReportsViewModel {
         case month = "Month"
         case quarter = "Quarter"
         case year = "Year"
+        case custom = "Custom"
     }
 
     private let repository: any MileageRepository
@@ -31,6 +32,8 @@ final class ReportsViewModel {
     private(set) var profile: UserProfile?
     var period: Period = .month
     var selectedVehicleID: UUID?
+    var customStartDate: Date = Calendar.current.startOfDay(for: .now)
+    var customEndDate: Date = Calendar.current.startOfDay(for: .now)
 
     init(repository: any MileageRepository) {
         self.repository = repository
@@ -147,6 +150,26 @@ final class ReportsViewModel {
             return DateInterval(start: start, end: end)
         case .year:
             return calendar.dateInterval(of: .year, for: .now) ?? fallbackInterval
+        case .custom:
+            let start = calendar.startOfDay(for: customStartDate)
+            let inclusiveEnd = calendar.startOfDay(for: customEndDate)
+            let end = calendar.date(byAdding: .day, value: 1, to: inclusiveEnd)
+                ?? inclusiveEnd.addingTimeInterval(86_400)
+            return DateInterval(start: min(start, inclusiveEnd), end: end)
+        }
+    }
+
+    func setCustomStartDate(_ date: Date) {
+        customStartDate = date
+        if date > customEndDate {
+            customEndDate = date
+        }
+    }
+
+    func setCustomEndDate(_ date: Date) {
+        customEndDate = date
+        if date < customStartDate {
+            customStartDate = date
         }
     }
 
@@ -164,11 +187,13 @@ final class ReportsViewModel {
             reportType = .quarterly
         case .year:
             reportType = .annual
+        case .custom:
+            reportType = .custom
         }
         let inclusiveEnd = selectedInterval.end.addingTimeInterval(-1)
         let periodLabel = selectedInterval.start.formatted(
             .dateTime.month(.wide).day().year()
-        ) + " - " + inclusiveEnd.formatted(.dateTime.month(.wide).day().year())
+        ) + " – " + inclusiveEnd.formatted(.dateTime.month(.wide).day().year())
         let selectedVehicle = vehicles.first { $0.id == selectedVehicleID }
         let vehicleLabel: String
         if let selectedVehicle {
