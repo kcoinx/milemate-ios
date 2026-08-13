@@ -319,6 +319,7 @@ struct DashboardView: View {
                 summaryMetric("Today\u{2019}s Miles", value: viewModel.todayBusinessMiles.milesFormatted)
                 Divider().overlay(.white.opacity(0.25))
                 summaryMetric("Estimated Tax Savings", value: viewModel.summary.estimatedTaxSavings.currencyFormatted)
+                    .accessibilityHint("Based on your selected estimated tax rate.")
             }
             .frame(height: 52)
             .padding(.top, AppTheme.Spacing.large)
@@ -631,6 +632,8 @@ struct DashboardView: View {
                             .font(.appTitle)
                             .foregroundStyle(AppTheme.Color.positive)
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityHint("Based on your selected estimated tax rate.")
                 }
             }
         }

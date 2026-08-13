@@ -4,7 +4,7 @@ enum MileageSettings {
     static let rateKey = "mileageDeductionRate"
     static let taxRateKey = "estimatedTaxRate"
     static let defaultMileageRate = 0.70
-    static let defaultTaxRate = 28.0
+    static let defaultTaxRate = 22.0
 
     static var mileageRate: Double {
         let value = UserDefaults.standard.double(forKey: rateKey)
@@ -12,8 +12,14 @@ enum MileageSettings {
     }
 
     static var estimatedTaxPercentage: Double {
-        let value = UserDefaults.standard.double(forKey: taxRateKey)
-        return value > 0 ? value : defaultTaxRate
+        estimatedTaxPercentage(in: .standard)
+    }
+
+    static func estimatedTaxPercentage(in defaults: UserDefaults) -> Double {
+        guard defaults.object(forKey: taxRateKey) != nil else {
+            return defaultTaxRate
+        }
+        return min(max(defaults.double(forKey: taxRateKey), 0), 100)
     }
 }
 

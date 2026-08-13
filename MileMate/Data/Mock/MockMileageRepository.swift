@@ -27,7 +27,7 @@ enum MockData {
         occupation: "Independent Consultant",
         vehicleName: "2024 Tesla Model Y",
         deductionRate: 0.70,
-        taxRate: 0.28
+        taxRate: 0.22
     )
 
     static let trips: [Trip] = [
@@ -44,7 +44,7 @@ enum MockData {
         personalMiles: 1_204.7,
         tripCount: 184,
         estimatedDeduction: 3_000.48,
-        estimatedTaxSavings: 840.13,
+        estimatedTaxSavings: 660.11,
         monthlyMiles: [
             .init(month: "Jan", miles: 492),
             .init(month: "Feb", miles: 538),

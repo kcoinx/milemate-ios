@@ -450,12 +450,17 @@ private struct TaxSettingsView: View {
 
     var body: some View {
         Form {
-            Section("2026 rates") {
+            Section("Mileage Rate") {
                 LabeledContent("IRS mileage rate", value: deductionRate.formatted(.currency(code: "USD")) + " / mi")
-                Stepper("Estimated tax rate: \(taxRate.formatted(.number))%", value: $taxRate, in: 0...60)
             }
-            Section {
-                Text("These estimates help calculate potential savings and do not constitute tax advice.")
+            Section("Estimated Tax Rate") {
+                Stepper(value: $taxRate, in: 0...60) {
+                    LabeledContent(
+                        "Selected rate",
+                        value: taxRate.formatted(.number.precision(.fractionLength(0))) + "%"
+                    )
+                }
+                Text("Used only to estimate potential tax savings from your mileage deduction. Actual savings vary.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
