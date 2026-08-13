@@ -108,6 +108,26 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         XCTAssertFalse(BackgroundLocationCapability.containsLocationMode(nil))
     }
 
+    func testBuiltHostContainsBackgroundLocationMode() {
+        XCTAssertTrue(
+            BackgroundLocationCapability.isAvailable,
+            "The built MileMate host must contain UIBackgroundModes.location"
+        )
+    }
+
+    func testUnavailableDetectionServiceHasExactFailureReason() {
+        let readiness = AutomaticTrackingReadiness.evaluate(
+            location: .authorizedAlways,
+            motion: .authorized,
+            backgroundCapabilityAvailable: true,
+            significantLocationMonitoringAvailable: false,
+            motionActivityMonitoringAvailable: true
+        )
+
+        XCTAssertEqual(readiness, .detectionServicesUnavailable)
+        XCTAssertTrue(readiness.diagnosticReason.contains("detection service is unavailable"))
+    }
+
     func testMissingBackgroundCapabilityPreventsPreciseAutomaticTracking() {
         enableAutomaticTracking()
         defer { clearAutomaticTrackingState() }
@@ -155,6 +175,37 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         )
         XCTAssertNil(TrackingPermissionAction(readiness: .ready))
         XCTAssertNil(TrackingPermissionAction(readiness: .backgroundCapabilityUnavailable))
+        XCTAssertNil(TrackingPermissionAction(readiness: .detectionServicesUnavailable))
+    }
+
+    func testReadyStartupEntersBatteryEfficientIdleMonitoring() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, location, motion) = makeCoordinator()
+
+        coordinator.startIfEnabled()
+
+        XCTAssertEqual(coordinator.trackingReadiness, .ready)
+        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertTrue(location.isLowPowerMonitoring)
+        XCTAssertTrue(motion.isUpdating)
+        XCTAssertFalse(location.isPreciseTracking)
+    }
+
+    func testReadinessDiagnosticReportsExactInputsWithoutLocationData() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, _, _) = makeCoordinator()
+        let diagnostic = coordinator.readinessSnapshot.diagnosticDescription
+
+        XCTAssertTrue(diagnostic.contains("Location Authorization: authorizedAlways"))
+        XCTAssertTrue(diagnostic.contains("Motion Authorization: authorized"))
+        XCTAssertTrue(diagnostic.contains("Background Location Capability: available"))
+        XCTAssertTrue(diagnostic.contains("Significant Change Monitoring: available"))
+        XCTAssertTrue(diagnostic.contains("Motion Activity Monitoring: available"))
+        XCTAssertTrue(diagnostic.contains("Result: ready"))
+        XCTAssertFalse(diagnostic.contains("latitude"))
+        XCTAssertFalse(diagnostic.contains("longitude"))
     }
 
     func testShortAutomaticTripIsDiscarded() async {

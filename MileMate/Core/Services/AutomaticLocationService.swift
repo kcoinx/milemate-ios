@@ -5,6 +5,7 @@ import Foundation
 protocol AutomaticLocationService: AnyObject {
     var authorizationStatus: CLAuthorizationStatus { get }
     var backgroundCapabilityAvailable: Bool { get }
+    var significantLocationMonitoringAvailable: Bool { get }
     var eventHandler: ((LocationServiceEvent) -> Void)? { get set }
     func requestWhenInUseAuthorization()
     func requestAlwaysAuthorization()
@@ -36,6 +37,10 @@ final class CoreAutomaticLocationService: NSObject, AutomaticLocationService, CL
         BackgroundLocationCapability.isAvailable
     }
 
+    var significantLocationMonitoringAvailable: Bool {
+        CLLocationManager.significantLocationChangeMonitoringAvailable()
+    }
+
     func requestWhenInUseAuthorization() {
         manager.requestWhenInUseAuthorization()
     }
@@ -45,7 +50,7 @@ final class CoreAutomaticLocationService: NSObject, AutomaticLocationService, CL
     }
 
     func startLowPowerMonitoring() {
-        guard CLLocationManager.significantLocationChangeMonitoringAvailable() else { return }
+        guard significantLocationMonitoringAvailable else { return }
         manager.startMonitoringSignificantLocationChanges()
     }
 
@@ -121,6 +126,7 @@ final class CoreAutomaticLocationService: NSObject, AutomaticLocationService, CL
 final class MockAutomaticLocationService: AutomaticLocationService {
     var authorizationStatus: CLAuthorizationStatus = CLAuthorizationStatus.authorizedAlways
     var backgroundCapabilityAvailable = true
+    var significantLocationMonitoringAvailable = true
     var eventHandler: ((LocationServiceEvent) -> Void)?
     private(set) var isLowPowerMonitoring = false
     private(set) var isPreciseTracking = false

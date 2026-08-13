@@ -265,18 +265,8 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = MileMate;
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "MileMate uses your location in the background to automatically detect and record work-related drives, even when the app is not open.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "MileMate uses your location to record mileage and display the route for work-related trips.";
-				INFOPLIST_KEY_NSMotionUsageDescription = "MileMate uses Motion & Fitness activity to recognize driving and avoid recording walking, running, or cycling as trips.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIBackgroundModes = (
-					location,
-				);
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MileMate/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -300,18 +290,8 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = MileMate;
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "MileMate uses your location in the background to automatically detect and record work-related drives, even when the app is not open.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "MileMate uses your location to record mileage and display the route for work-related trips.";
-				INFOPLIST_KEY_NSMotionUsageDescription = "MileMate uses Motion & Fitness activity to recognize driving and avoid recording walking, running, or cycling as trips.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIBackgroundModes = (
-					location,
-				);
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MileMate/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

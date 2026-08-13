@@ -22,7 +22,7 @@ struct MotionActivitySample: Codable, Sendable {
     let timestamp: Date
 }
 
-enum MotionPermissionStatus: Sendable {
+enum MotionPermissionStatus: Equatable, Sendable {
     case notDetermined
     case authorized
     case denied
@@ -33,6 +33,7 @@ enum MotionPermissionStatus: Sendable {
 @MainActor
 protocol MotionActivityService: AnyObject {
     var permissionStatus: MotionPermissionStatus { get }
+    var activityMonitoringAvailable: Bool { get }
     var eventHandler: ((MotionActivitySample) -> Void)? { get set }
     func startUpdates()
     func stopUpdates()
@@ -61,6 +62,10 @@ final class CoreMotionActivityService: MotionActivityService {
         @unknown default:
             return MotionPermissionStatus.unavailable
         }
+    }
+
+    var activityMonitoringAvailable: Bool {
+        CMMotionActivityManager.isActivityAvailable()
     }
 
     func startUpdates() {
@@ -109,6 +114,7 @@ final class CoreMotionActivityService: MotionActivityService {
 @MainActor
 final class MockMotionActivityService: MotionActivityService {
     var permissionStatus: MotionPermissionStatus = MotionPermissionStatus.authorized
+    var activityMonitoringAvailable = true
     var eventHandler: ((MotionActivitySample) -> Void)?
     private(set) var isUpdating = false
 

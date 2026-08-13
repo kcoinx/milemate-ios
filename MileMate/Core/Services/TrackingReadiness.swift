@@ -26,11 +26,14 @@ enum AutomaticTrackingReadiness: Equatable {
     case locationPermissionRequired
     case motionPermissionRequired
     case backgroundCapabilityUnavailable
+    case detectionServicesUnavailable
 
     static func evaluate(
         location: CLAuthorizationStatus,
         motion: MotionPermissionStatus,
-        backgroundCapabilityAvailable: Bool
+        backgroundCapabilityAvailable: Bool,
+        significantLocationMonitoringAvailable: Bool = true,
+        motionActivityMonitoringAvailable: Bool = true
     ) -> AutomaticTrackingReadiness {
         guard location == .authorizedAlways else {
             return .locationPermissionRequired
@@ -41,7 +44,71 @@ enum AutomaticTrackingReadiness: Equatable {
         guard backgroundCapabilityAvailable else {
             return .backgroundCapabilityUnavailable
         }
+        guard significantLocationMonitoringAvailable,
+              motionActivityMonitoringAvailable else {
+            return .detectionServicesUnavailable
+        }
         return .ready
+    }
+}
+
+struct AutomaticTrackingReadinessSnapshot: Equatable {
+    let locationAuthorization: CLAuthorizationStatus
+    let motionAuthorization: MotionPermissionStatus
+    let backgroundCapabilityAvailable: Bool
+    let significantLocationMonitoringAvailable: Bool
+    let motionActivityMonitoringAvailable: Bool
+    let automaticTrackingEnabled: Bool
+    let result: AutomaticTrackingReadiness
+
+    var diagnosticDescription: String {
+        """
+        Automatic Tracking Readiness:
+        Location Authorization: \(locationAuthorization.diagnosticName)
+        Motion Authorization: \(motionAuthorization.diagnosticName)
+        Background Location Capability: \(backgroundCapabilityAvailable ? "available" : "unavailable")
+        Significant Change Monitoring: \(significantLocationMonitoringAvailable ? "available" : "unavailable")
+        Motion Activity Monitoring: \(motionActivityMonitoringAvailable ? "available" : "unavailable")
+        Automatic Tracking Enabled: \(automaticTrackingEnabled)
+        Result: \(result.diagnosticReason)
+        """
+    }
+}
+
+extension AutomaticTrackingReadiness {
+    var diagnosticReason: String {
+        switch self {
+        case .ready: "ready"
+        case .locationPermissionRequired: "unavailable — Always Location authorization is required"
+        case .motionPermissionRequired: "unavailable — Motion & Fitness authorization is required"
+        case .backgroundCapabilityUnavailable: "unavailable — UIBackgroundModes does not contain location"
+        case .detectionServicesUnavailable: "unavailable - a required location or motion detection service is unavailable"
+        }
+    }
+}
+
+private extension CLAuthorizationStatus {
+    var diagnosticName: String {
+        switch self {
+        case .notDetermined: "notDetermined"
+        case .restricted: "restricted"
+        case .denied: "denied"
+        case .authorizedAlways: "authorizedAlways"
+        case .authorizedWhenInUse: "authorizedWhenInUse"
+        @unknown default: "unknown"
+        }
+    }
+}
+
+private extension MotionPermissionStatus {
+    var diagnosticName: String {
+        switch self {
+        case .notDetermined: "notDetermined"
+        case .authorized: "authorized"
+        case .denied: "denied"
+        case .restricted: "restricted"
+        case .unavailable: "unavailable"
+        }
     }
 }
 
@@ -55,7 +122,7 @@ enum TrackingPermissionAction: Equatable {
             self = .location
         case .motionPermissionRequired:
             self = .motion
-        case .ready, .backgroundCapabilityUnavailable:
+        case .ready, .backgroundCapabilityUnavailable, .detectionServicesUnavailable:
             return nil
         }
     }

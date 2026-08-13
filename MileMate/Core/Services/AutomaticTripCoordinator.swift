@@ -125,11 +125,26 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         AutomaticTrackingReadiness.evaluate(
             location: locationService.authorizationStatus,
             motion: motionService.permissionStatus,
-            backgroundCapabilityAvailable: locationService.backgroundCapabilityAvailable
+            backgroundCapabilityAvailable: locationService.backgroundCapabilityAvailable,
+            significantLocationMonitoringAvailable: locationService.significantLocationMonitoringAvailable,
+            motionActivityMonitoringAvailable: motionService.activityMonitoringAvailable
+        )
+    }
+
+    var readinessSnapshot: AutomaticTrackingReadinessSnapshot {
+        AutomaticTrackingReadinessSnapshot(
+            locationAuthorization: locationService.authorizationStatus,
+            motionAuthorization: motionService.permissionStatus,
+            backgroundCapabilityAvailable: locationService.backgroundCapabilityAvailable,
+            significantLocationMonitoringAvailable: locationService.significantLocationMonitoringAvailable,
+            motionActivityMonitoringAvailable: motionService.activityMonitoringAvailable,
+            automaticTrackingEnabled: AutomaticTrackingSettings.isEnabled,
+            result: trackingReadiness
         )
     }
 
     func startIfEnabled() {
+        TrackingDiagnostics.log(readinessSnapshot.diagnosticDescription)
         guard AutomaticTrackingSettings.isEnabled else {
             state = .disabled
             return

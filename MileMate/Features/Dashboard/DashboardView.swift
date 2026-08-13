@@ -533,7 +533,9 @@ struct DashboardView: View {
         case .motionPermissionRequired:
             return "Allow Motion & Fitness so MileMate can detect when you are driving."
         case .backgroundCapabilityUnavailable:
-            return "MileMate could not start automatic tracking. Please try again after updating the app."
+            return "MileMate couldn't start automatic tracking. Try restarting the app. If the issue continues, use Manual Tracking."
+        case .detectionServicesUnavailable:
+            return "MileMate couldn't start automatic tracking. Try restarting the app. If the issue continues, use Manual Tracking."
         }
     }
 
@@ -546,6 +548,8 @@ struct DashboardView: View {
         case .motionPermissionRequired:
             return "Motion & Fitness Needed"
         case .backgroundCapabilityUnavailable:
+            return "Automatic Tracking Unavailable"
+        case .detectionServicesUnavailable:
             return "Automatic Tracking Unavailable"
         }
     }
