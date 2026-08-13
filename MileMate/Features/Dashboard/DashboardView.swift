@@ -11,7 +11,6 @@ struct DashboardView: View {
     @AppStorage(AutomaticTrackingSettings.enabledKey) private var automaticTrackingEnabled = false
     @State private var isPulsing = false
     @State private var hasAppeared = false
-    @State private var selectedRecentTrip: Trip?
     @ScaledMetric(relativeTo: .headline) private var secondaryMetricValueSize: CGFloat = 22
     @ScaledMetric(relativeTo: .subheadline) private var compactMetricValueSize: CGFloat = 22
     @ScaledMetric(relativeTo: .title2) private var activeMetricValueSize: CGFloat = 25
@@ -75,9 +74,6 @@ struct DashboardView: View {
         .onChange(of: automaticTripCoordinator.state) { _, _ in updateTrackingPulse() }
         .onReceive(NotificationCenter.default.publisher(for: .mileageTripsDidChange)) { _ in
             Task { await viewModel.load() }
-        }
-        .navigationDestination(item: $selectedRecentTrip) { trip in
-            TripDetailView(trip: trip, repository: repository)
         }
     }
 
@@ -420,8 +416,7 @@ struct DashboardView: View {
     }
 
     private func openRecentTrip(_ trip: Trip) async {
-        guard let resolvedTrip = await router.resolveTripDetails(tripID: trip.id) else { return }
-        selectedRecentTrip = resolvedTrip
+        await router.showTripDetails(tripID: trip.id)
     }
 
     private func updateTrackingPulse() {

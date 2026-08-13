@@ -256,7 +256,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         XCTAssertEqual(router.selectedTab, .settings)
     }
 
-    func testRecentTripResolutionReturnsExactTripAndFallsBackWhenMissing() async {
+    func testRecentTripRoutesThroughTripsStackAndFallsBackWhenMissing() async {
         let (coordinator, _, _) = makeCoordinator()
         let router = AppRouter(
             repository: MockMileageRepository(),
@@ -264,12 +264,41 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         )
         let expected = MockData.trips[0]
 
-        let resolved = await router.resolveTripDetails(tripID: expected.id)
-        XCTAssertEqual(resolved?.id, expected.id)
-
-        let missing = await router.resolveTripDetails(tripID: UUID())
-        XCTAssertNil(missing)
+        await router.showTripDetails(tripID: expected.id)
         XCTAssertEqual(router.selectedTab, .trips)
+        XCTAssertEqual(router.requestedTrip?.id, expected.id)
+
+        await router.showTripDetails(tripID: UUID())
+        XCTAssertEqual(router.selectedTab, .trips)
+        XCTAssertNil(router.requestedTrip)
+    }
+
+    func testClosingRoutedTripDetailsLeavesTripsSelected() async {
+        let (coordinator, _, _) = makeCoordinator()
+        let router = AppRouter(
+            repository: MockMileageRepository(),
+            automaticTripCoordinator: coordinator
+        )
+
+        await router.showTripDetails(tripID: MockData.trips[0].id)
+        router.requestedTrip = nil
+
+        XCTAssertEqual(router.selectedTab, .trips)
+        XCTAssertNil(router.requestedTrip)
+    }
+
+    func testDirectTripsNavigationStateRemainsUnchanged() {
+        let (coordinator, _, _) = makeCoordinator()
+        let router = AppRouter(
+            repository: MockMileageRepository(),
+            automaticTripCoordinator: coordinator
+        )
+        router.selectedTab = .trips
+
+        // Trips-list NavigationLinks use their own Trip value in the same stack;
+        // external requested-trip state remains reserved for cross-tab routing.
+        XCTAssertEqual(router.selectedTab, .trips)
+        XCTAssertNil(router.requestedTrip)
     }
 
     private func makeCoordinator(

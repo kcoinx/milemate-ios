@@ -78,13 +78,11 @@ final class AppRouter {
         selectedTab = .dashboard
     }
 
-    func resolveTripDetails(tripID: UUID) async -> Trip? {
+    func showTripDetails(tripID: UUID) async {
+        requestedTrip = nil
+        selectedTab = .trips
         let trips = (try? await repository.fetchTrips()) ?? []
-        guard let trip = trips.first(where: { $0.id == tripID }) else {
-            selectedTab = .trips
-            return nil
-        }
-        return trip
+        requestedTrip = trips.first(where: { $0.id == tripID })
     }
 
     func handleNotificationTap(tripID: UUID) async {
@@ -94,9 +92,6 @@ final class AppRouter {
             return
         }
 
-        let trips = (try? await repository.fetchTrips()) ?? []
-        let savedTrip = trips.first { $0.id == tripID }
-        requestedTrip = savedTrip
-        selectedTab = .trips
+        await showTripDetails(tripID: tripID)
     }
 }
