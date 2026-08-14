@@ -498,15 +498,17 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
                 to: assignedTrip,
                 vehicles: vehicles
             )
-            if UserDefaults.standard.bool(
+            let automaticClassificationEnabled = UserDefaults.standard.bool(
                 forKey: ClassificationSettings.automaticRulesEnabledKey
-            ) {
+            )
+            if automaticClassificationEnabled {
                 let places = (try? await fetchedPlaces) ?? []
                 let rules = (try? await fetchedRules) ?? []
                 if let rule = SmartClassificationService.matchingRule(
                     for: assignedTrip,
                     places: places,
-                    rules: rules
+                    rules: rules,
+                    automaticClassificationEnabled: automaticClassificationEnabled
                 ) {
                     let classifiedTrip = SmartClassificationService.applying(
                         rule,

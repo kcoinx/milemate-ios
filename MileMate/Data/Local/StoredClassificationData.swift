@@ -7,6 +7,7 @@ final class StoredFrequentPlace {
     var label: String
     var latitude: Double
     var longitude: Double
+    var address: String?
     var radiusMeters: Double
     var createdAt: Date
     var updatedAt: Date
@@ -16,6 +17,7 @@ final class StoredFrequentPlace {
         label = place.label
         latitude = place.latitude
         longitude = place.longitude
+        address = place.address
         radiusMeters = place.radiusMeters
         createdAt = place.createdAt
         updatedAt = place.updatedAt
@@ -27,6 +29,7 @@ final class StoredFrequentPlace {
             label: label,
             latitude: latitude,
             longitude: longitude,
+            address: address,
             radiusMeters: radiusMeters,
             createdAt: createdAt,
             updatedAt: updatedAt
@@ -37,6 +40,7 @@ final class StoredFrequentPlace {
         label = place.label
         latitude = place.latitude
         longitude = place.longitude
+        address = place.address
         radiusMeters = place.radiusMeters
         updatedAt = .now
     }

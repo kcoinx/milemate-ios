@@ -1,5 +1,6 @@
 import Observation
 import SwiftUI
+import UIKit
 
 @MainActor
 @Observable
@@ -252,9 +253,11 @@ private final class ClassificationDataViewModel {
     }
 
     func delete(place: FrequentPlace) async {
-        for rule in rules where
-            rule.startPlaceID == place.id || rule.endPlaceID == place.id {
-            try? await repository.deleteClassificationRule(id: rule.id)
+        for ruleID in SmartClassificationService.dependentRuleIDs(
+            for: place.id,
+            rules: rules
+        ) {
+            try? await repository.deleteClassificationRule(id: ruleID)
         }
         try? await repository.deleteFrequentPlace(id: place.id)
         await load()
@@ -271,6 +274,32 @@ private final class ClassificationDataViewModel {
         try? await repository.deleteClassificationRule(id: rule.id)
         await load()
         NotificationCenter.default.post(name: .mileageClassificationDataDidChange, object: rule.id)
+    }
+}
+
+enum ClassificationRulesAddAction: Equatable {
+    case frequentPlace
+    case classificationRule
+
+    init(placeCount: Int) {
+        self = placeCount >= 2 ? .classificationRule : .frequentPlace
+    }
+}
+
+private struct EmptyStatePrimaryButton: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .font(.body.weight(.semibold))
+            .frame(minHeight: 44)
+            .padding(.horizontal, AppTheme.Spacing.medium)
+            .buttonStyle(.borderedProminent)
+            .tint(AppTheme.Color.brand)
+    }
+}
+
+private extension View {
+    func emptyStatePrimaryButton() -> some View {
+        modifier(EmptyStatePrimaryButton())
     }
 }
 
@@ -291,15 +320,28 @@ struct FrequentPlacesManagementView: View {
                 } description: {
                     Text("Save meaningful locations such as Home, Office, or Client so they can be used in Classification Rules.")
                 } actions: {
-                    Button("Add Place") { showingAdd = true }
-                        .buttonStyle(.borderedProminent)
+                    Button("Add Frequent Place") { showingAdd = true }
+                        .emptyStatePrimaryButton()
                 }
             } else {
                 ForEach(viewModel.places) { place in
                     Button {
                         editingPlace = place
                     } label: {
-                        LabeledContent(place.label, value: "\(Int(place.radiusMeters)) m radius")
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(place.label)
+                                .font(.headline)
+                            if let address = place.address, !address.isEmpty {
+                                Text(address)
+                                    .font(.subheadline)
+                                    .foregroundStyle(AppTheme.Color.textSecondary)
+                                    .lineLimit(2)
+                            }
+                            Text("Nearby radius: \(Int(place.radiusMeters)) meters")
+                                .font(.caption)
+                                .foregroundStyle(AppTheme.Color.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                     }
                     .buttonStyle(.plain)
                     .swipeActions {
@@ -316,7 +358,7 @@ struct FrequentPlacesManagementView: View {
             Button {
                 showingAdd = true
             } label: {
-                Label("Add Place", systemImage: "plus")
+                Label("Add Frequent Place", systemImage: "plus")
             }
         }
         .task { await viewModel.load() }
@@ -342,58 +384,181 @@ struct FrequentPlacesManagementView: View {
 
 private struct PlaceEditorView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     let original: FrequentPlace?
     let onSave: (FrequentPlace) -> Void
+    private let locationProvider: any PlaceLocationProviding
     @State private var label: String
-    @State private var latitude: String
-    @State private var longitude: String
+    @State private var searchQuery = ""
+    @State private var searchResults: [PlaceLocationSelection] = []
+    @State private var selectedLocation: PlaceLocationSelection?
     @State private var radius: Double
+    @State private var isLocating = false
+    @State private var errorMessage: String?
+    @State private var locationPermissionDenied = false
 
     init(
         place: FrequentPlace?,
         suggestedCoordinate: TripCoordinate?,
+        locationProvider: any PlaceLocationProviding = ApplePlaceLocationService(),
         onSave: @escaping (FrequentPlace) -> Void
     ) {
         original = place
+        self.locationProvider = locationProvider
         self.onSave = onSave
         _label = State(initialValue: place?.label ?? "")
-        _latitude = State(initialValue: String(place?.latitude ?? suggestedCoordinate?.latitude ?? 0))
-        _longitude = State(initialValue: String(place?.longitude ?? suggestedCoordinate?.longitude ?? 0))
+        if let place, let address = place.address {
+            _selectedLocation = State(
+                initialValue: PlaceLocationSelection(
+                    name: place.label,
+                    address: address,
+                    latitude: place.latitude,
+                    longitude: place.longitude
+                )
+            )
+        } else {
+            _selectedLocation = State(initialValue: nil)
+        }
         _radius = State(initialValue: place?.radiusMeters ?? 150)
+        _initialCoordinate = State(
+            initialValue: place.map { ($0.latitude, $0.longitude) }
+                ?? suggestedCoordinate.map { ($0.latitude, $0.longitude) }
+        )
     }
+
+    @State private var initialCoordinate: (Double, Double)?
 
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Place label", text: $label)
-                LabeledContent("Latitude") {
-                    TextField("Latitude", text: $latitude).keyboardType(.numbersAndPunctuation)
+                Section("Place Name") {
+                    TextField("Home, Office, or Client", text: $label)
+                        .textInputAutocapitalization(.words)
+                        .submitLabel(.next)
                 }
-                LabeledContent("Longitude") {
-                    TextField("Longitude", text: $longitude).keyboardType(.numbersAndPunctuation)
+
+                Section("Location") {
+                    if let selectedLocation {
+                        Label {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(selectedLocation.name)
+                                    .font(.headline)
+                                Text(selectedLocation.address)
+                                    .font(.subheadline)
+                                    .foregroundStyle(AppTheme.Color.textSecondary)
+                            }
+                        } icon: {
+                            Image(systemName: "mappin.circle.fill")
+                                .foregroundStyle(AppTheme.Color.brand)
+                        }
+                        .accessibilityElement(children: .combine)
+                    } else {
+                        Text("Search for an address or use your current location.")
+                            .font(.subheadline)
+                            .foregroundStyle(AppTheme.Color.textSecondary)
+                    }
+
+                    TextField("Search address or place", text: $searchQuery)
+                        .textContentType(.fullStreetAddress)
+                        .submitLabel(.search)
+                        .onSubmit { search() }
+
+                    Button {
+                        search()
+                    } label: {
+                        Label("Search", systemImage: "magnifyingglass")
+                            .frame(minHeight: 44)
+                    }
+                    .disabled(searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLocating)
+
+                    Button {
+                        useCurrentLocation()
+                    } label: {
+                        Label("Use Current Location", systemImage: "location.fill")
+                            .frame(minHeight: 44)
+                    }
+                    .disabled(isLocating)
+
+                    if isLocating {
+                        HStack {
+                            ProgressView()
+                            Text("Finding location...")
+                                .foregroundStyle(AppTheme.Color.textSecondary)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+
+                    ForEach(searchResults) { result in
+                        Button {
+                            selectedLocation = result
+                            searchResults = []
+                            searchQuery = ""
+                            errorMessage = nil
+                            locationPermissionDenied = false
+                        } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(result.name)
+                                    .font(.headline)
+                                Text(result.address)
+                                    .font(.subheadline)
+                                    .foregroundStyle(AppTheme.Color.textSecondary)
+                                    .multilineTextAlignment(.leading)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                            .accessibilityLabel("Location error: \(errorMessage)")
+                        if locationPermissionDenied {
+                            Button("Open iPhone Settings") {
+                                guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                                openURL(url)
+                            }
+                        }
+                    }
                 }
-                Stepper("Nearby radius: \(Int(radius)) m", value: $radius, in: 50...500, step: 25)
-                Text("Coordinates remain private on this device. MileMate never assigns Home or Work without your confirmation.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+
+                Section("Nearby Radius") {
+                    Stepper(
+                        "Within \(Int(radius)) meters",
+                        value: $radius,
+                        in: 50...500,
+                        step: 25
+                    )
+                    Text("Trips starting or ending within this distance can match the place.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section {
+                    Text("You choose the Place Name. MileMate stores the selected coordinates locally for matching and never labels a location as Home or Work on its own.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
             .scrollIndicators(.hidden)
-            .navigationTitle(original == nil ? "Add Place" : "Edit Place")
+            .navigationTitle(original == nil ? "Add Frequent Place" : "Edit Frequent Place")
             .navigationBarTitleDisplayMode(.inline)
+            .task { await resolveInitialCoordinateIfNeeded() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        guard let latitude = Double(latitude),
-                              let longitude = Double(longitude) else { return }
+                        guard let selectedLocation else { return }
                         onSave(
                             FrequentPlace(
                                 id: original?.id ?? UUID(),
                                 label: label.trimmingCharacters(in: .whitespacesAndNewlines),
-                                latitude: latitude,
-                                longitude: longitude,
+                                latitude: selectedLocation.latitude,
+                                longitude: selectedLocation.longitude,
+                                address: selectedLocation.address,
                                 radiusMeters: radius,
                                 createdAt: original?.createdAt ?? .now,
                                 updatedAt: .now
@@ -401,9 +566,62 @@ private struct PlaceEditorView: View {
                         )
                         dismiss()
                     }
-                    .disabled(label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(
+                        label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                        selectedLocation == nil ||
+                        isLocating
+                    )
                 }
             }
+        }
+    }
+
+    private func search() {
+        let query = searchQuery
+        isLocating = true
+        errorMessage = nil
+        locationPermissionDenied = false
+        Task {
+            do {
+                searchResults = try await locationProvider.search(query: query)
+            } catch {
+                searchResults = []
+                errorMessage = error.localizedDescription
+                locationPermissionDenied = (error as? PlaceLocationError) == .permissionDenied
+            }
+            isLocating = false
+        }
+    }
+
+    private func useCurrentLocation() {
+        isLocating = true
+        errorMessage = nil
+        locationPermissionDenied = false
+        Task {
+            do {
+                selectedLocation = try await locationProvider.currentLocation()
+                searchResults = []
+            } catch {
+                errorMessage = error.localizedDescription
+                locationPermissionDenied = (error as? PlaceLocationError) == .permissionDenied
+            }
+            isLocating = false
+        }
+    }
+
+    private func resolveInitialCoordinateIfNeeded() async {
+        guard selectedLocation == nil, let initialCoordinate else { return }
+        isLocating = true
+        defer { isLocating = false }
+        do {
+            selectedLocation = try await locationProvider.selection(
+                latitude: initialCoordinate.0,
+                longitude: initialCoordinate.1
+            )
+            self.initialCoordinate = nil
+        } catch {
+            errorMessage = error.localizedDescription
+            locationPermissionDenied = (error as? PlaceLocationError) == .permissionDenied
         }
     }
 }
@@ -411,6 +629,8 @@ private struct PlaceEditorView: View {
 struct ClassificationRulesView: View {
     @State private var viewModel: ClassificationDataViewModel
     @State private var showingAdd = false
+    @State private var showingAddPlace = false
+    @State private var continueToRuleAfterPlace = false
 
     init(repository: any MileageRepository) {
         _viewModel = State(initialValue: ClassificationDataViewModel(repository: repository))
@@ -426,12 +646,12 @@ struct ClassificationRulesView: View {
                 } actions: {
                     if viewModel.places.count >= 2 {
                         Button("Add Rule") { showingAdd = true }
-                            .buttonStyle(.borderedProminent)
+                            .emptyStatePrimaryButton()
                     } else {
-                        NavigationLink("Add Frequent Places") {
-                            FrequentPlacesManagementView(repository: viewModel.repository)
+                        Button("Add Frequent Place") {
+                            showingAddPlace = true
                         }
-                        .buttonStyle(.borderedProminent)
+                        .emptyStatePrimaryButton()
                     }
                 }
             } else {
@@ -448,8 +668,13 @@ struct ClassificationRulesView: View {
                         )
                     ) {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("\(rule.startLabel) → \(rule.endLabel)")
-                                .font(.headline)
+                            HStack(spacing: AppTheme.Spacing.small) {
+                                Text(rule.startLabel)
+                                Image(systemName: "arrow.right")
+                                    .accessibilityHidden(true)
+                                Text(rule.endLabel)
+                            }
+                            .font(.headline)
                             Text(rule.classification.rawValue)
                                 .font(.subheadline)
                                 .foregroundStyle(AppTheme.Color.textSecondary)
@@ -467,18 +692,47 @@ struct ClassificationRulesView: View {
         .navigationTitle("Classification Rules")
         .toolbar {
             Button {
-                showingAdd = true
+                switch ClassificationRulesAddAction(placeCount: viewModel.places.count) {
+                case .frequentPlace:
+                    showingAddPlace = true
+                case .classificationRule:
+                    showingAdd = true
+                }
             } label: {
-                Label("Add Rule", systemImage: "plus")
+                Label(
+                    viewModel.places.count >= 2 ? "Add Rule" : "Add Frequent Place",
+                    systemImage: "plus"
+                )
             }
-            .disabled(viewModel.places.count < 2)
         }
         .task { await viewModel.load() }
+        .sheet(isPresented: $showingAddPlace, onDismiss: continueToRuleIfReady) {
+            PlaceEditorView(place: nil, suggestedCoordinate: suggestedCoordinate) { place in
+                Task {
+                    await viewModel.save(place: place)
+                    guard viewModel.places.count >= 2 else { return }
+                    continueToRuleAfterPlace = true
+                    if !showingAddPlace {
+                        continueToRuleIfReady()
+                    }
+                }
+            }
+        }
         .sheet(isPresented: $showingAdd) {
             RuleEditorView(places: viewModel.places) { rule in
                 Task { await viewModel.save(rule: rule) }
             }
         }
+    }
+
+    private var suggestedCoordinate: TripCoordinate? {
+        viewModel.trips.first?.endCoordinate ?? viewModel.trips.first?.startCoordinate
+    }
+
+    private func continueToRuleIfReady() {
+        guard continueToRuleAfterPlace, viewModel.places.count >= 2 else { return }
+        continueToRuleAfterPlace = false
+        showingAdd = true
     }
 }
 
@@ -493,25 +747,34 @@ private struct RuleEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Picker("Start place", selection: $startID) {
-                    Text("Select").tag(UUID?.none)
-                    ForEach(places) { place in
-                        Text(place.label).tag(Optional(place.id))
+                Section("If This Trip Matches") {
+                    Picker("From", selection: $startID) {
+                        Text("Select a Frequent Place").tag(UUID?.none)
+                        ForEach(places) { place in
+                            Text(place.label).tag(Optional(place.id))
+                        }
+                    }
+                    Picker("To", selection: $endID) {
+                        Text("Select a Frequent Place").tag(UUID?.none)
+                        ForEach(places) { place in
+                            Text(place.label).tag(Optional(place.id))
+                        }
                     }
                 }
-                Picker("End place", selection: $endID) {
-                    Text("Select").tag(UUID?.none)
-                    ForEach(places) { place in
-                        Text(place.label).tag(Optional(place.id))
+
+                Section("Then") {
+                    Picker("Classify As", selection: $classification) {
+                        Text("Business").tag(Trip.Classification.business)
+                        Text("Personal").tag(Trip.Classification.personal)
                     }
+                    .pickerStyle(.segmented)
                 }
-                Picker("Classification", selection: $classification) {
-                    Text("Business").tag(Trip.Classification.business)
-                    Text("Personal").tag(Trip.Classification.personal)
+
+                Section {
+                    Text("When a future trip matches both Frequent Places, MileMate applies the classification you choose. Trips without a matching enabled rule remain Unclassified for review.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
-                Text("This rule is created only after you confirm it.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
             .scrollIndicators(.hidden)
             .navigationTitle("Add Rule")

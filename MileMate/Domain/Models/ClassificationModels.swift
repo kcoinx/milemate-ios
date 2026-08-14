@@ -6,6 +6,7 @@ struct FrequentPlace: Identifiable, Hashable, Codable, Sendable {
     var label: String
     var latitude: Double
     var longitude: Double
+    var address: String?
     var radiusMeters: Double
     var createdAt: Date
     var updatedAt: Date
@@ -15,6 +16,7 @@ struct FrequentPlace: Identifiable, Hashable, Codable, Sendable {
         label: String,
         latitude: Double,
         longitude: Double,
+        address: String? = nil,
         radiusMeters: Double = 150,
         createdAt: Date = .now,
         updatedAt: Date = .now
@@ -23,6 +25,7 @@ struct FrequentPlace: Identifiable, Hashable, Codable, Sendable {
         self.label = label
         self.latitude = latitude
         self.longitude = longitude
+        self.address = address
         self.radiusMeters = radiusMeters
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -137,6 +140,27 @@ enum SmartClassificationService {
         guard let startID = labels.start?.id, let endID = labels.end?.id else { return nil }
         return rules.first {
             $0.isEnabled && $0.startPlaceID == startID && $0.endPlaceID == endID
+        }
+    }
+
+    static func matchingRule(
+        for trip: Trip,
+        places: [FrequentPlace],
+        rules: [ClassificationRule],
+        automaticClassificationEnabled: Bool
+    ) -> ClassificationRule? {
+        guard automaticClassificationEnabled else { return nil }
+        return matchingRule(for: trip, places: places, rules: rules)
+    }
+
+    static func dependentRuleIDs(
+        for placeID: UUID,
+        rules: [ClassificationRule]
+    ) -> [UUID] {
+        rules.compactMap { rule in
+            rule.startPlaceID == placeID || rule.endPlaceID == placeID
+                ? rule.id
+                : nil
         }
     }
 

@@ -201,11 +201,15 @@ struct TripReviewView<Coordinator: TripReviewCoordinating>: View {
             history: history,
             places: places
         )
-        if UserDefaults.standard.bool(forKey: ClassificationSettings.automaticRulesEnabledKey),
+        let automaticClassificationEnabled = UserDefaults.standard.bool(
+            forKey: ClassificationSettings.automaticRulesEnabledKey
+        )
+        if automaticClassificationEnabled,
            let rule = SmartClassificationService.matchingRule(
-                for: trip,
-                places: places,
-                rules: rules
+               for: trip,
+               places: places,
+               rules: rules,
+               automaticClassificationEnabled: automaticClassificationEnabled
            ) {
             appliedRule = rule
             classification = rule.classification

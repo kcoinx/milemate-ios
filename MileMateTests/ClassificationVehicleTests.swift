@@ -4,6 +4,43 @@ import XCTest
 
 @MainActor
 final class ClassificationVehicleTests: XCTestCase {
+    func testClassificationRulesAddActionRoutesToFrequentPlaceUntilTwoPlacesExist() {
+        XCTAssertEqual(ClassificationRulesAddAction(placeCount: 0), .frequentPlace)
+        XCTAssertEqual(ClassificationRulesAddAction(placeCount: 1), .frequentPlace)
+        XCTAssertEqual(ClassificationRulesAddAction(placeCount: 2), .classificationRule)
+    }
+
+    func testFrequentPlacePersistsFriendlyNameAddressAndInternalCoordinates() {
+        let place = FrequentPlace(
+            label: "Office",
+            latitude: 37.3349,
+            longitude: -122.0090,
+            address: "1 Apple Park Way\nCupertino, CA 95014"
+        )
+
+        let restored = StoredFrequentPlace(place: place).domainModel
+
+        XCTAssertEqual(restored.label, "Office")
+        XCTAssertEqual(restored.address, "1 Apple Park Way\nCupertino, CA 95014")
+        XCTAssertEqual(restored.latitude, 37.3349, accuracy: 0.000_001)
+        XCTAssertEqual(restored.longitude, -122.0090, accuracy: 0.000_001)
+    }
+
+    func testPlaceLocationProviderReturnsHumanReadableCurrentLocation() async throws {
+        let expected = PlaceLocationSelection(
+            name: "Apple Park",
+            address: "1 Apple Park Way\nCupertino, CA 95014",
+            latitude: 37.3349,
+            longitude: -122.0090
+        )
+        let provider = PlaceLocationProviderStub(current: expected)
+
+        let selection = try await provider.currentLocation()
+
+        XCTAssertEqual(selection, expected)
+        XCTAssertFalse(selection.address.isEmpty)
+    }
+
     func testReviewQueueOrdersOldestUnclassifiedTripFirst() {
         let newest = trip(startedAt: .now, classification: .unclassified)
         let oldest = trip(
@@ -78,6 +115,70 @@ final class ClassificationVehicleTests: XCTestCase {
                 places: places,
                 rules: [rule]
             )
+        )
+    }
+
+    func testBusinessAndPersonalRulesApplyTheirExplicitClassification() {
+        let places = routePlaces()
+        let trip = routeTrip(places: places, classification: .unclassified)
+        let businessRule = rule(places: places, classification: .business)
+        let personalRule = rule(places: places, classification: .personal)
+
+        XCTAssertEqual(
+            SmartClassificationService.applying(businessRule, to: trip).classification,
+            .business
+        )
+        XCTAssertEqual(
+            SmartClassificationService.applying(personalRule, to: trip).classification,
+            .personal
+        )
+    }
+
+    func testUnmatchedTripRemainsUnclassifiedAndDisabledAutomationDoesNotMatch() {
+        let places = routePlaces()
+        let matchingTrip = routeTrip(places: places, classification: .unclassified)
+        let matchingRule = rule(places: places, classification: .business)
+        var unmatchedTrip = matchingTrip
+        unmatchedTrip.endCoordinate = TripCoordinate(
+            latitude: 40,
+            longitude: -120,
+            timestamp: .now
+        )
+
+        XCTAssertNil(
+            SmartClassificationService.matchingRule(
+                for: unmatchedTrip,
+                places: places,
+                rules: [matchingRule],
+                automaticClassificationEnabled: true
+            )
+        )
+        XCTAssertEqual(unmatchedTrip.classification, .unclassified)
+        XCTAssertNil(
+            SmartClassificationService.matchingRule(
+                for: matchingTrip,
+                places: places,
+                rules: [matchingRule],
+                automaticClassificationEnabled: false
+            )
+        )
+    }
+
+    func testDeletingFrequentPlaceIdentifiesEveryDependentRule() {
+        let places = routePlaces()
+        let dependent = rule(places: places, classification: .business)
+        let unrelatedPlaces = [
+            FrequentPlace(label: "Gym", latitude: 35, longitude: -120),
+            FrequentPlace(label: "Store", latitude: 35.01, longitude: -120.01)
+        ]
+        let unrelated = rule(places: unrelatedPlaces, classification: .personal)
+
+        XCTAssertEqual(
+            SmartClassificationService.dependentRuleIDs(
+                for: places[0].id,
+                rules: [dependent, unrelated]
+            ),
+            [dependent.id]
         )
     }
 
@@ -277,6 +378,34 @@ final class ClassificationVehicleTests: XCTestCase {
                 timestamp: .now
             )
         )
+    }
+
+    private func rule(
+        places: [FrequentPlace],
+        classification: Trip.Classification
+    ) -> ClassificationRule {
+        ClassificationRule(
+            startPlaceID: places[0].id,
+            startLabel: places[0].label,
+            endPlaceID: places[1].id,
+            endLabel: places[1].label,
+            classification: classification
+        )
+    }
+}
+
+@MainActor
+private final class PlaceLocationProviderStub: PlaceLocationProviding {
+    let current: PlaceLocationSelection
+
+    init(current: PlaceLocationSelection) {
+        self.current = current
+    }
+
+    func search(query: String) async throws -> [PlaceLocationSelection] { [current] }
+    func currentLocation() async throws -> PlaceLocationSelection { current }
+    func selection(latitude: Double, longitude: Double) async throws -> PlaceLocationSelection {
+        current
     }
 }
 
