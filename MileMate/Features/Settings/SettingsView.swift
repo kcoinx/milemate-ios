@@ -13,8 +13,15 @@ enum ManualTrackingRowState: Equatable {
     var isActionable: Bool { self == .actionable }
 }
 
+enum DataDeletionConfirmationState: Equatable {
+    case none
+    case warning
+    case final
+}
+
 struct SettingsView: View {
     @State private var viewModel: SettingsViewModel
+    private let manualTripCoordinator: ManualTripCoordinator
     @Bindable private var automaticTripCoordinator: AutomaticTripCoordinator
     private let notificationService: any TripNotificationScheduling
     private let router: AppRouter
@@ -30,17 +37,21 @@ struct SettingsView: View {
     private var automaticClassificationEnabled = false
     @State private var showingAutomaticTrackingExplanation = false
     @State private var notificationPermissionStatus = NotificationPermissionStatus.notDetermined
+    @State private var deletionConfirmation = DataDeletionConfirmationState.none
+    @State private var deletionErrorMessage: String?
     @AppStorage(TripFeedbackSettings.enabledKey) private var tripFeedbackEnabled = true
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
 
     init(
         repository: any MileageRepository,
+        manualTripCoordinator: ManualTripCoordinator,
         automaticTripCoordinator: AutomaticTripCoordinator,
         notificationService: any TripNotificationScheduling,
         router: AppRouter
     ) {
         _viewModel = State(initialValue: SettingsViewModel(repository: repository))
+        self.manualTripCoordinator = manualTripCoordinator
         _automaticTripCoordinator = Bindable(wrappedValue: automaticTripCoordinator)
         self.notificationService = notificationService
         self.router = router
@@ -112,15 +123,20 @@ struct SettingsView: View {
                         )
                     }
 
-                    permissionRow(
+                    Text("PERMISSIONS")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(AppTheme.Color.textSecondary)
+                    permissionStatusRow(
                         "Location",
                         status: locationPermissionText,
-                        icon: "location.circle.fill"
+                        icon: "location.circle.fill",
+                        isSufficient: automaticTripCoordinator.locationAuthorizationStatus == .authorizedAlways
                     )
-                    permissionRow(
+                    permissionStatusRow(
                         "Motion & Fitness",
                         status: motionPermissionText,
-                        icon: "figure.walk.motion"
+                        icon: "figure.walk.motion",
+                        isSufficient: automaticTripCoordinator.motionPermissionStatus == .authorized
                     )
                     if TrackingPermissionAction(
                         readiness: automaticTripCoordinator.trackingReadiness
@@ -141,10 +157,19 @@ struct SettingsView: View {
                         tint: AppTheme.Color.brand
                     )
                 }
+                if automaticClassificationEnabled && viewModel.classificationRuleCount == 0 {
+                    Text("No rules configured")
+                        .font(.footnote)
+                        .foregroundStyle(AppTheme.Color.textSecondary)
+                } else if automaticClassificationEnabled {
+                    Text("Applies approved matching rules automatically.")
+                        .font(.footnote)
+                        .foregroundStyle(AppTheme.Color.textSecondary)
+                }
                 destination("Vehicles", icon: "car.side.fill", tint: AppTheme.Color.brand) {
                     VehicleManagementView(repository: viewModel.repository)
                 }
-                destination("Frequent places", icon: "mappin.and.ellipse", tint: AppTheme.Color.brand) {
+                destination("Frequent Places", icon: "mappin.and.ellipse", tint: AppTheme.Color.brand) {
                     FrequentPlacesManagementView(repository: viewModel.repository)
                 }
                 destination("Classification Rules", icon: "list.bullet.rectangle", tint: .indigo) {
@@ -218,11 +243,15 @@ struct SettingsView: View {
             }
 
             settingsSection("Tax") {
-                destination("IRS rate", icon: "dollarsign.circle.fill", tint: AppTheme.Color.positive) {
+                destination("IRS Rate", icon: "dollarsign.circle.fill", tint: AppTheme.Color.positive) {
                     TaxSettingsView()
                 }
-                destination("Tax year", icon: "calendar", tint: .indigo) {
-                    InformationView(title: "Tax Year", icon: "calendar", message: "MileMate is currently reporting for tax year 2026.")
+                destination("Tax Year", icon: "calendar", tint: .indigo) {
+                    AnnualSummaryView(
+                        repository: viewModel.repository,
+                        initialYear: Calendar.current.component(.year, from: .now),
+                        vehicleID: nil
+                    )
                 }
             }
 
@@ -238,28 +267,27 @@ struct SettingsView: View {
 
             settingsSection("Privacy & Support") {
                 destination("Privacy", icon: "hand.raised.fill", tint: .teal) {
-                    InformationView(title: "Privacy", icon: "hand.raised.fill", message: "Your mileage data stays on this device in this milestone.")
+                    PrivacyInformationView()
                 }
-                destination("Help", icon: "questionmark.circle.fill", tint: AppTheme.Color.brand) {
-                    InformationView(title: "Help", icon: "questionmark.circle.fill", message: "Find answers about trips, deductions, and tax-ready reports.")
-                }
-                destination("Support", icon: "lifepreserver.fill", tint: .orange) {
-                    InformationView(title: "Support", icon: "lifepreserver.fill", message: "We are here to help you get the most from every mile.")
+                destination("Help & Support", icon: "lifepreserver.fill", tint: .orange) {
+                    HelpSupportView()
                 }
                 destination("Send feedback", icon: "bubble.left.and.bubble.right.fill", tint: .purple) {
-                    InformationView(title: "Feedback", icon: "bubble.left.and.bubble.right.fill", message: "Tell us how MileMate can make your workday easier.")
+                    SendFeedbackView()
                 }
                 destination("About MileMate", icon: "info.circle.fill", tint: AppTheme.Color.textSecondary) {
-                    InformationView(title: "About MileMate", icon: "road.lanes", message: "Mileage clarity for people who drive for work.")
+                    AboutMileMateView()
                 }
             }
 
-            Section {
-                HStack {
-                    Text("Version")
-                    Spacer()
-                    Text("1.0 (1)").foregroundStyle(AppTheme.Color.textSecondary)
+            Section("Data & Privacy") {
+                Button(role: .destructive) {
+                    deletionConfirmation = .warning
+                } label: {
+                    Label("Delete All MileMate Data", systemImage: "trash.fill")
                 }
+                .frame(minHeight: 44)
+                .accessibilityHint("Begins a two-step permanent data deletion confirmation")
             }
         }
         .listStyle(.insetGrouped)
@@ -274,6 +302,9 @@ struct SettingsView: View {
             await notificationService.reconcileReviewReminder()
         }
         .onReceive(NotificationCenter.default.publisher(for: .mileageTripsDidChange)) { _ in
+            Task { await viewModel.loadFrequentPlaces() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .mileageClassificationDataDidChange)) { _ in
             Task { await viewModel.loadFrequentPlaces() }
         }
         .onChange(of: scenePhase) { _, phase in
@@ -303,6 +334,40 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("MileMate uses Motion & Fitness to recognize driving and Always Location to record work trips in the background. You can also allow notifications so MileMate can tell you when an automatic trip is ready to review.")
+        }
+        .alert(
+            "Delete All MileMate Data?",
+            isPresented: confirmationBinding(for: .warning)
+        ) {
+            Button("Cancel", role: .cancel) { deletionConfirmation = .none }
+            Button("Continue", role: .destructive) {
+                deletionConfirmation = .final
+            }
+        } message: {
+            Text("This permanently removes trips and routes, review data, vehicles, frequent places, classification rules, app preferences, and saved active-trip state. Active tracking will be stopped and discarded.")
+        }
+        .alert(
+            "This Cannot Be Undone",
+            isPresented: confirmationBinding(for: .final)
+        ) {
+            Button("Cancel", role: .cancel) { deletionConfirmation = .none }
+            Button("Delete All Data", role: .destructive) {
+                deletionConfirmation = .none
+                deleteAllData()
+            }
+        } message: {
+            Text("MileMate data stored by this app will be permanently deleted. iPhone permission choices will not be changed.")
+        }
+        .alert(
+            "Unable to Delete Data",
+            isPresented: Binding(
+                get: { deletionErrorMessage != nil },
+                set: { if !$0 { deletionErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { deletionErrorMessage = nil }
+        } message: {
+            Text(deletionErrorMessage ?? "")
         }
     }
 
@@ -413,14 +478,71 @@ struct SettingsView: View {
         }
     }
 
-    private func permissionRow(_ title: String, status: String, icon: String) -> some View {
-        LabeledContent {
-            Text(status)
-                .foregroundStyle(AppTheme.Color.textSecondary)
-        } label: {
-            Label(title, systemImage: icon)
-                .foregroundStyle(AppTheme.Color.textPrimary)
+    @ViewBuilder
+    private func permissionStatusRow(
+        _ title: String,
+        status: String,
+        icon: String,
+        isSufficient: Bool
+    ) -> some View {
+        if isSufficient {
+            permissionStatusContent(title, status: status, icon: icon)
+        } else {
+            Button {
+                guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                openURL(url)
+            } label: {
+                permissionStatusContent(title, status: status, icon: icon)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens iPhone Settings to review this permission")
         }
+    }
+
+    private func permissionStatusContent(
+        _ title: String,
+        status: String,
+        icon: String
+    ) -> some View {
+        LabeledContent {
+            Text(status).foregroundStyle(AppTheme.Color.textSecondary)
+        } label: {
+            Label(title, systemImage: icon).foregroundStyle(AppTheme.Color.textPrimary)
+        }
+        .frame(minHeight: 44)
+    }
+
+    private func deleteAllData() {
+        Task {
+            do {
+                let service = LocalDataDeletionService(
+                    repository: viewModel.repository,
+                    manualCoordinator: manualTripCoordinator,
+                    automaticCoordinator: automaticTripCoordinator,
+                    notificationService: notificationService
+                )
+                try await service.deleteAllData()
+                router.requestedTrip = nil
+                router.requestedTripsFilter = nil
+                router.requestedReviewQueue = false
+                router.selectedTab = .dashboard
+            } catch {
+                deletionErrorMessage = "MileMate could not delete all local data. Please try again."
+            }
+        }
+    }
+
+    private func confirmationBinding(
+        for state: DataDeletionConfirmationState
+    ) -> Binding<Bool> {
+        Binding(
+            get: { deletionConfirmation == state },
+            set: { isPresented in
+                if !isPresented, deletionConfirmation == state {
+                    deletionConfirmation = .none
+                }
+            }
+        )
     }
 
     private func destination<Destination: View>(
@@ -476,21 +598,5 @@ private struct TaxSettingsView: View {
         }
         .scrollIndicators(.hidden)
         .navigationTitle("IRS Rate")
-    }
-}
-
-private struct InformationView: View {
-    let title: String
-    let icon: String
-    let message: String
-
-    var body: some View {
-        ContentUnavailableView {
-            Label(title, systemImage: icon)
-        } description: {
-            Text(message)
-        }
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
     }
 }

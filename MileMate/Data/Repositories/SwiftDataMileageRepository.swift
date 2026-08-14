@@ -191,6 +191,22 @@ actor SwiftDataMileageRepository: MileageRepository {
         }
     }
 
+    func deleteAllLocalData() async throws {
+        for trip in try modelContext.fetch(FetchDescriptor<StoredTrip>()) {
+            modelContext.delete(trip)
+        }
+        for vehicle in try modelContext.fetch(FetchDescriptor<StoredVehicle>()) {
+            modelContext.delete(vehicle)
+        }
+        for place in try modelContext.fetch(FetchDescriptor<StoredFrequentPlace>()) {
+            modelContext.delete(place)
+        }
+        for rule in try modelContext.fetch(FetchDescriptor<StoredClassificationRule>()) {
+            modelContext.delete(rule)
+        }
+        try modelContext.save()
+    }
+
     private func ensureDefaultVehicle() throws -> Vehicle {
         let existing = try modelContext.fetch(FetchDescriptor<StoredVehicle>())
         let defaults = existing.filter(\.isDefault)

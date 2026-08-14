@@ -16,6 +16,7 @@ protocol MileageRepository: Sendable {
     func fetchClassificationRules() async throws -> [ClassificationRule]
     func saveClassificationRule(_ rule: ClassificationRule) async throws
     func deleteClassificationRule(id: UUID) async throws
+    func deleteAllLocalData() async throws
 }
 
 extension MileageRepository {
@@ -28,6 +29,7 @@ extension MileageRepository {
     func fetchClassificationRules() async throws -> [ClassificationRule] { [] }
     func saveClassificationRule(_ rule: ClassificationRule) async throws {}
     func deleteClassificationRule(id: UUID) async throws {}
+    func deleteAllLocalData() async throws {}
 }
 
 extension Notification.Name {

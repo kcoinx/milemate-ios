@@ -252,6 +252,10 @@ private final class ClassificationDataViewModel {
     }
 
     func delete(place: FrequentPlace) async {
+        for rule in rules where
+            rule.startPlaceID == place.id || rule.endPlaceID == place.id {
+            try? await repository.deleteClassificationRule(id: rule.id)
+        }
         try? await repository.deleteFrequentPlace(id: place.id)
         await load()
         NotificationCenter.default.post(name: .mileageClassificationDataDidChange, object: place.id)
@@ -282,11 +286,14 @@ struct FrequentPlacesManagementView: View {
     var body: some View {
         List {
             if viewModel.places.isEmpty {
-                ContentUnavailableView(
-                    "No Frequent Places",
-                    systemImage: "mappin.slash",
-                    description: Text("Add and confirm labels such as Home, Work, Client Office, Warehouse, or Job Site.")
-                )
+                ContentUnavailableView {
+                    Label("No Frequent Places Yet", systemImage: "mappin.slash")
+                } description: {
+                    Text("Save meaningful locations such as Home, Office, or Client so they can be used in Classification Rules.")
+                } actions: {
+                    Button("Add Place") { showingAdd = true }
+                        .buttonStyle(.borderedProminent)
+                }
             } else {
                 ForEach(viewModel.places) { place in
                     Button {
@@ -412,11 +419,21 @@ struct ClassificationRulesView: View {
     var body: some View {
         List {
             if viewModel.rules.isEmpty {
-                ContentUnavailableView(
-                    "No Classification Rules",
-                    systemImage: "list.bullet.rectangle",
-                    description: Text("Approved rules can classify confirmed recurring routes automatically.")
-                )
+                ContentUnavailableView {
+                    Label("No Classification Rules Yet", systemImage: "list.bullet.rectangle")
+                } description: {
+                    Text("Create rules to automatically classify trips based on where they start or end.")
+                } actions: {
+                    if viewModel.places.count >= 2 {
+                        Button("Add Rule") { showingAdd = true }
+                            .buttonStyle(.borderedProminent)
+                    } else {
+                        NavigationLink("Add Frequent Places") {
+                            FrequentPlacesManagementView(repository: viewModel.repository)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
             } else {
                 ForEach(viewModel.rules) { rule in
                     Toggle(
@@ -449,13 +466,12 @@ struct ClassificationRulesView: View {
         .scrollIndicators(.hidden)
         .navigationTitle("Classification Rules")
         .toolbar {
-            if viewModel.places.count >= 2 {
-                Button {
-                    showingAdd = true
-                } label: {
-                    Label("Add Rule", systemImage: "plus")
-                }
+            Button {
+                showingAdd = true
+            } label: {
+                Label("Add Rule", systemImage: "plus")
             }
+            .disabled(viewModel.places.count < 2)
         }
         .task { await viewModel.load() }
         .sheet(isPresented: $showingAdd) {

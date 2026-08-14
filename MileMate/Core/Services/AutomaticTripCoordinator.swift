@@ -228,6 +228,19 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         resetToIdle()
     }
 
+    func prepareForLocalDataDeletion() {
+        stopDetection()
+        pendingTrip = nil
+        clearPersistedPendingTrip()
+        clearPersistedActiveTrip()
+        processor.reset()
+        distanceMeters = 0
+        elapsedTime = 0
+        candidateStartedAt = nil
+        candidateStopStartedAt = nil
+        state = .disabled
+    }
+
     private func requestLocationAuthorizationIfNeeded() {
         switch locationService.authorizationStatus {
         case CLAuthorizationStatus.notDetermined:

@@ -185,6 +185,14 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         TrackingDiagnostics.log("manual trip preserved in background")
     }
 
+    func prepareForLocalDataDeletion() {
+        pendingTrip = nil
+        stopLocationUpdates()
+        clearPersistedSession()
+        notificationService?.cancelLongRunningTripReminder()
+        resetSession()
+    }
+
     private func beginTracking() {
         processor.reset()
         distanceMeters = 0
