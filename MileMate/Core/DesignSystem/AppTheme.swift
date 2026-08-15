@@ -51,6 +51,21 @@ enum AppTheme {
     }
 }
 
+enum SettingsDetailLayoutPolicy {
+    static let bottomContentMargin = AppTheme.Spacing.large
+}
+
+extension View {
+    func settingsDetailScrollBehavior() -> some View {
+        scrollBounceBehavior(.basedOnSize, axes: .vertical)
+            .contentMargins(
+                .bottom,
+                SettingsDetailLayoutPolicy.bottomContentMargin,
+                for: .scrollContent
+            )
+    }
+}
+
 extension Font {
     static let appLargeTitle = Font.system(size: 34, weight: .bold, design: .rounded)
     static let appTitle = Font.system(size: 22, weight: .bold, design: .rounded)

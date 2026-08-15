@@ -79,6 +79,7 @@ struct PrivacyInformationView: View {
                 NavigationLink("Terms of Use") { TermsOfUseView() }
             }
         }
+        .settingsDetailScrollBehavior()
         .navigationTitle("Privacy")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -151,6 +152,7 @@ struct PrivacyPolicyView: View {
                 }
             }
         }
+        .settingsDetailScrollBehavior()
         .navigationTitle("Privacy Policy")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -209,6 +211,7 @@ struct TermsOfUseView: View {
                 }
             }
         }
+        .settingsDetailScrollBehavior()
         .navigationTitle("Terms of Use")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -250,6 +253,7 @@ struct HelpSupportView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .settingsDetailScrollBehavior()
         .navigationTitle("Help & Support")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -279,6 +283,7 @@ struct SendFeedbackView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .settingsDetailScrollBehavior()
         .navigationTitle("Send Feedback")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -314,6 +319,7 @@ struct AboutMileMateView: View {
                 NavigationLink("Terms of Use") { TermsOfUseView() }
             }
         }
+        .settingsDetailScrollBehavior()
         .navigationTitle("About MileMate")
         .navigationBarTitleDisplayMode(.inline)
     }

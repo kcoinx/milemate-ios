@@ -570,6 +570,7 @@ private struct ProfileSettingsView: View {
                 TextField("Occupation", text: $occupation)
             }
         }
+        .settingsDetailScrollBehavior()
         .scrollIndicators(.hidden)
         .navigationTitle("Profile")
     }
@@ -596,6 +597,7 @@ private struct TaxSettingsView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .settingsDetailScrollBehavior()
         .scrollIndicators(.hidden)
         .navigationTitle("IRS Rate")
     }

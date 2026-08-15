@@ -77,8 +77,8 @@ struct AnnualSummaryView: View {
                 }
             }
             .padding(.horizontal, AppTheme.Spacing.large)
-            .padding(.bottom, AppTheme.Spacing.xxLarge)
         }
+        .settingsDetailScrollBehavior()
         .background(AppTheme.Color.canvas)
         .scrollIndicators(.hidden)
         .navigationTitle("Annual Summary")

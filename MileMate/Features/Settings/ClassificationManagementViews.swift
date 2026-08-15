@@ -111,6 +111,7 @@ struct VehicleManagementView: View {
                 }
             }
         }
+        .settingsDetailScrollBehavior()
         .scrollIndicators(.hidden)
         .navigationTitle("Vehicles")
         .toolbar {
@@ -194,6 +195,7 @@ private struct VehicleEditorView: View {
                 TextField("License plate nickname (optional)", text: $plate)
                 Toggle("Default vehicle", isOn: $isDefault)
             }
+            .settingsDetailScrollBehavior()
             .scrollIndicators(.hidden)
             .navigationTitle(original == nil ? "Add Vehicle" : "Edit Vehicle")
             .navigationBarTitleDisplayMode(.inline)
@@ -352,6 +354,7 @@ struct FrequentPlacesManagementView: View {
                 }
             }
         }
+        .settingsDetailScrollBehavior()
         .scrollIndicators(.hidden)
         .navigationTitle("Frequent Places")
         .toolbar {
@@ -541,6 +544,7 @@ private struct PlaceEditorView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .settingsDetailScrollBehavior()
             .scrollIndicators(.hidden)
             .navigationTitle(original == nil ? "Add Frequent Place" : "Edit Frequent Place")
             .navigationBarTitleDisplayMode(.inline)
@@ -688,6 +692,7 @@ struct ClassificationRulesView: View {
                 }
             }
         }
+        .settingsDetailScrollBehavior()
         .scrollIndicators(.hidden)
         .navigationTitle("Classification Rules")
         .toolbar {
@@ -776,6 +781,7 @@ private struct RuleEditorView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .settingsDetailScrollBehavior()
             .scrollIndicators(.hidden)
             .navigationTitle("Add Rule")
             .navigationBarTitleDisplayMode(.inline)

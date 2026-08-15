@@ -206,6 +206,18 @@ final class SettingsCompletionTests: XCTestCase {
         XCTAssertNil(MileMateReleaseConfiguration.legalEntityName)
     }
 
+    func testSettingsDetailLayoutUsesOneModestBottomContentMargin() {
+        XCTAssertEqual(
+            SettingsDetailLayoutPolicy.bottomContentMargin,
+            AppTheme.Spacing.large
+        )
+        XCTAssertGreaterThan(SettingsDetailLayoutPolicy.bottomContentMargin, 0)
+        XCTAssertLessThanOrEqual(
+            SettingsDetailLayoutPolicy.bottomContentMargin,
+            AppTheme.Spacing.xxLarge
+        )
+    }
+
     private func trip(
         year: Int,
         miles: Double,
