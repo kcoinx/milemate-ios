@@ -39,6 +39,47 @@ final class LocationSampleProcessorTests: XCTestCase {
         XCTAssertEqual(processor.distanceMeters, 0)
     }
 
+    func testSequentialCityDrivingSamplesAccumulateApproximatelyThreeMiles() {
+        let start = Date()
+        var processor = LocationSampleProcessor()
+
+        for index in 0...60 {
+            let timestamp = start.addingTimeInterval(Double(index) * 5)
+            let sample = sample(
+                latitude: 37.7749 + Double(index) * 0.000_72,
+                longitude: -122.4194,
+                date: timestamp
+            )
+            XCTAssertEqual(
+                processor.processWithResult(sample, now: timestamp),
+                .accepted
+            )
+        }
+
+        XCTAssertGreaterThan(processor.distanceMeters / 1_609.344, 2.8)
+        XCTAssertLessThan(processor.distanceMeters / 1_609.344, 3.2)
+    }
+
+    func testRejectionReasonsAreSpecificAndPrivacySafe() {
+        let now = Date()
+        var processor = LocationSampleProcessor()
+
+        XCTAssertEqual(
+            processor.processWithResult(
+                sample(latitude: 37.7749, longitude: -122.4194, accuracy: 200, date: now),
+                now: now
+            ),
+            .rejectedInvalidAccuracy
+        )
+        XCTAssertEqual(
+            processor.processWithResult(
+                sample(latitude: 37.7749, longitude: -122.4194, date: now.addingTimeInterval(-30)),
+                now: now
+            ),
+            .rejectedStale
+        )
+    }
+
     private func sample(
         latitude: Double,
         longitude: Double,

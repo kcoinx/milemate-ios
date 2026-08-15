@@ -2,11 +2,24 @@ import AudioToolbox
 import Foundation
 import UIKit
 
+@MainActor
 enum TrackingDiagnostics {
+    private static let historyLimit = 120
+    private(set) static var recentHistory: [String] = []
+
     static func log(_ message: String) {
         #if DEBUG
-        print("[MileMate Tracking] \(message)")
+        let entry = "\(Date().ISO8601Format()) \(message)"
+        recentHistory.append(entry)
+        if recentHistory.count > historyLimit {
+            recentHistory.removeFirst(recentHistory.count - historyLimit)
+        }
+        print("[MileMate Tracking] \(entry)")
         #endif
+    }
+
+    static func resetHistory() {
+        recentHistory.removeAll(keepingCapacity: true)
     }
 }
 

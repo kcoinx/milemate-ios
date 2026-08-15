@@ -199,6 +199,13 @@ final class SettingsCompletionTests: XCTestCase {
         XCTAssertFalse(feedback.localizedCaseInsensitiveContains("address"))
     }
 
+    func testReleaseLegalConfigurationDoesNotInventExternalDestinations() {
+        XCTAssertNil(MileMateReleaseConfiguration.privacyPolicyURL)
+        XCTAssertNil(MileMateReleaseConfiguration.termsOfUseURL)
+        XCTAssertNil(MileMateReleaseConfiguration.supportEmail)
+        XCTAssertNil(MileMateReleaseConfiguration.legalEntityName)
+    }
+
     private func trip(
         year: Int,
         miles: Double,

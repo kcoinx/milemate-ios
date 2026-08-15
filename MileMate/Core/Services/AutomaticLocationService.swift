@@ -50,8 +50,12 @@ final class CoreAutomaticLocationService: NSObject, AutomaticLocationService, CL
     }
 
     func startLowPowerMonitoring() {
-        guard significantLocationMonitoringAvailable else { return }
+        guard significantLocationMonitoringAvailable else {
+            TrackingDiagnostics.log("significant-location monitoring unavailable")
+            return
+        }
         manager.startMonitoringSignificantLocationChanges()
+        TrackingDiagnostics.log("significant-location monitoring started")
     }
 
     func stopLowPowerMonitoring() {

@@ -131,17 +131,34 @@ struct TripReviewView<Coordinator: TripReviewCoordinating>: View {
                             save()
                         }
                     } label: {
-                        HStack {
-                            Spacer()
-                            if isSaving { ProgressView() } else { Text("Save Trip").font(.headline) }
-                            Spacer()
+                        Group {
+                            if isSaving {
+                                ProgressView()
+                                    .tint(.white)
+                            } else {
+                                Text("Save Trip")
+                                    .font(.headline)
+                            }
                         }
+                        .frame(maxWidth: .infinity, minHeight: 50)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(AppTheme.Color.brand)
                     .disabled(isSaving)
+                    .accessibilityHint("Saves this trip with the selected classification and details")
 
-                    Button("Discard Trip", role: .destructive) {
+                    Button(role: .destructive) {
                         coordinator.discardPendingTrip()
+                    } label: {
+                        Text("Discard Trip")
+                            .font(.body.weight(.semibold))
+                            .frame(maxWidth: .infinity, minHeight: 44)
                     }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                    .disabled(isSaving)
+                    .padding(.top, AppTheme.Spacing.small)
+                    .accessibilityHint("Permanently discards this recorded trip")
                 }
             }
             .scrollIndicators(.hidden)

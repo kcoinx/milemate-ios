@@ -1,6 +1,14 @@
 import SwiftUI
 import UIKit
 
+enum MileMateReleaseConfiguration {
+    // Supply hosted HTTPS destinations and a real support contact before App Store submission.
+    static let privacyPolicyURL: URL? = nil
+    static let termsOfUseURL: URL? = nil
+    static let supportEmail: String? = nil
+    static let legalEntityName: String? = nil
+}
+
 enum AppBuildInformation {
     static func version(
         from dictionary: [String: Any]? = Bundle.main.infoDictionary
@@ -67,11 +75,8 @@ struct PrivacyInformationView: View {
                 text: "You can change MileMate preferences in Settings, manage iOS permissions in iPhone Settings, or permanently remove MileMate-owned local data with Delete All MileMate Data."
             )
             Section("External Policies") {
-                LabeledContent("Privacy Policy", value: "Not yet provided")
-                LabeledContent("Terms", value: "Not yet provided")
-                Text("Public Privacy Policy and Terms URLs must be supplied before App Store submission.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                NavigationLink("Privacy Policy") { PrivacyPolicyView() }
+                NavigationLink("Terms of Use") { TermsOfUseView() }
             }
         }
         .navigationTitle("Privacy")
@@ -84,6 +89,128 @@ struct PrivacyInformationView: View {
         } header: {
             Label(title, systemImage: icon)
         }
+    }
+}
+
+private struct LegalDocumentSection: Identifiable {
+    let title: String
+    let body: String
+    var id: String { title }
+}
+
+struct PrivacyPolicyView: View {
+    private let sections = [
+        LegalDocumentSection(
+            title: "Data MileMate Stores",
+            body: "MileMate stores mileage records on this iPhone, including trip times, distance, route coordinates, start and end descriptions, classification, purpose, notes, vehicle information, Frequent Places, Classification Rules, and app preferences."
+        ),
+        LegalDocumentSection(
+            title: "Location and Route Data",
+            body: "Location is used to detect eligible driving, calculate distance, and create route records. Always Location supports automatic tracking in the background. Precise location is requested while detecting or recording a trip."
+        ),
+        LegalDocumentSection(
+            title: "Motion & Fitness",
+            body: "Motion activity is used to distinguish automotive movement from walking, running, cycling, and stationary activity. MileMate does not use Motion & Fitness data to infer a trip's Business or Personal classification."
+        ),
+        LegalDocumentSection(
+            title: "Notifications",
+            body: "If authorized, MileMate uses local notifications for completed automatic trips, trips awaiting review, and the long-running manual-trip safeguard. Notification preferences can be changed in MileMate and system authorization can be changed in iPhone Settings."
+        ),
+        LegalDocumentSection(
+            title: "Storage and Sharing",
+            body: "The current MileMate architecture stores its mileage database locally on this device. The app does not currently include accounts, cloud synchronization, advertising, or analytics services. Map and place-search requests may be processed by Apple's MapKit and geocoding services under Apple's applicable terms and privacy practices. MileMate does not send the local mileage database to the product owner or advertising companies."
+        ),
+        LegalDocumentSection(
+            title: "Retention and Deletion",
+            body: "Records remain on this device until you delete individual records, use Delete All MileMate Data, or remove the app and its data through iOS. Delete All MileMate Data stops active tracking, removes MileMate-owned local records and restoration state, resets MileMate preferences, and cancels MileMate local notifications."
+        ),
+        LegalDocumentSection(
+            title: "Your Permissions and Controls",
+            body: "You can revoke Location, Motion & Fitness, or Notification permission in iPhone Settings. Revoking a permission may prevent automatic tracking or related alerts from working. System permission decisions are not reset by Delete All MileMate Data."
+        ),
+        LegalDocumentSection(
+            title: "Contact",
+            body: "A public support contact has not yet been configured in this build. Until one is supplied, the in-app Send Feedback action can create a non-sensitive message for an app you choose."
+        )
+    ]
+
+    var body: some View {
+        List {
+            Section {
+                Text("Effective for the current local-only version of MileMate.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                if let url = MileMateReleaseConfiguration.privacyPolicyURL {
+                    Link("Open Hosted Privacy Policy", destination: url)
+                }
+            }
+            ForEach(sections) { section in
+                Section(section.title) {
+                    Text(section.body)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .navigationTitle("Privacy Policy")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct TermsOfUseView: View {
+    private let sections = [
+        LegalDocumentSection(
+            title: "Purpose of MileMate",
+            body: "MileMate is a mileage-recording and reporting tool. You are responsible for reviewing recorded trips and deciding whether each trip is Business, Personal, or Unclassified."
+        ),
+        LegalDocumentSection(
+            title: "Estimates and Tax Information",
+            body: "Mileage deductions and Estimated Tax Savings are informational estimates based on the app's configured rates and your classifications. They are not tax, accounting, or legal advice and do not guarantee eligibility, savings, or acceptance by a tax authority."
+        ),
+        LegalDocumentSection(
+            title: "Record Accuracy",
+            body: "GPS, motion recognition, background execution, device settings, environmental conditions, and operating-system behavior can delay, interrupt, or miss mileage recording. MileMate does not guarantee that every trip, route, distance, address, or classification will be complete or exact."
+        ),
+        LegalDocumentSection(
+            title: "Your Responsibilities",
+            body: "You are responsible for maintaining required device permissions, keeping the app available for background operation, reviewing records promptly, correcting classifications and trip details, and retaining any documentation required for tax or business purposes."
+        ),
+        LegalDocumentSection(
+            title: "Automatic Classification",
+            body: "Automatic Classification applies only rules you enable. A matching rule uses the Business or Personal classification you selected. Trips without a matching enabled rule remain Unclassified for review."
+        ),
+        LegalDocumentSection(
+            title: "Local Data",
+            body: "The current version has no MileMate account or cloud synchronization. Deleting app data or removing the app may permanently remove records that have not been exported or otherwise retained by you."
+        ),
+        LegalDocumentSection(
+            title: "Product Changes and Availability",
+            body: "Features may change as MileMate evolves. Availability can also depend on compatible Apple hardware, iOS capabilities, permissions, and services."
+        ),
+        LegalDocumentSection(
+            title: "Provider and Contact",
+            body: "The product owner's formal legal entity name, governing terms, and public support contact have not yet been configured. Those release details must be supplied before these terms are used as the final public legal agreement."
+        )
+    ]
+
+    var body: some View {
+        List {
+            Section {
+                Text("Terms for the current local-only MileMate product.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                if let url = MileMateReleaseConfiguration.termsOfUseURL {
+                    Link("Open Hosted Terms of Use", destination: url)
+                }
+            }
+            ForEach(sections) { section in
+                Section(section.title) {
+                    Text(section.body)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .navigationTitle("Terms of Use")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -183,8 +310,8 @@ struct AboutMileMateView: View {
             Section("Resources") {
                 NavigationLink("Privacy") { PrivacyInformationView() }
                 NavigationLink("Help & Support") { HelpSupportView() }
-                LabeledContent("Privacy Policy", value: "Not yet provided")
-                LabeledContent("Terms", value: "Not yet provided")
+                NavigationLink("Privacy Policy") { PrivacyPolicyView() }
+                NavigationLink("Terms of Use") { TermsOfUseView() }
             }
         }
         .navigationTitle("About MileMate")

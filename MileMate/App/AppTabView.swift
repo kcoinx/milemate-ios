@@ -71,6 +71,7 @@ struct AppTabView: View {
             switch newPhase {
             case .background:
                 dependencies.tripCoordinator.appDidEnterBackground()
+                dependencies.automaticTripCoordinator.appDidEnterBackground()
             case .active:
                 dependencies.automaticTripCoordinator.startIfEnabled()
             case .inactive:

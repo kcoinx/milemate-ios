@@ -8,7 +8,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
     private let minimumDistanceKey = AutomaticTrackingSettings.minimumDistanceKey
     private let pendingTripKey = "automaticPendingTrip"
 
-    func testRequiresHighConfidenceAutomotiveActivityToDetect() {
+    func testMediumOrHighConfidenceAutomotiveActivityStartsResilientDetection() {
         enableAutomaticTracking()
         defer { clearAutomaticTrackingState() }
         let (coordinator, _, motion) = makeCoordinator()
@@ -18,10 +18,162 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .idle)
 
         motion.send(activity(.automotive, confidence: .medium))
+        XCTAssertEqual(coordinator.state, .detecting)
+    }
+
+    func testForegroundDetectionToleratesDelayedFirstUsableGPSSample() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, location, motion) = makeCoordinator()
+
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .medium))
+        location.send([
+            LocationSample(
+                latitude: 37.7749,
+                longitude: -122.4194,
+                horizontalAccuracy: 250,
+                timestamp: .now,
+                speed: 10
+            )
+        ])
+        XCTAssertEqual(coordinator.state, .detecting)
+
+        location.send(drivingSamples(latitudeDelta: 0.005))
+        XCTAssertEqual(coordinator.state, .tracking)
+    }
+
+    func testLocationWakeBeforeDelayedAutomotiveEventIsNotLost() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, location, motion) = makeCoordinator()
+
+        coordinator.startIfEnabled()
+        location.send(drivingSamples(latitudeDelta: 0.005))
         XCTAssertEqual(coordinator.state, .idle)
 
-        motion.send(activity(.automotive, confidence: .high))
+        motion.send(activity(.automotive, confidence: .medium))
+
+        XCTAssertEqual(coordinator.state, .tracking)
+    }
+
+    func testStationaryMotionDuringGPSWarmupDoesNotCancelDetection() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, _, motion) = makeCoordinator()
+
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .medium))
+        motion.send(activity(.stationary, confidence: .high))
+
         XCTAssertEqual(coordinator.state, .detecting)
+    }
+
+    func testLowConfidenceAutomotiveAndFalseMovementDoNotStartTrip() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, location, motion) = makeCoordinator()
+
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .low))
+        location.send(drivingSamples(latitudeDelta: 0.005))
+
+        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertFalse(location.isPreciseTracking)
+    }
+
+    func testInsufficientMovementDoesNotConfirmTracking() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, location, motion) = makeCoordinator()
+
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .high))
+        location.send(drivingSamples(latitudeDelta: 0.0005))
+
+        XCTAssertEqual(coordinator.state, .detecting)
+    }
+
+    func testInsufficientSpeedDoesNotConfirmTracking() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, location, motion) = makeCoordinator()
+        let now = Date()
+
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .high))
+        location.send([
+            LocationSample(
+                latitude: 37.7749,
+                longitude: -122.4194,
+                horizontalAccuracy: 8,
+                timestamp: now.addingTimeInterval(-14),
+                speed: 2
+            ),
+            LocationSample(
+                latitude: 37.77571,
+                longitude: -122.4194,
+                horizontalAccuracy: 8,
+                timestamp: now.addingTimeInterval(14),
+                speed: 2
+            )
+        ])
+
+        XCTAssertGreaterThan(coordinator.distanceMeters, 80)
+        XCTAssertEqual(coordinator.state, .detecting)
+    }
+
+    func testDetectionTimeoutReturnsToBatteryEfficientIdle() async {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, location, motion) = makeCoordinator(detectionTimeout: 0.01)
+
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .medium))
+        try? await Task.sleep(for: .milliseconds(30))
+
+        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertTrue(location.isLowPowerMonitoring)
+        XCTAssertFalse(location.isPreciseTracking)
+    }
+
+    func testBackgroundAndLockedTransitionPreserveDetectingAndTrackingState() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, location, motion) = makeCoordinator()
+
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .medium))
+        coordinator.appDidEnterBackground()
+
+        XCTAssertEqual(coordinator.state, .detecting)
+
+        location.send(drivingSamples(latitudeDelta: 0.005))
+        coordinator.appDidEnterBackground()
+
+        XCTAssertEqual(coordinator.state, .tracking)
+    }
+
+    func testDetectingAndActiveTrackingRestoreAfterCoordinatorRecreation() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (detecting, _, detectingMotion) = makeCoordinator()
+        detecting.startIfEnabled()
+        detectingMotion.send(activity(.automotive, confidence: .medium))
+
+        let (restoredDetecting, _, _) = makeCoordinator()
+        XCTAssertEqual(restoredDetecting.state, .detecting)
+
+        clearAutomaticTrackingState()
+        enableAutomaticTracking()
+        let (tracking, trackingLocation, trackingMotion) = makeCoordinator()
+        tracking.startIfEnabled()
+        trackingMotion.send(activity(.automotive, confidence: .medium))
+        trackingLocation.send(drivingSamples(latitudeDelta: 0.005))
+        XCTAssertEqual(tracking.state, .tracking)
+
+        let (restoredTracking, _, _) = makeCoordinator()
+        XCTAssertEqual(restoredTracking.state, .tracking)
     }
 
     func testDoesNotDetectWhileManualTrackingIsActive() {
@@ -208,6 +360,26 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         XCTAssertFalse(diagnostic.contains("longitude"))
     }
 
+    func testRollingDetectionDiagnosticsExplainStateWithoutPrivateLocationData() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        TrackingDiagnostics.resetHistory()
+        let (coordinator, location, motion) = makeCoordinator()
+
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .medium))
+        location.send(drivingSamples(latitudeDelta: 0.005))
+        let history = TrackingDiagnostics.recentHistory.joined(separator: "\n")
+
+        XCTAssertTrue(history.contains("automatic detector entered detecting"))
+        XCTAssertTrue(history.contains("location batch processed"))
+        XCTAssertTrue(history.contains("automatic tracking confirmed"))
+        XCTAssertFalse(history.localizedCaseInsensitiveContains("latitude"))
+        XCTAssertFalse(history.localizedCaseInsensitiveContains("longitude"))
+        XCTAssertFalse(history.localizedCaseInsensitiveContains("address"))
+        XCTAssertLessThanOrEqual(TrackingDiagnostics.recentHistory.count, 120)
+    }
+
     func testShortAutomaticTripIsDiscarded() async {
         enableAutomaticTracking(minimumDistance: 0.30)
         defer { clearAutomaticTrackingState() }
@@ -320,7 +492,8 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
     }
 
     private func makeCoordinator(
-        stopInterval: TimeInterval = 180
+        stopInterval: TimeInterval = 180,
+        detectionTimeout: TimeInterval = 180
     ) -> (
         AutomaticTripCoordinator,
         MockAutomaticLocationService,
@@ -334,6 +507,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
             repository: MockMileageRepository(),
             notificationService: MockTripNotificationService(),
             stopInterval: stopInterval,
+            detectionTimeout: detectionTimeout,
             isManualTrackingActive: { false }
         )
         return (coordinator, location, motion)

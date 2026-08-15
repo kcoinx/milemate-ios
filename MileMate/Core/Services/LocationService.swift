@@ -108,6 +108,15 @@ final class CoreLocationService: NSObject, LocationService, CLLocationManagerDel
 }
 
 struct LocationSampleProcessor {
+    enum Result: Equatable {
+        case accepted
+        case rejectedInvalidAccuracy
+        case rejectedStale
+        case rejectedNonIncreasingTime
+        case rejectedInsufficientMovement
+        case rejectedImplausibleSpeed
+    }
+
     private(set) var acceptedSamples: [LocationSample] = []
     private(set) var distanceMeters = 0.0
 
@@ -123,15 +132,22 @@ struct LocationSampleProcessor {
 
     @discardableResult
     mutating func process(_ sample: LocationSample, now: Date = .now) -> Bool {
+        processWithResult(sample, now: now) == .accepted
+    }
+
+    @discardableResult
+    mutating func processWithResult(_ sample: LocationSample, now: Date = .now) -> Result {
         guard sample.horizontalAccuracy >= 0,
-              sample.horizontalAccuracy <= 100,
-              abs(sample.timestamp.timeIntervalSince(now)) <= 15 else {
-            return false
+              sample.horizontalAccuracy <= 100 else {
+            return .rejectedInvalidAccuracy
+        }
+        guard abs(sample.timestamp.timeIntervalSince(now)) <= 15 else {
+            return .rejectedStale
         }
 
         if let previous = acceptedSamples.last {
             let seconds = sample.timestamp.timeIntervalSince(previous.timestamp)
-            guard seconds > 0 else { return false }
+            guard seconds > 0 else { return .rejectedNonIncreasingTime }
 
             let previousLocation = CLLocation(
                 latitude: previous.latitude,
@@ -143,14 +159,13 @@ struct LocationSampleProcessor {
             )
             let movement = currentLocation.distance(from: previousLocation)
 
-            guard movement >= 3, movement / seconds <= 75 else {
-                return false
-            }
+            guard movement >= 3 else { return .rejectedInsufficientMovement }
+            guard movement / seconds <= 75 else { return .rejectedImplausibleSpeed }
             distanceMeters += movement
         }
 
         acceptedSamples.append(sample)
-        return true
+        return .accepted
     }
 }
 
