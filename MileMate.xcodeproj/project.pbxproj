@@ -6,19 +6,64 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		C10000000000000000000001 /* MileMateRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000001 /* MileMateRootView.swift */; };
+		C10000000000000000000002 /* AccountSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000002 /* AccountSessionController.swift */; };
+		C10000000000000000000003 /* AuthenticationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000003 /* AuthenticationService.swift */; };
+		C10000000000000000000004 /* SecureAccountStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000004 /* SecureAccountStore.swift */; };
+		C10000000000000000000005 /* AccountIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000005 /* AccountIdentity.swift */; };
+		C10000000000000000000006 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000006 /* WelcomeView.swift */; };
+		C10000000000000000000007 /* AccountSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000007 /* AccountSessionTests.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		AA0000000000000000000001 /* MileMate.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MileMate.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB0000000000000000000001 /* MileMateTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MileMateTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C20000000000000000000001 /* MileMateRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MileMate/App/MileMateRootView.swift; sourceTree = SOURCE_ROOT; };
+		C20000000000000000000002 /* AccountSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MileMate/Core/Services/AccountSessionController.swift; sourceTree = SOURCE_ROOT; };
+		C20000000000000000000003 /* AuthenticationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MileMate/Core/Services/AuthenticationService.swift; sourceTree = SOURCE_ROOT; };
+		C20000000000000000000004 /* SecureAccountStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MileMate/Core/Services/SecureAccountStore.swift; sourceTree = SOURCE_ROOT; };
+		C20000000000000000000005 /* AccountIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MileMate/Domain/Models/AccountIdentity.swift; sourceTree = SOURCE_ROOT; };
+		C20000000000000000000006 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MileMate/Features/Authentication/WelcomeView.swift; sourceTree = SOURCE_ROOT; };
+		C20000000000000000000007 /* AccountSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MileMateTests/AccountSessionTests.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		C40000000000000000000001 /* Explicit authentication source membership */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				App/MileMateRootView.swift,
+				Core/Services/AccountSessionController.swift,
+				Core/Services/AuthenticationService.swift,
+				Core/Services/SecureAccountStore.swift,
+				Domain/Models/AccountIdentity.swift,
+				Features/Authentication/WelcomeView.swift,
+			);
+			target = AA0000000000000000000006 /* MileMate */;
+		};
+		C40000000000000000000002 /* Explicit authentication test membership */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AccountSessionTests.swift,
+			);
+			target = BB0000000000000000000006 /* MileMateTests */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		AA0000000000000000000002 /* MileMate */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C40000000000000000000001 /* Explicit authentication source membership */,
+			);
 			path = MileMate;
 			sourceTree = "<group>";
 		};
 		BB0000000000000000000002 /* MileMateTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C40000000000000000000002 /* Explicit authentication test membership */,
+			);
 			path = MileMateTests;
 			sourceTree = "<group>";
 		};
@@ -56,6 +101,8 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000002 /* MileMate */,
+				C30000000000000000000001 /* Authentication Sources */,
+				C30000000000000000000002 /* Authentication Tests */,
 				BB0000000000000000000002 /* MileMateTests */,
 				AA0000000000000000000005 /* Products */,
 			);
@@ -68,6 +115,27 @@
 				BB0000000000000000000001 /* MileMateTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		C30000000000000000000001 /* Authentication Sources */ = {
+			isa = PBXGroup;
+			children = (
+				C20000000000000000000001 /* MileMateRootView.swift */,
+				C20000000000000000000002 /* AccountSessionController.swift */,
+				C20000000000000000000003 /* AuthenticationService.swift */,
+				C20000000000000000000004 /* SecureAccountStore.swift */,
+				C20000000000000000000005 /* AccountIdentity.swift */,
+				C20000000000000000000006 /* WelcomeView.swift */,
+			);
+			name = "Authentication Sources";
+			sourceTree = "<group>";
+		};
+		C30000000000000000000002 /* Authentication Tests */ = {
+			isa = PBXGroup;
+			children = (
+				C20000000000000000000007 /* AccountSessionTests.swift */,
+			);
+			name = "Authentication Tests";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -180,6 +248,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C10000000000000000000001 /* MileMateRootView.swift in Sources */,
+				C10000000000000000000002 /* AccountSessionController.swift in Sources */,
+				C10000000000000000000003 /* AuthenticationService.swift in Sources */,
+				C10000000000000000000004 /* SecureAccountStore.swift in Sources */,
+				C10000000000000000000005 /* AccountIdentity.swift in Sources */,
+				C10000000000000000000006 /* WelcomeView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -187,6 +261,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C10000000000000000000007 /* AccountSessionTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
