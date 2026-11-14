@@ -21,6 +21,7 @@ struct AppTabView: View {
                     automaticTripCoordinator: dependencies.automaticTripCoordinator,
                     notificationService: dependencies.notificationService,
                     accountSession: dependencies.accountSession,
+                    purchaseManager: dependencies.purchaseManager,
                     router: dependencies.router
                 )
             }
@@ -48,6 +49,7 @@ struct AppTabView: View {
                     automaticTripCoordinator: dependencies.automaticTripCoordinator,
                     notificationService: dependencies.notificationService,
                     accountSession: dependencies.accountSession,
+                    purchaseManager: dependencies.purchaseManager,
                     router: dependencies.router
                 )
             }
@@ -70,13 +72,26 @@ struct AppTabView: View {
                 router.showAutomaticTripReview()
             }
         }
+        .task {
+            await dependencies.purchaseManager.prepare()
+            dependencies.automaticTripCoordinator.startIfEnabled()
+        }
+        .onChange(of: dependencies.purchaseManager.hasProAccess) { _, hasProAccess in
+            if hasProAccess {
+                dependencies.accountSession.presentsUpgrade = false
+                dependencies.automaticTripCoordinator.startIfEnabled()
+            }
+        }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .background:
                 dependencies.tripCoordinator.appDidEnterBackground()
                 dependencies.automaticTripCoordinator.appDidEnterBackground()
             case .active:
-                dependencies.automaticTripCoordinator.startIfEnabled()
+                Task {
+                    await dependencies.purchaseManager.refreshEntitlements()
+                    dependencies.automaticTripCoordinator.startIfEnabled()
+                }
             case .inactive:
                 break
             @unknown default:

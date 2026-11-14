@@ -17,9 +17,11 @@ final class AccountSessionController {
     private let authenticationService: any AuthenticationServicing
     private let repository: any MileageRepository
     private let dataScopeProvider: LocalDataScopeProvider
+    private let proEntitlementProvider: any ProEntitlementProviding
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private var currentAppleNonce: String?
+    private var trialRecord: GuestTrialRecord
 
     private(set) var state: AccountAccessState
     private(set) var isAuthenticating = false
@@ -32,26 +34,35 @@ final class AccountSessionController {
         repository: any MileageRepository,
         dataScopeProvider: LocalDataScopeProvider = LocalDataScopeProvider(),
         secureStore: any SecureAccountStoring = KeychainAccountStore(),
-        authenticationService: any AuthenticationServicing = FirebaseAuthenticationService()
+        authenticationService: any AuthenticationServicing = FirebaseAuthenticationService(),
+        proEntitlementProvider: any ProEntitlementProviding = FreeProEntitlementProvider()
     ) {
         self.repository = repository
         self.dataScopeProvider = dataScopeProvider
         self.secureStore = secureStore
         self.authenticationService = authenticationService
+        self.proEntitlementProvider = proEntitlementProvider
         let decoder = JSONDecoder()
+        let storedTrial: GuestTrialRecord?
+        if let data = try? secureStore.data(for: Key.guest),
+           let decodedTrial = try? decoder.decode(GuestTrialRecord.self, from: data) {
+            storedTrial = decodedTrial
+        } else {
+            storedTrial = nil
+        }
+        trialRecord = storedTrial ?? GuestTrialRecord(guestID: UUID(), countedTripIDs: [])
         if let data = try? secureStore.data(for: Key.authenticated),
            let account = try? decoder.decode(AuthenticatedAccount.self, from: data) {
             state = .authenticated(account)
         } else if (try? secureStore.data(for: Key.loggedOut)) != nil {
             state = .firstLaunch
-        } else if let data = try? secureStore.data(for: Key.guest),
-                  let guest = try? decoder.decode(GuestTrialRecord.self, from: data) {
-            state = .guest(guest)
+        } else if storedTrial != nil {
+            state = .guest(trialRecord)
         } else {
             state = .firstLaunch
         }
         dataScopeProvider.setCurrent(Self.localDataScope(for: state))
-        if case .guest = state { scheduleGuestReconciliation() }
+        if case .firstLaunch = state {} else { scheduleGuestReconciliation() }
     }
 
     var requiresWelcome: Bool {
@@ -70,25 +81,27 @@ final class AccountSessionController {
     }
 
     var guest: GuestTrialRecord? {
-        guard case .guest(let guest) = state else { return nil }
-        return guest
+        guard case .guest = state else { return nil }
+        return trialRecord
     }
 
-    var remainingGuestTrips: Int { guest?.remainingTripCount ?? GuestTrialRecord.tripLimit }
+    var remainingGuestTrips: Int { trialRecord.remainingTripCount }
 
     var requiresGuestUpgrade: Bool {
-        guard let guest else { return false }
-        return !guest.canRecordAnotherTrip
+        guard !requiresWelcome,
+              proEntitlementProvider.isEntitlementReady,
+              !proEntitlementProvider.hasProAccess else { return false }
+        return !trialRecord.canRecordAnotherTrip
     }
 
     @discardableResult
     func requestTrackingAccess() -> Bool {
+        guard proEntitlementProvider.isEntitlementReady else { return false }
+        if proEntitlementProvider.hasProAccess { return !requiresWelcome }
         switch state {
-        case .authenticated:
-            return true
-        case .guest(let guest):
+        case .authenticated, .guest:
             if isReconcilingGuestTrial { return false }
-            if guest.canRecordAnotherTrip { return true }
+            if trialRecord.canRecordAnotherTrip { return true }
             presentsUpgrade = true
             return false
         case .firstLaunch:
@@ -98,68 +111,66 @@ final class AccountSessionController {
 
     func continueAsGuest() {
         try? secureStore.remove(Key.loggedOut)
-        let guest: GuestTrialRecord
-        if let existing = self.guest {
-            guest = existing
-        } else if let data = try? secureStore.data(for: Key.guest),
-                  let stored = try? decoder.decode(GuestTrialRecord.self, from: data) {
-            guest = stored
-        } else {
-            guest = GuestTrialRecord(guestID: UUID(), countedTripIDs: [])
-        }
-        state = .guest(guest)
-        dataScopeProvider.setCurrent(.guest(id: guest.guestID))
-        persistGuest(guest)
+        state = .guest(trialRecord)
+        dataScopeProvider.setCurrent(.guest(id: trialRecord.guestID))
+        persistGuest(trialRecord)
         scheduleGuestReconciliation()
     }
 
     func recordSavedTrip(_ trip: Trip) {
-        guard case .guest(var guest) = state else { return }
+        guard !requiresWelcome else { return }
         guard GuestTrialRecord.countsTowardTrial(trip) else { return }
-        let inserted = guest.countedTripIDs.insert(trip.id).inserted
+        let inserted = trialRecord.countedTripIDs.insert(trip.id).inserted
         guard inserted else { return }
-        state = .guest(guest)
-        persistGuest(guest)
-        if !guest.canRecordAnotherTrip { presentsUpgrade = true }
+        synchronizeGuestState()
+        persistGuest(trialRecord)
+        if !trialRecord.canRecordAnotherTrip, !proEntitlementProvider.hasProAccess {
+            presentsUpgrade = true
+        }
     }
 
     func reconcileGuestTrial() async {
         isReconcilingGuestTrial = true
         defer { isReconcilingGuestTrial = false }
-        guard case .guest(let guestAtStart) = state else { return }
+        guard let scopeAtStart = dataScopeProvider.current else { return }
         guard let trips = try? await repository.fetchTrips() else { return }
-        guard case .guest(var guest) = state,
-              guest.guestID == guestAtStart.guestID else {
-            return
-        }
-        let reconciledIDs = Set(
+        guard dataScopeProvider.current == scopeAtStart else { return }
+        let savedIDs = Set(trips.map { trip in trip.id })
+        let qualifyingIDs = Set(
             trips.compactMap { trip in
                 GuestTrialRecord.countsTowardTrial(trip) ? trip.id : nil
             }
         )
-        guard reconciledIDs != guest.countedTripIDs else { return }
-        guest.countedTripIDs = reconciledIDs
-        state = .guest(guest)
-        persistGuest(guest)
-        presentsUpgrade = !guest.canRecordAnotherTrip
+        var reconciledIDs = trialRecord.countedTripIDs
+        reconciledIDs.subtract(savedIDs.subtracting(qualifyingIDs))
+        reconciledIDs.formUnion(qualifyingIDs)
+        guard reconciledIDs != trialRecord.countedTripIDs else { return }
+        trialRecord.countedTripIDs = reconciledIDs
+        synchronizeGuestState()
+        persistGuest(trialRecord)
+        presentsUpgrade = !trialRecord.canRecordAnotherTrip && !proEntitlementProvider.hasProAccess
     }
 
     func completeAppleSignIn(_ result: Result<ASAuthorization, Error>) {
         switch result {
         case .failure(let error):
             currentAppleNonce = nil
-            if (error as? ASAuthorizationError)?.code != .canceled {
+            if let authorizationError = error as? ASAuthorizationError {
+                guard authorizationError.code != .canceled else { return }
+                authenticationError = Self.appleAuthorizationErrorMessage(authorizationError)
+            } else {
                 authenticationError = error.localizedDescription
             }
         case .success(let authorization):
+            let nonce = currentAppleNonce
+            currentAppleNonce = nil
             guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
                   let tokenData = credential.identityToken,
                   let token = String(data: tokenData, encoding: .utf8),
-                  let nonce = currentAppleNonce else {
+                  let nonce else {
                 authenticationError = AuthenticationError.invalidCredential.localizedDescription
                 return
             }
-            currentAppleNonce = nil
             let displayName = PersonNameComponentsFormatter().string(from: credential.fullName ?? .init())
             Task { await authenticateWithApple(token: token, rawNonce: nonce, displayName: displayName) }
         }
@@ -255,6 +266,7 @@ final class AccountSessionController {
             NotificationCenter.default.post(name: .mileageTripsDidChange, object: nil)
             NotificationCenter.default.post(name: .mileageVehiclesDidChange, object: nil)
             NotificationCenter.default.post(name: .mileageClassificationDataDidChange, object: nil)
+            scheduleGuestReconciliation()
         } catch let error as AuthenticationError where error == .canceled {
             return
         } catch {
@@ -265,6 +277,12 @@ final class AccountSessionController {
     private func persistGuest(_ guest: GuestTrialRecord) {
         guard let data = try? encoder.encode(guest) else { return }
         try? secureStore.set(data, for: Key.guest)
+    }
+
+    private func synchronizeGuestState() {
+        if case .guest = state {
+            state = .guest(trialRecord)
+        }
     }
 
     private func scheduleGuestReconciliation() {
@@ -296,5 +314,20 @@ final class AccountSessionController {
         SHA256.hash(data: Data(value.utf8)).map { byte in
             String(format: "%02x", byte)
         }.joined()
+    }
+
+    private static func appleAuthorizationErrorMessage(_ error: ASAuthorizationError) -> String {
+        switch error.code {
+        case .failed:
+            "Apple Sign-In failed. Please try again."
+        case .invalidResponse:
+            "Apple Sign-In returned an invalid response. Please try again."
+        case .notHandled:
+            "Apple Sign-In could not be handled. Verify that Sign in with Apple is enabled for this app target and App ID."
+        case .notInteractive:
+            "Apple Sign-In requires an interactive Apple Account session. Please try again."
+        default:
+            "Apple Sign-In could not be completed (error \(error.code.rawValue)). Verify the Apple Account and Sign in with Apple capability, then try again."
+        }
     }
 }

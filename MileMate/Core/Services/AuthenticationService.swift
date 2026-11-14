@@ -162,8 +162,11 @@ struct FirebaseAuthenticationService: AuthenticationServicing {
     ) async throws -> SignInResponse {
         let configuration = try requiredConfiguration()
         let url = try endpoint("accounts:signInWithIdp", apiKey: configuration.apiKey)
-        var postBody = "id_token=\(urlEncoded(idToken))&providerId=\(urlEncoded(providerID))"
-        if let nonce { postBody += "&nonce=\(urlEncoded(nonce))" }
+        let postBody = Self.identityProviderPostBody(
+            providerID: providerID,
+            idToken: idToken,
+            nonce: nonce
+        )
         var body: [String: Any] = [
             "postBody": postBody,
             "requestUri": configuration.authRequestURI,
@@ -219,7 +222,17 @@ struct FirebaseAuthenticationService: AuthenticationServicing {
         return url
     }
 
-    private func urlEncoded(_ value: String) -> String {
+    static func identityProviderPostBody(
+        providerID: String,
+        idToken: String,
+        nonce: String?
+    ) -> String {
+        var body = "id_token=\(urlEncoded(idToken))&providerId=\(urlEncoded(providerID))"
+        if let nonce { body += "&nonce=\(urlEncoded(nonce))" }
+        return body
+    }
+
+    private static func urlEncoded(_ value: String) -> String {
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
         return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
     }

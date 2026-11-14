@@ -113,7 +113,7 @@ final class AccountSessionTests: XCTestCase {
         XCTAssertFalse(controller.requiresGuestUpgrade)
     }
 
-    func testGuestUpgradeRoutingRemainsStableUntilAuthentication() async {
+    func testSigningInDoesNotResetExhaustedTrial() async {
         let controller = makeController()
         controller.continueAsGuest()
         for _ in 0..<10 {
@@ -127,9 +127,72 @@ final class AccountSessionTests: XCTestCase {
 
         await controller.authenticateWithGoogle()
 
-        XCTAssertFalse(controller.requiresGuestUpgrade)
+        XCTAssertTrue(controller.requiresGuestUpgrade)
         XCTAssertFalse(controller.requiresWelcome)
         XCTAssertTrue(controller.isAuthenticated)
+        XCTAssertEqual(controller.remainingGuestTrips, 0)
+        XCTAssertFalse(controller.requestTrackingAccess())
+    }
+
+    func testTrialAllowanceSurvivesLogoutAndGuestReturn() async {
+        let store = InMemoryAccountStore()
+        let controller = makeController(store: store)
+        controller.continueAsGuest()
+        for _ in 0..<4 { controller.recordSavedTrip(testTrip()) }
+        await controller.authenticateWithGoogle()
+
+        controller.logOut()
+        controller.continueAsGuest()
+
+        XCTAssertEqual(controller.remainingGuestTrips, 6)
+    }
+
+    func testVerifiedProEntitlementBypassesExhaustedTrial() {
+        let entitlement = AccountTestProEntitlement(hasProAccess: true)
+        let controller = makeController(proEntitlement: entitlement)
+        controller.continueAsGuest()
+        for _ in 0..<10 { controller.recordSavedTrip(testTrip()) }
+
+        XCTAssertEqual(controller.remainingGuestTrips, 0)
+        XCTAssertFalse(controller.requiresGuestUpgrade)
+        XCTAssertTrue(controller.requestTrackingAccess())
+    }
+
+    func testSignedInUserReceivesSameTenTripAllowance() async {
+        let controller = makeController()
+        await controller.authenticateWithGoogle()
+
+        for _ in 0..<10 { controller.recordSavedTrip(testTrip()) }
+
+        XCTAssertTrue(controller.isAuthenticated)
+        XCTAssertEqual(controller.remainingGuestTrips, 0)
+        XCTAssertFalse(controller.requestTrackingAccess())
+    }
+
+    func testExpiredProEntitlementRestoresFreeTripGateWithoutDeletingProgress() {
+        let entitlement = AccountTestProEntitlement(hasProAccess: true)
+        let controller = makeController(proEntitlement: entitlement)
+        controller.continueAsGuest()
+        for _ in 0..<10 { controller.recordSavedTrip(testTrip()) }
+        XCTAssertTrue(controller.requestTrackingAccess())
+
+        entitlement.hasProAccess = false
+
+        XCTAssertEqual(controller.remainingGuestTrips, 0)
+        XCTAssertFalse(controller.requestTrackingAccess())
+        XCTAssertTrue(controller.presentsUpgrade)
+    }
+
+    func testMissingStoreKitProductConfigurationRemainsSafelyFree() async {
+        let purchaseManager = PurchaseManager(configuration: nil)
+
+        await purchaseManager.prepare()
+
+        XCTAssertTrue(purchaseManager.isEntitlementReady)
+        XCTAssertFalse(purchaseManager.hasProAccess)
+        XCTAssertNil(purchaseManager.monthlyProduct)
+        XCTAssertNil(purchaseManager.lifetimeProduct)
+        XCTAssertNotNil(purchaseManager.errorMessage)
     }
 
     func testGuestUpgradePreservesTripsAndRestoresAuthenticatedSession() async throws {
@@ -398,6 +461,19 @@ final class AccountSessionTests: XCTestCase {
         }
     }
 
+    func testAppleFirebasePostBodyIncludesProviderIdentityTokenAndRawNonce() {
+        let body = FirebaseAuthenticationService.identityProviderPostBody(
+            providerID: "apple.com",
+            idToken: "header.payload+signature",
+            nonce: "raw nonce/value"
+        )
+
+        XCTAssertEqual(
+            body,
+            "id_token=header.payload%2Bsignature&providerId=apple.com&nonce=raw%20nonce%2Fvalue"
+        )
+    }
+
     private func makeSwiftDataRepository() throws -> (
         SwiftDataMileageRepository,
         LocalDataScopeProvider,
@@ -417,12 +493,14 @@ final class AccountSessionTests: XCTestCase {
 
     private func makeController(
         repository: AccountTestRepository = AccountTestRepository(),
-        store: InMemoryAccountStore = InMemoryAccountStore()
+        store: InMemoryAccountStore = InMemoryAccountStore(),
+        proEntitlement: AccountTestProEntitlement = AccountTestProEntitlement()
     ) -> AccountSessionController {
         AccountSessionController(
             repository: repository,
             secureStore: store,
-            authenticationService: AccountTestAuthenticationService()
+            authenticationService: AccountTestAuthenticationService(),
+            proEntitlementProvider: proEntitlement
         )
     }
 
@@ -442,6 +520,16 @@ final class AccountSessionTests: XCTestCase {
             classification: classification,
             purpose: "Client Meeting"
         )
+    }
+}
+
+@MainActor
+private final class AccountTestProEntitlement: ProEntitlementProviding {
+    var hasProAccess: Bool
+    var isEntitlementReady = true
+
+    init(hasProAccess: Bool = false) {
+        self.hasProAccess = hasProAccess
     }
 }
 

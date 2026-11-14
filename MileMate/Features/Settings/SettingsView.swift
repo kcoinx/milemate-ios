@@ -26,6 +26,7 @@ struct SettingsView: View {
     @Bindable private var automaticTripCoordinator: AutomaticTripCoordinator
     private let notificationService: any TripNotificationScheduling
     @Bindable private var accountSession: AccountSessionController
+    @Bindable private var purchaseManager: PurchaseManager
     private let router: AppRouter
     @AppStorage("appAppearance") private var appearance = AppAppearance.system.rawValue
     @AppStorage(DistanceUnitSettings.key) private var distanceUnit = DistanceUnitSettings.defaultUnit().rawValue
@@ -54,6 +55,7 @@ struct SettingsView: View {
         automaticTripCoordinator: AutomaticTripCoordinator,
         notificationService: any TripNotificationScheduling,
         accountSession: AccountSessionController,
+        purchaseManager: PurchaseManager,
         router: AppRouter
     ) {
         _viewModel = State(initialValue: SettingsViewModel(repository: repository))
@@ -61,12 +63,31 @@ struct SettingsView: View {
         _automaticTripCoordinator = Bindable(wrappedValue: automaticTripCoordinator)
         self.notificationService = notificationService
         _accountSession = Bindable(wrappedValue: accountSession)
+        _purchaseManager = Bindable(wrappedValue: purchaseManager)
         self.router = router
     }
 
     var body: some View {
         List {
             accountSection
+
+            settingsSection("Subscription & Billing") {
+                NavigationLink {
+                    SubscriptionBillingView(
+                        purchaseManager: purchaseManager,
+                        remainingTrips: accountSession.remainingGuestTrips
+                    )
+                } label: {
+                    HStack {
+                        settingLabel("Current Plan", icon: "creditcard.fill", tint: AppTheme.Color.brand)
+                        Spacer()
+                        Text(subscriptionPlanName)
+                            .font(.subheadline)
+                            .foregroundStyle(AppTheme.Color.textSecondary)
+                    }
+                }
+                .accessibilityHint("Opens purchase, restore, and subscription management options")
+            }
 
             settingsSection("Tracking") {
                 Toggle(isOn: automaticTrackingBinding) {
@@ -515,6 +536,15 @@ struct SettingsView: View {
             return true
         case .disabled, .idle, .permissionRequired, .failed:
             return false
+        }
+    }
+
+    private var subscriptionPlanName: String {
+        guard purchaseManager.isEntitlementReady else { return "Checking…" }
+        switch purchaseManager.plan {
+        case .free: "Free"
+        case .monthly: "Pro Monthly"
+        case .lifetime: "Pro Lifetime"
         }
     }
 

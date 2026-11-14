@@ -6,6 +6,7 @@ struct DashboardView: View {
     private let notificationService: any TripNotificationScheduling
     private let router: AppRouter
     @Bindable private var accountSession: AccountSessionController
+    @Bindable private var purchaseManager: PurchaseManager
     @State private var viewModel: DashboardViewModel
     @Bindable private var tripCoordinator: ManualTripCoordinator
     @Bindable private var automaticTripCoordinator: AutomaticTripCoordinator
@@ -24,12 +25,14 @@ struct DashboardView: View {
         automaticTripCoordinator: AutomaticTripCoordinator,
         notificationService: any TripNotificationScheduling,
         accountSession: AccountSessionController,
+        purchaseManager: PurchaseManager,
         router: AppRouter
     ) {
         self.repository = repository
         self.notificationService = notificationService
         self.router = router
         _accountSession = Bindable(wrappedValue: accountSession)
+        _purchaseManager = Bindable(wrappedValue: purchaseManager)
         _viewModel = State(initialValue: DashboardViewModel(repository: repository))
         _tripCoordinator = Bindable(wrappedValue: tripCoordinator)
         _automaticTripCoordinator = Bindable(wrappedValue: automaticTripCoordinator)
@@ -39,6 +42,9 @@ struct DashboardView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
                 greeting
+                if purchaseManager.isEntitlementReady && !purchaseManager.hasProAccess {
+                    upgradeEntry
+                }
                 deductionHero
                 if viewModel.unclassifiedCount > 0 {
                     reviewQueueCard
@@ -79,6 +85,27 @@ struct DashboardView: View {
         .onReceive(NotificationCenter.default.publisher(for: .mileageTripsDidChange)) { _ in
             Task { await viewModel.load() }
         }
+    }
+
+    private var upgradeEntry: some View {
+        Button {
+            accountSession.presentsUpgrade = true
+        } label: {
+            HStack(spacing: AppTheme.Spacing.small) {
+                Image(systemName: "sparkles")
+                Text("Upgrade to Pro")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(AppTheme.Color.brand)
+            .padding(.horizontal, AppTheme.Spacing.medium)
+            .frame(minHeight: 44)
+            .background(AppTheme.Color.brand.opacity(0.09), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Shows MileMate Pro purchase options")
     }
 
     private var reviewQueueCard: some View {

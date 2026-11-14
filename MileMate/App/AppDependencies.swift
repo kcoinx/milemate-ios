@@ -7,6 +7,7 @@ struct AppDependencies {
     let tripCoordinator: ManualTripCoordinator
     let automaticTripCoordinator: AutomaticTripCoordinator
     let notificationService: any TripNotificationScheduling
+    let purchaseManager: PurchaseManager
     let accountSession: AccountSessionController
     let router: AppRouter
     let modelContainer: ModelContainer
@@ -24,9 +25,11 @@ struct AppDependencies {
             let repository = SwiftDataMileageRepository(modelContainer: container)
             let locationService = CoreLocationService()
             let notificationService = LocalTripNotificationService(repository: repository)
+            let purchaseManager = PurchaseManager()
             let accountSession = AccountSessionController(
                 repository: repository,
-                dataScopeProvider: repository.scopeProvider
+                dataScopeProvider: repository.scopeProvider,
+                proEntitlementProvider: purchaseManager
             )
             let manualCoordinator = ManualTripCoordinator(
                 locationService: locationService,
@@ -62,6 +65,7 @@ struct AppDependencies {
                 tripCoordinator: manualCoordinator,
                 automaticTripCoordinator: automaticCoordinator,
                 notificationService: notificationService,
+                purchaseManager: purchaseManager,
                 accountSession: accountSession,
                 router: appRouter,
                 modelContainer: container

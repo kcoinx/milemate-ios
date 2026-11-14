@@ -11,11 +11,8 @@ struct MileMateRootView: View {
 
     var body: some View {
         Group {
-            if accountSession.requiresWelcome || accountSession.requiresGuestUpgrade {
-                WelcomeView(
-                    accountSession: accountSession,
-                    allowsGuestAccess: !accountSession.requiresGuestUpgrade
-                )
+            if accountSession.requiresWelcome {
+                WelcomeView(accountSession: accountSession, allowsGuestAccess: true)
                     .transition(.opacity)
             } else {
                 AppTabView(dependencies: dependencies)
@@ -38,6 +35,9 @@ struct MileMateRootView: View {
             if authenticated {
                 dependencies.automaticTripCoordinator.startIfEnabled()
             }
+        }
+        .sheet(isPresented: $accountSession.presentsUpgrade) {
+            ProPaywallView(purchaseManager: dependencies.purchaseManager)
         }
     }
 }
