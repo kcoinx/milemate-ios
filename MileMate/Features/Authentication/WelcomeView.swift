@@ -47,10 +47,11 @@ struct WelcomeView: View {
                     VStack(spacing: AppTheme.Spacing.large) {
                         Spacer(minLength: min(max(proxy.size.height * 0.24, 130), 210))
 
-                        Text("MileMate")
-                            .font(.system(.title3, design: .rounded, weight: .semibold))
-                            .tracking(0.8)
-                            .foregroundStyle(.white.opacity(0.88))
+                        Image("LaunchBrandMark")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 74, height: 74)
+                            .accessibilityLabel("MileMate")
 
                         VStack(spacing: AppTheme.Spacing.small) {
                             Text(allowsGuestAccess ? "Every Mile Matters." : "Keep Your Miles Moving.")
@@ -220,7 +221,7 @@ private struct WelcomeMotionBackground: View {
         let roadPhase = phase(at: date, duration: 2.8)
         let truckPhase = phase(at: date, duration: 14.5, offset: 0.18)
         let vanPhase = phase(at: date, duration: 11.5, offset: 0.62)
-        let sedanPhase = phase(at: date, duration: 9.5, offset: 0.03)
+        let sedanPhase = phase(at: date, duration: 8.8, offset: 0.03)
 
         return ZStack(alignment: .topLeading) {
             LinearGradient(
@@ -252,10 +253,10 @@ private struct WelcomeMotionBackground: View {
                 )
 
             RideshareSedanView(wheelRotation: sedanPhase * 2_160)
-                .frame(width: 112, height: 45)
+                .frame(width: 98, height: 40)
                 .position(
-                    x: travelX(progress: sedanPhase, width: size.width, vehicleWidth: 112),
-                    y: size.height * 0.48
+                    x: travelX(progress: sedanPhase, width: size.width, vehicleWidth: 98),
+                    y: size.height * 0.44
                 )
 
             fadeOverlay
@@ -558,15 +559,19 @@ private struct RideshareSedanView: View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
                 SedanBodyShape()
-                    .fill(Color(red: 0.055, green: 0.16, blue: 0.22))
+                    .fill(Color(red: 0.08, green: 0.25, blue: 0.34))
                 SedanWindowShape()
-                    .fill(Color(red: 0.10, green: 0.18, blue: 0.22))
+                    .fill(Color(red: 0.055, green: 0.10, blue: 0.13))
                     .frame(width: proxy.size.width * 0.43, height: proxy.size.height * 0.27)
                     .offset(x: proxy.size.width * 0.34, y: proxy.size.height * 0.17)
                 Capsule()
                     .fill(Color(red: 0.16, green: 0.54, blue: 0.40))
                     .frame(width: 9, height: 2)
                     .offset(x: proxy.size.width * 0.85, y: proxy.size.height * 0.59)
+                Capsule()
+                    .fill(Color.white.opacity(0.58))
+                    .frame(width: 5, height: 1.5)
+                    .offset(x: proxy.size.width * 0.91, y: proxy.size.height * 0.55)
                 HStack(spacing: proxy.size.width * 0.52) {
                     VehicleWheel(rotation: wheelRotation).frame(width: 13, height: 13)
                     VehicleWheel(rotation: wheelRotation).frame(width: 13, height: 13)
