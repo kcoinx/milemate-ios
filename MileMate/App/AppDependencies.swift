@@ -20,16 +20,12 @@ struct AppDependencies {
                 StoredFrequentPlace.self,
                 StoredClassificationRule.self
             )
-            let dataScopeProvider = LocalDataScopeProvider()
-            let repository = SwiftDataMileageRepository(
-                modelContainer: container,
-                scopeProvider: dataScopeProvider
-            )
+            let repository = SwiftDataMileageRepository(modelContainer: container)
             let locationService = CoreLocationService()
             let notificationService = LocalTripNotificationService(repository: repository)
             let accountSession = AccountSessionController(
                 repository: repository,
-                dataScopeProvider: dataScopeProvider
+                dataScopeProvider: repository.scopeProvider
             )
             let manualCoordinator = ManualTripCoordinator(
                 locationService: locationService,

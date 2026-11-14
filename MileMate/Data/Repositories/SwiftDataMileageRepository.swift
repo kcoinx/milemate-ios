@@ -3,14 +3,7 @@ import SwiftData
 
 @ModelActor
 actor SwiftDataMileageRepository: MileageRepository {
-    nonisolated let scopeProvider: LocalDataScopeProvider
-
-    init(modelContainer: ModelContainer, scopeProvider: LocalDataScopeProvider) {
-        let context = ModelContext(modelContainer)
-        self.modelExecutor = DefaultSerialModelExecutor(modelContext: context)
-        self.modelContainer = modelContainer
-        self.scopeProvider = scopeProvider
-    }
+    nonisolated let scopeProvider = LocalDataScopeProvider()
 
     func fetchTrips() async throws -> [Trip] {
         let ownerScope = try activeScopeIdentifier()

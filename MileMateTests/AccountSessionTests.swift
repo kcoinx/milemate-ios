@@ -265,15 +265,8 @@ final class AccountSessionTests: XCTestCase {
             StoredClassificationRule.self,
             configurations: configuration
         )
-        let scopeProvider = LocalDataScopeProvider()
-        return (
-            SwiftDataMileageRepository(
-                modelContainer: container,
-                scopeProvider: scopeProvider
-            ),
-            scopeProvider,
-            container
-        )
+        let repository = SwiftDataMileageRepository(modelContainer: container)
+        return (repository, repository.scopeProvider, container)
     }
 
     private func makeController(
