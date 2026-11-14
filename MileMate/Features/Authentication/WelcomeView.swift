@@ -1,4 +1,5 @@
 import AuthenticationServices
+import Foundation
 import SwiftUI
 
 enum AuthenticationButtonMetrics {
@@ -6,6 +7,8 @@ enum AuthenticationButtonMetrics {
 }
 
 struct GoogleAuthenticationLabel: View {
+    var usesDarkBackground = false
+
     var body: some View {
         HStack(spacing: 10) {
             Image("GoogleMark")
@@ -16,10 +19,10 @@ struct GoogleAuthenticationLabel: View {
                 .font(.headline)
                 .lineLimit(1)
         }
-        .foregroundStyle(AppTheme.Color.textPrimary)
+        .foregroundStyle(usesDarkBackground ? Color.black : AppTheme.Color.textPrimary)
         .frame(maxWidth: .infinity)
         .frame(height: AuthenticationButtonMetrics.height)
-        .background(AppTheme.Color.surface, in: Capsule())
+        .background(usesDarkBackground ? Color.white : AppTheme.Color.surface, in: Capsule())
         .overlay {
             Capsule().stroke(AppTheme.Color.textSecondary.opacity(0.28), lineWidth: 1)
         }
@@ -33,53 +36,64 @@ struct WelcomeView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
     @State private var appeared = false
+    @State private var isVisible = false
 
     var body: some View {
-        GeometryReader { proxy in
-            ScrollView {
-                VStack(spacing: AppTheme.Spacing.large) {
-                    Spacer(minLength: AppTheme.Spacing.medium)
+        ZStack {
+            cinematicBackground
 
-                    WelcomeRouteVisual(reduceMotion: reduceMotion)
+            GeometryReader { proxy in
+                ScrollView {
+                    VStack(spacing: AppTheme.Spacing.large) {
+                        Spacer(minLength: min(max(proxy.size.height * 0.24, 130), 210))
 
-                    VStack(spacing: AppTheme.Spacing.small) {
-                        Text(allowsGuestAccess ? "Every Mile Matters." : "Keep Your Miles Moving.")
-                            .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                            .multilineTextAlignment(.center)
-                            .accessibilityAddTraits(.isHeader)
+                        Text("MileMate")
+                            .font(.system(.title3, design: .rounded, weight: .semibold))
+                            .tracking(0.8)
+                            .foregroundStyle(.white.opacity(0.88))
 
-                        Text(welcomeDescription)
-                            .font(.body)
-                            .foregroundStyle(AppTheme.Color.textSecondary)
-                            .multilineTextAlignment(.center)
-                            .fixedSize(horizontal: false, vertical: true)
+                        VStack(spacing: AppTheme.Spacing.small) {
+                            Text(allowsGuestAccess ? "Every Mile Matters." : "Keep Your Miles Moving.")
+                                .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                                .foregroundStyle(.white)
+                                .multilineTextAlignment(.center)
+                                .accessibilityAddTraits(.isHeader)
+
+                            Text(welcomeDescription)
+                                .font(.body)
+                                .foregroundStyle(.white.opacity(0.72))
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        Spacer(minLength: AppTheme.Spacing.small)
+
+                        signInActions
+                        guestAccess
+
+                        Spacer(minLength: AppTheme.Spacing.medium)
                     }
-
-                    Spacer(minLength: AppTheme.Spacing.medium)
-
-                    signInActions
-                    guestAccess
-
-                    Spacer(minLength: AppTheme.Spacing.medium)
+                    .frame(maxWidth: 520)
+                    .frame(minHeight: max(proxy.size.height - AppTheme.Spacing.large, 0))
+                    .padding(.horizontal, AppTheme.Spacing.xLarge)
+                    .padding(.vertical, AppTheme.Spacing.small)
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: 520)
-                .frame(minHeight: max(proxy.size.height - AppTheme.Spacing.large, 0))
-                .padding(.horizontal, AppTheme.Spacing.xLarge)
-                .padding(.vertical, AppTheme.Spacing.small)
-                .frame(maxWidth: .infinity)
+                .scrollBounceBehavior(.basedOnSize)
             }
-            .scrollBounceBehavior(.basedOnSize)
         }
         .background(welcomeBackground.ignoresSafeArea())
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 8)
         .onAppear {
+            isVisible = true
             if reduceMotion {
                 appeared = true
             } else {
                 withAnimation(.easeOut(duration: 0.35)) { appeared = true }
             }
         }
+        .onDisappear { isVisible = false }
         .onChange(of: accountSession.isAuthenticated) { _, authenticated in
             if authenticated { dismiss() }
         }
@@ -116,7 +130,16 @@ struct WelcomeView: View {
     private var welcomeBackground: Color {
         colorScheme == .dark
             ? Color(red: 0.025, green: 0.04, blue: 0.06)
-            : Color(red: 0.975, green: 0.97, blue: 0.955)
+            : Color(red: 0.04, green: 0.09, blue: 0.14)
+    }
+
+    private var cinematicBackground: some View {
+        WelcomeMotionBackground(
+            reduceMotion: reduceMotion,
+            isActive: isVisible,
+            baseColor: welcomeBackground
+        )
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -137,13 +160,13 @@ struct WelcomeView: View {
 
                 Text("No credit card required.")
                     .font(.footnote)
-                    .foregroundStyle(AppTheme.Color.textSecondary)
+                    .foregroundStyle(.white.opacity(0.68))
                     .multilineTextAlignment(.center)
             }
         } else {
             Text("Your existing trips remain safely stored on this iPhone.")
                 .font(.footnote)
-                .foregroundStyle(AppTheme.Color.textSecondary)
+                .foregroundStyle(.white.opacity(0.68))
                 .multilineTextAlignment(.center)
         }
     }
@@ -164,7 +187,7 @@ struct WelcomeView: View {
             Button {
                 Task { await accountSession.authenticateWithGoogle() }
             } label: {
-                GoogleAuthenticationLabel()
+                GoogleAuthenticationLabel(usesDarkBackground: true)
             }
             .buttonStyle(.plain)
             .accessibilityHint("Opens Google sign in")
@@ -173,106 +196,422 @@ struct WelcomeView: View {
     }
 }
 
-private struct WelcomeRouteVisual: View {
+private struct WelcomeMotionBackground: View {
     let reduceMotion: Bool
+    let isActive: Bool
+    let baseColor: Color
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(spacing: AppTheme.Spacing.medium) {
-            Image("LaunchBrandMark")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 88, height: 88)
-                .accessibilityLabel("MileMate")
-
-            TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: reduceMotion)) { timeline in
-                GeometryReader { proxy in
-                    let progress = routeProgress(at: timeline.date)
-                    let point = WelcomeRoutePath.point(at: progress, in: proxy.size)
-
-                    ZStack {
-                        WelcomeRoutePath()
-                            .stroke(
-                                routeColor,
-                                style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
-                            )
-
-                        routeEndpoint
-                            .position(WelcomeRoutePath.point(at: 0, in: proxy.size))
-                        routeEndpoint
-                            .position(WelcomeRoutePath.point(at: 1, in: proxy.size))
-
-                        Circle()
-                            .fill(AppTheme.Color.brand)
-                            .frame(width: 12, height: 12)
-                            .overlay {
-                                Circle()
-                                    .fill(colorScheme == .dark ? Color.black : Color.white)
-                                    .frame(width: 4, height: 4)
-                            }
-                            .position(point)
-                            .opacity(reduceMotion ? 1 : markerOpacity(progress))
-                    }
+        GeometryReader { proxy in
+            if reduceMotion {
+                staticFallback(size: proxy.size)
+            } else {
+                TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: !isActive)) { timeline in
+                    motionScene(date: timeline.date, size: proxy.size)
                 }
             }
-            .frame(width: 250, height: 58)
-            .accessibilityHidden(true)
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("MileMate")
+        .ignoresSafeArea()
     }
 
-    private var routeColor: Color {
+    private func motionScene(date: Date, size: CGSize) -> some View {
+        let sceneryPhase = phase(at: date, duration: 16)
+        let roadPhase = phase(at: date, duration: 2.8)
+        let truckPhase = phase(at: date, duration: 14.5, offset: 0.18)
+        let vanPhase = phase(at: date, duration: 11.5, offset: 0.62)
+        let sedanPhase = phase(at: date, duration: 9.5, offset: 0.03)
+
+        return ZStack(alignment: .topLeading) {
+            LinearGradient(
+                colors: skyColors,
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            CinematicSkyline(progress: sceneryPhase, colorScheme: colorScheme)
+                .frame(height: size.height * 0.43)
+                .offset(y: size.height * 0.04)
+
+            CinematicHighway(progress: roadPhase, colorScheme: colorScheme)
+                .frame(height: size.height * 0.52)
+                .offset(y: size.height * 0.16)
+
+            SemiTruckView(wheelRotation: truckPhase * 1_440)
+                .frame(width: 176, height: 62)
+                .position(
+                    x: travelX(progress: truckPhase, width: size.width, vehicleWidth: 176),
+                    y: size.height * 0.29
+                )
+
+            DeliveryVanView(wheelRotation: vanPhase * 1_800)
+                .frame(width: 119, height: 54)
+                .position(
+                    x: travelX(progress: vanPhase, width: size.width, vehicleWidth: 119),
+                    y: size.height * 0.39
+                )
+
+            RideshareSedanView(wheelRotation: sedanPhase * 2_160)
+                .frame(width: 112, height: 45)
+                .position(
+                    x: travelX(progress: sedanPhase, width: size.width, vehicleWidth: 112),
+                    y: size.height * 0.48
+                )
+
+            fadeOverlay
+        }
+        .frame(width: size.width, height: size.height)
+        .clipped()
+    }
+
+    private func staticFallback(size: CGSize) -> some View {
+        Image("WelcomeCinematicBackground")
+            .resizable()
+            .scaledToFill()
+            .frame(width: size.width, height: size.height)
+            .clipped()
+            .overlay { fadeOverlay }
+    }
+
+    private var fadeOverlay: some View {
+        LinearGradient(
+            stops: [
+                .init(color: baseColor.opacity(0.02), location: 0),
+                .init(color: baseColor.opacity(0.28), location: 0.32),
+                .init(color: baseColor.opacity(0.78), location: 0.55),
+                .init(color: baseColor.opacity(0.97), location: 0.68),
+                .init(color: baseColor, location: 0.82)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    private var skyColors: [Color] {
         colorScheme == .dark
-            ? Color(red: 0.35, green: 0.47, blue: 0.58)
-            : Color(red: 0.18, green: 0.29, blue: 0.39)
+            ? [Color(red: 0.025, green: 0.055, blue: 0.085), Color(red: 0.12, green: 0.18, blue: 0.22)]
+            : [Color(red: 0.12, green: 0.22, blue: 0.30), Color(red: 0.30, green: 0.40, blue: 0.44)]
     }
 
-    private var routeEndpoint: some View {
-        Circle()
-            .fill(AppTheme.Color.brand.opacity(0.55))
-            .frame(width: 5, height: 5)
+    private func phase(at date: Date, duration: TimeInterval, offset: Double = 0) -> CGFloat {
+        let raw = date.timeIntervalSinceReferenceDate / duration + offset
+        return CGFloat(raw - floor(raw))
     }
 
-    private func routeProgress(at date: Date) -> CGFloat {
-        guard !reduceMotion else { return 0.58 }
-        return CGFloat(date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 6.5) / 6.5)
-    }
-
-    private func markerOpacity(_ progress: CGFloat) -> Double {
-        Double(min(min(progress / 0.08, (1 - progress) / 0.08), 1))
+    private func travelX(progress: CGFloat, width: CGFloat, vehicleWidth: CGFloat) -> CGFloat {
+        -vehicleWidth + progress * (width + vehicleWidth * 2)
     }
 }
 
-private struct WelcomeRoutePath: Shape {
+private struct CinematicSkyline: View {
+    let progress: CGFloat
+    let colorScheme: ColorScheme
+
+    var body: some View {
+        Canvas { context, size in
+            let buildingWidth: CGFloat = 48
+            let patternCount = 10
+            let period = buildingWidth * CGFloat(patternCount)
+            let offset = -progress * period
+            let baseY = size.height
+
+            for index in -2...22 {
+                let patternIndex = ((index % patternCount) + patternCount) % patternCount
+                let height = size.height * (0.28 + CGFloat((patternIndex * 7) % 10) * 0.052)
+                let x = CGFloat(index) * buildingWidth + offset
+                let building = CGRect(
+                    x: x,
+                    y: baseY - height,
+                    width: buildingWidth - 5,
+                    height: height
+                )
+                let tone = colorScheme == .dark
+                    ? Color(red: 0.07, green: 0.10, blue: 0.13)
+                    : Color(red: 0.12, green: 0.16, blue: 0.19)
+                context.fill(Path(building), with: .color(tone.opacity(0.92)))
+
+                for row in 0..<4 {
+                    for column in 0..<3 where (row + column + patternIndex).isMultiple(of: 3) {
+                        let window = CGRect(
+                            x: building.minX + 8 + CGFloat(column) * 11,
+                            y: building.minY + 10 + CGFloat(row) * 15,
+                            width: 4,
+                            height: 6
+                        )
+                        context.fill(
+                            Path(window),
+                            with: .color(Color(red: 0.78, green: 0.70, blue: 0.46).opacity(0.42))
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct CinematicHighway: View {
+    let progress: CGFloat
+    let colorScheme: ColorScheme
+
+    var body: some View {
+        Canvas { context, size in
+            var road = Path()
+            road.move(to: CGPoint(x: 0, y: size.height * 0.16))
+            road.addLine(to: CGPoint(x: size.width, y: 0))
+            road.addLine(to: CGPoint(x: size.width, y: size.height * 0.92))
+            road.addLine(to: CGPoint(x: 0, y: size.height))
+            road.closeSubpath()
+            let roadColor = colorScheme == .dark
+                ? Color(red: 0.075, green: 0.085, blue: 0.095)
+                : Color(red: 0.12, green: 0.13, blue: 0.14)
+            context.fill(road, with: .color(roadColor))
+
+            var shoulder = Path()
+            shoulder.move(to: CGPoint(x: 0, y: size.height * 0.18))
+            shoulder.addLine(to: CGPoint(x: size.width, y: size.height * 0.02))
+            context.stroke(shoulder, with: .color(.white.opacity(0.42)), lineWidth: 1)
+
+            let dashPeriod: CGFloat = 92
+            let dashOffset = -progress * dashPeriod
+            for lane in [0.45, 0.70] {
+                for index in -2...12 {
+                    let x = CGFloat(index) * dashPeriod + dashOffset
+                    let dash = CGRect(
+                        x: x,
+                        y: size.height * lane,
+                        width: 48,
+                        height: lane == 0.45 ? 2 : 3
+                    )
+                    context.fill(Path(roundedRect: dash, cornerRadius: 2), with: .color(.white.opacity(0.52)))
+                }
+            }
+
+            for index in -1...14 {
+                let x = CGFloat(index) * 64 - progress * 64
+                let post = CGRect(x: x, y: size.height * 0.10, width: 2, height: 17)
+                context.fill(Path(post), with: .color(.white.opacity(0.22)))
+            }
+        }
+    }
+}
+
+private struct VehicleWheel: View {
+    let rotation: Double
+
+    var body: some View {
+        ZStack {
+            Circle().fill(Color(red: 0.025, green: 0.03, blue: 0.035))
+            Circle().stroke(Color.white.opacity(0.22), lineWidth: 1)
+            ForEach(0..<4, id: \.self) { index in
+                Capsule()
+                    .fill(Color.gray.opacity(0.72))
+                    .frame(width: 1.2, height: 7)
+                    .rotationEffect(.degrees(Double(index) * 45))
+            }
+            Circle().fill(Color.gray.opacity(0.75)).frame(width: 3.5, height: 3.5)
+        }
+        .rotationEffect(.degrees(rotation))
+    }
+}
+
+private struct SemiTruckView: View {
+    let wheelRotation: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color(red: 0.45, green: 0.50, blue: 0.53))
+                    .frame(width: proxy.size.width * 0.66, height: proxy.size.height * 0.56)
+                    .offset(x: proxy.size.width * 0.04, y: proxy.size.height * 0.10)
+                    .overlay(alignment: .trailing) {
+                        Rectangle()
+                            .fill(Color.black.opacity(0.18))
+                            .frame(width: 1)
+                            .padding(.vertical, 4)
+                    }
+
+                TruckCabShape()
+                    .fill(Color(red: 0.16, green: 0.29, blue: 0.36))
+                    .frame(width: proxy.size.width * 0.30, height: proxy.size.height * 0.66)
+                    .offset(x: proxy.size.width * 0.68, y: proxy.size.height * 0.08)
+
+                TruckWindowShape()
+                    .fill(Color(red: 0.08, green: 0.14, blue: 0.18))
+                    .frame(width: proxy.size.width * 0.13, height: proxy.size.height * 0.24)
+                    .offset(x: proxy.size.width * 0.75, y: proxy.size.height * 0.17)
+
+                Capsule()
+                    .fill(Color(red: 0.06, green: 0.08, blue: 0.09))
+                    .frame(width: proxy.size.width * 0.92, height: 4)
+                    .offset(x: proxy.size.width * 0.04, y: proxy.size.height * 0.64)
+
+                HStack(spacing: proxy.size.width * 0.25) {
+                    VehicleWheel(rotation: wheelRotation).frame(width: 15, height: 15)
+                    VehicleWheel(rotation: wheelRotation).frame(width: 15, height: 15)
+                    VehicleWheel(rotation: wheelRotation).frame(width: 15, height: 15)
+                }
+                .frame(height: proxy.size.height * 0.25)
+                .offset(x: proxy.size.width * 0.14, y: proxy.size.height * 0.60)
+
+                Capsule()
+                    .fill(Color(red: 0.86, green: 0.72, blue: 0.34))
+                    .frame(width: 5, height: 2)
+                    .offset(x: proxy.size.width * 0.94, y: proxy.size.height * 0.50)
+            }
+        }
+        .shadow(color: .black.opacity(0.28), radius: 3, y: 2)
+    }
+}
+
+private struct TruckCabShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: Self.point(at: 0, in: rect.size))
-        path.addCurve(
-            to: Self.point(at: 1, in: rect.size),
-            control1: CGPoint(x: rect.width * 0.29, y: rect.height * 0.02),
-            control2: CGPoint(x: rect.width * 0.66, y: rect.height * 0.98)
+        path.move(to: CGPoint(x: 0, y: rect.height * 0.18))
+        path.addLine(to: CGPoint(x: rect.width * 0.68, y: rect.minY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.height * 0.46),
+            control: CGPoint(x: rect.maxX, y: rect.height * 0.12)
         )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.height * 0.88))
+        path.addLine(to: CGPoint(x: 0, y: rect.height * 0.88))
+        path.closeSubpath()
         return path
     }
+}
 
-    static func point(at progress: CGFloat, in size: CGSize) -> CGPoint {
-        let t = min(max(progress, 0), 1)
-        let inverse = 1 - t
-        let start = CGPoint(x: size.width * 0.04, y: size.height * 0.72)
-        let control1 = CGPoint(x: size.width * 0.29, y: size.height * 0.02)
-        let control2 = CGPoint(x: size.width * 0.66, y: size.height * 0.98)
-        let end = CGPoint(x: size.width * 0.96, y: size.height * 0.28)
+private struct TruckWindowShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: 0, y: rect.height * 0.18))
+        path.addLine(to: CGPoint(x: rect.width * 0.68, y: 0))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: 0, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
 
-        return CGPoint(
-            x: inverse * inverse * inverse * start.x
-                + 3 * inverse * inverse * t * control1.x
-                + 3 * inverse * t * t * control2.x
-                + t * t * t * end.x,
-            y: inverse * inverse * inverse * start.y
-                + 3 * inverse * inverse * t * control1.y
-                + 3 * inverse * t * t * control2.y
-                + t * t * t * end.y
+private struct DeliveryVanView: View {
+    let wheelRotation: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                DeliveryVanBodyShape()
+                    .fill(Color(red: 0.70, green: 0.73, blue: 0.72))
+                DeliveryVanWindowShape()
+                    .fill(Color(red: 0.08, green: 0.15, blue: 0.19))
+                    .frame(width: proxy.size.width * 0.24, height: proxy.size.height * 0.30)
+                    .offset(x: proxy.size.width * 0.67, y: proxy.size.height * 0.18)
+                Rectangle()
+                    .fill(Color.black.opacity(0.12))
+                    .frame(width: 1, height: proxy.size.height * 0.42)
+                    .offset(x: proxy.size.width * 0.49, y: proxy.size.height * 0.17)
+                HStack(spacing: proxy.size.width * 0.54) {
+                    VehicleWheel(rotation: wheelRotation).frame(width: 14, height: 14)
+                    VehicleWheel(rotation: wheelRotation).frame(width: 14, height: 14)
+                }
+                .frame(height: proxy.size.height * 0.29)
+                .offset(x: proxy.size.width * 0.14, y: proxy.size.height * 0.62)
+            }
+        }
+        .shadow(color: .black.opacity(0.25), radius: 3, y: 2)
+    }
+}
+
+private struct DeliveryVanBodyShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.width * 0.04, y: rect.height * 0.20))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.width * 0.70, y: rect.height * 0.13),
+            control: CGPoint(x: rect.width * 0.12, y: rect.height * 0.08)
         )
+        path.addLine(to: CGPoint(x: rect.width * 0.94, y: rect.height * 0.45))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.width * 0.98, y: rect.height * 0.75),
+            control: CGPoint(x: rect.maxX, y: rect.height * 0.56)
+        )
+        path.addLine(to: CGPoint(x: rect.width * 0.04, y: rect.height * 0.75))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct DeliveryVanWindowShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: 0, y: 0))
+        path.addLine(to: CGPoint(x: rect.width * 0.64, y: rect.height * 0.08))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: 0, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct RideshareSedanView: View {
+    let wheelRotation: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                SedanBodyShape()
+                    .fill(Color(red: 0.055, green: 0.16, blue: 0.22))
+                SedanWindowShape()
+                    .fill(Color(red: 0.10, green: 0.18, blue: 0.22))
+                    .frame(width: proxy.size.width * 0.43, height: proxy.size.height * 0.27)
+                    .offset(x: proxy.size.width * 0.34, y: proxy.size.height * 0.17)
+                Capsule()
+                    .fill(Color(red: 0.16, green: 0.54, blue: 0.40))
+                    .frame(width: 9, height: 2)
+                    .offset(x: proxy.size.width * 0.85, y: proxy.size.height * 0.59)
+                HStack(spacing: proxy.size.width * 0.52) {
+                    VehicleWheel(rotation: wheelRotation).frame(width: 13, height: 13)
+                    VehicleWheel(rotation: wheelRotation).frame(width: 13, height: 13)
+                }
+                .frame(height: proxy.size.height * 0.33)
+                .offset(x: proxy.size.width * 0.14, y: proxy.size.height * 0.61)
+            }
+        }
+        .shadow(color: .black.opacity(0.28), radius: 3, y: 2)
+    }
+}
+
+private struct SedanBodyShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.width * 0.03, y: rect.height * 0.67))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.width * 0.22, y: rect.height * 0.45),
+            control: CGPoint(x: rect.width * 0.07, y: rect.height * 0.48)
+        )
+        path.addLine(to: CGPoint(x: rect.width * 0.38, y: rect.height * 0.15))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.width * 0.72, y: rect.height * 0.18),
+            control: CGPoint(x: rect.width * 0.55, y: rect.height * 0.05)
+        )
+        path.addLine(to: CGPoint(x: rect.width * 0.84, y: rect.height * 0.43))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.width * 0.98, y: rect.height * 0.64),
+            control: CGPoint(x: rect.width * 0.96, y: rect.height * 0.47)
+        )
+        path.addLine(to: CGPoint(x: rect.width * 0.94, y: rect.height * 0.78))
+        path.addLine(to: CGPoint(x: rect.width * 0.06, y: rect.height * 0.78))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct SedanWindowShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: 0, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.width * 0.24, y: 0))
+        path.addLine(to: CGPoint(x: rect.width * 0.69, y: rect.height * 0.06))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.closeSubpath()
+        return path
     }
 }
