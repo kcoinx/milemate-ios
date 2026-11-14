@@ -109,6 +109,11 @@ struct FirebaseAuthenticationService: AuthenticationServicing {
     }
 
     func deleteAccount(_ account: AuthenticatedAccount) async throws {
+        guard account.provider != .apple else {
+            throw AuthenticationError.configurationRequired(
+                "Apple account deletion requires secure server-side Apple token revocation before the Firebase user can be deleted."
+            )
+        }
         let configuration = try requiredConfiguration()
         let idToken = try await currentIDToken(for: account, configuration: configuration)
         let url = try endpoint("accounts:delete", apiKey: configuration.apiKey)
@@ -116,9 +121,13 @@ struct FirebaseAuthenticationService: AuthenticationServicing {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["idToken": idToken])
-        let (_, response) = try await session.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
-            throw AuthenticationError.provider("MileMate could not delete this account. Sign in again and retry.")
+            if let envelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: data),
+               ["INVALID_ID_TOKEN", "TOKEN_EXPIRED", "USER_NOT_FOUND"].contains(envelope.error.message) {
+                throw AuthenticationError.provider("Sign in again before deleting your account.")
+            }
+            throw AuthenticationError.provider("MileMate could not delete this account. Check your connection and try again.")
         }
     }
 

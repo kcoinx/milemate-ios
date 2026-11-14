@@ -177,9 +177,13 @@ final class AccountSessionController {
     }
 
     func logOut() {
+        clearAuthenticatedSession()
+        authenticationError = nil
+    }
+
+    private func clearAuthenticatedSession() {
         try? secureStore.remove(Key.authenticated)
         try? secureStore.set(Data([1]), for: Key.loggedOut)
-        authenticationError = nil
         presentsUpgrade = false
         state = .firstLaunch
         dataScopeProvider.setCurrent(nil)
@@ -190,8 +194,26 @@ final class AccountSessionController {
         isAuthenticating = true
         defer { isAuthenticating = false }
         do {
+            let expectedScope = LocalDataScope.authenticated(userID: account.userID)
+            guard dataScopeProvider.current == expectedScope else {
+                throw AuthenticationError.provider(
+                    "MileMate could not verify the local account boundary. No account or mileage data was deleted."
+                )
+            }
             try await authenticationService.deleteAccount(account)
-            logOut()
+            var cleanupError: Error?
+            do {
+                try await repository.deleteAllLocalData()
+            } catch {
+                cleanupError = error
+            }
+            clearAuthenticatedSession()
+            NotificationCenter.default.post(name: .mileageTripsDidChange, object: nil)
+            NotificationCenter.default.post(name: .mileageVehiclesDidChange, object: nil)
+            NotificationCenter.default.post(name: .mileageClassificationDataDidChange, object: nil)
+            if cleanupError != nil {
+                authenticationError = "Your account was deleted, but some isolated local data could not be removed. It remains inaccessible to other accounts."
+            }
         } catch {
             authenticationError = error.localizedDescription
         }

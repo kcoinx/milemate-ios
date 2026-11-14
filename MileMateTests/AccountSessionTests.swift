@@ -115,7 +115,7 @@ final class AccountSessionTests: XCTestCase {
         XCTAssertEqual(relaunched.guest?.completedTripCount, 1)
     }
 
-    func testAccountDeletionReturnsToWelcomeAndPreservesLocalTripHistory() async throws {
+    func testAccountDeletionReturnsToWelcomeAndDeletesOwnedLocalTripHistory() async throws {
         let trip = testTrip()
         let repository = AccountTestRepository(trips: [trip])
         let controller = makeController(repository: repository)
@@ -127,7 +127,38 @@ final class AccountSessionTests: XCTestCase {
         XCTAssertFalse(controller.isAuthenticated)
         XCTAssertTrue(controller.requiresWelcome)
         let remainingTrips = try await repository.fetchTrips()
+        XCTAssertTrue(remainingTrips.isEmpty)
+    }
+
+    func testRemoteAccountDeletionFailurePreservesSessionAndLocalData() async throws {
+        let trip = testTrip()
+        let repository = AccountTestRepository(trips: [trip])
+        let controller = AccountSessionController(
+            repository: repository,
+            secureStore: InMemoryAccountStore(),
+            authenticationService: AccountTestAuthenticationService(deleteShouldFail: true)
+        )
+        controller.continueAsGuest()
+        await controller.authenticateWithApple(token: "verified-token", rawNonce: "nonce", displayName: nil)
+
+        await controller.deleteAccount()
+
+        XCTAssertTrue(controller.isAuthenticated)
+        XCTAssertNotNil(controller.authenticationError)
+        let remainingTrips = try await repository.fetchTrips()
         XCTAssertEqual(remainingTrips.map { $0.id }, [trip.id])
+    }
+
+    func testLocalCleanupFailureAfterRemoteDeletionReturnsToWelcomeSafely() async throws {
+        let repository = AccountTestRepository(trips: [testTrip()], deleteAllShouldFail: true)
+        let controller = makeController(repository: repository)
+        controller.continueAsGuest()
+        await controller.authenticateWithApple(token: "verified-token", rawNonce: "nonce", displayName: nil)
+
+        await controller.deleteAccount()
+
+        XCTAssertTrue(controller.requiresWelcome)
+        XCTAssertNotNil(controller.authenticationError)
     }
 
     func testManualAndAutomaticTrackingDoNotStartTripEleven() {
@@ -252,6 +283,57 @@ final class AccountSessionTests: XCTestCase {
         XCTAssertTrue(guestTrips.isEmpty)
     }
 
+    func testDeletingOneScopeDoesNotDeleteAnotherAccountOrGuest() async throws {
+        let (repository, scopeProvider, _) = try makeSwiftDataRepository()
+        let firstAccount = LocalDataScope.authenticated(userID: "first-account")
+        let secondAccount = LocalDataScope.authenticated(userID: "second-account")
+        let guest = LocalDataScope.guest(id: UUID())
+        let firstTrip = testTrip()
+        let secondTrip = testTrip()
+        let guestTrip = testTrip()
+
+        scopeProvider.setCurrent(firstAccount)
+        try await repository.save(firstTrip)
+        scopeProvider.setCurrent(secondAccount)
+        try await repository.save(secondTrip)
+        scopeProvider.setCurrent(guest)
+        try await repository.save(guestTrip)
+
+        scopeProvider.setCurrent(firstAccount)
+        try await repository.deleteAllLocalData()
+        let firstAccountTrips = try await repository.fetchTrips()
+        XCTAssertTrue(firstAccountTrips.isEmpty)
+
+        scopeProvider.setCurrent(secondAccount)
+        let secondAccountTrips = try await repository.fetchTrips()
+        XCTAssertEqual(secondAccountTrips.map { $0.id }, [secondTrip.id])
+
+        scopeProvider.setCurrent(guest)
+        let guestTrips = try await repository.fetchTrips()
+        XCTAssertEqual(guestTrips.map { $0.id }, [guestTrip.id])
+    }
+
+    func testProductionAppleDeletionRequiresSecureRevocationService() async {
+        let service = FirebaseAuthenticationService(configuration: nil)
+        let account = AuthenticatedAccount(
+            userID: "apple-user",
+            provider: .apple,
+            displayName: nil,
+            email: nil,
+            idToken: "token",
+            refreshToken: "refresh",
+            tokenExpiration: .now.addingTimeInterval(3_600),
+            migratedGuestID: nil
+        )
+
+        do {
+            try await service.deleteAccount(account)
+            XCTFail("Apple deletion must not be reported as complete without token revocation.")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Apple token revocation"))
+        }
+    }
+
     private func makeSwiftDataRepository() throws -> (
         SwiftDataMileageRepository,
         LocalDataScopeProvider,
@@ -296,6 +378,7 @@ final class AccountSessionTests: XCTestCase {
 }
 
 private struct AccountTestAuthenticationService: AuthenticationServicing {
+    var deleteShouldFail = false
     func signInWithApple(
         identityToken: String,
         rawNonce: String,
@@ -327,13 +410,21 @@ private struct AccountTestAuthenticationService: AuthenticationServicing {
         )
     }
 
-    func deleteAccount(_ account: AuthenticatedAccount) async throws {}
+    func deleteAccount(_ account: AuthenticatedAccount) async throws {
+        if deleteShouldFail {
+            throw AuthenticationError.provider("Network unavailable")
+        }
+    }
 }
 
 private actor AccountTestRepository: MileageRepository {
     private var trips: [Trip]
+    private let deleteAllShouldFail: Bool
 
-    init(trips: [Trip] = []) { self.trips = trips }
+    init(trips: [Trip] = [], deleteAllShouldFail: Bool = false) {
+        self.trips = trips
+        self.deleteAllShouldFail = deleteAllShouldFail
+    }
     func fetchTrips() async throws -> [Trip] { trips }
     func fetchSummary() async throws -> MileageSummary {
         MileageSummaryCalculator.summary(for: trips)
@@ -347,6 +438,12 @@ private actor AccountTestRepository: MileageRepository {
         trips[index] = trip
     }
     func delete(_ trip: Trip) async throws { trips.removeAll { $0.id == trip.id } }
+    func deleteAllLocalData() async throws {
+        if deleteAllShouldFail {
+            throw AuthenticationError.provider("Local storage unavailable")
+        }
+        trips.removeAll()
+    }
 }
 
 @MainActor

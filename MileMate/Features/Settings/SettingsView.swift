@@ -328,7 +328,7 @@ struct SettingsView: View {
                     .frame(minHeight: 44)
                     .disabled(accountSession.isAuthenticating || accountActionsDisabled)
                 } footer: {
-                    Text("Deletes your MileMate sign-in account after confirmation. Local mileage remains isolated on this iPhone.")
+                    Text("Deletes your sign-in account and only its locally owned MileMate data after confirmation.")
                 }
             }
         }
@@ -421,7 +421,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This permanently deletes your authentication account. Trips stored locally on this iPhone will not be deleted.")
+            Text(accountDeletionConfirmationMessage)
         }
         .alert(
             "Account Action Failed",
@@ -474,22 +474,16 @@ struct SettingsView: View {
                     accountSession.completeAppleSignIn(result)
                 }
                 .signInWithAppleButtonStyle(.black)
-                .frame(height: 48)
-                .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.small))
+                .frame(maxWidth: .infinity)
+                .frame(height: AuthenticationButtonMetrics.height)
+                .clipShape(Capsule())
                 .disabled(accountSession.isAuthenticating || accountActionsDisabled)
                 Button {
                     Task { await accountSession.authenticateWithGoogle() }
                 } label: {
-                    HStack(spacing: 10) {
-                        Image("GoogleMark")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 18, height: 18)
-                        Text("Continue with Google")
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                    GoogleAuthenticationLabel()
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
                 .disabled(accountSession.isAuthenticating || accountActionsDisabled)
                 Text("Signing in moves this guest trial's trips into your account on this iPhone. Cloud backup is not enabled yet.")
                     .font(.footnote)
@@ -511,6 +505,13 @@ struct SettingsView: View {
         case .disabled, .idle, .permissionRequired, .failed:
             return false
         }
+    }
+
+    private var accountDeletionConfirmationMessage: String {
+        if accountSession.account?.provider == .apple {
+            return "Deleting an Apple account requires secure Apple authorization revocation. MileMate will only complete deletion when that revocation service is configured."
+        }
+        return "This permanently deletes your authentication account and only its locally owned MileMate data. Other accounts and guest trips are not affected."
     }
 
     private func accountInitials(_ account: AuthenticatedAccount) -> String {
