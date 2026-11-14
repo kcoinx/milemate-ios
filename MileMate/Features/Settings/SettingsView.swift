@@ -28,6 +28,7 @@ struct SettingsView: View {
     @Bindable private var accountSession: AccountSessionController
     private let router: AppRouter
     @AppStorage("appAppearance") private var appearance = AppAppearance.system.rawValue
+    @AppStorage(DistanceUnitSettings.key) private var distanceUnit = DistanceUnitSettings.defaultUnit().rawValue
     @AppStorage(AutomaticTrackingSettings.enabledKey) private var automaticTrackingEnabled = false
     @AppStorage(AutomaticTrackingSettings.minimumDistanceKey)
     private var automaticMinimumDistance = AutomaticTrackingSettings.defaultMinimumDistance
@@ -280,6 +281,16 @@ struct SettingsView: View {
                 } label: {
                     settingLabel("Appearance", icon: "circle.lefthalf.filled", tint: .indigo)
                 }
+            }
+
+            settingsSection("Preferences") {
+                Picker("Distance Unit", selection: $distanceUnit) {
+                    ForEach(DistanceUnit.allCases) { unit in
+                        Text(unit.title).tag(unit.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityHint("Changes how distances are displayed without changing saved trip data or tax calculations")
             }
 
             settingsSection("Privacy & Support") {

@@ -10,6 +10,7 @@ struct DashboardView: View {
     @Bindable private var tripCoordinator: ManualTripCoordinator
     @Bindable private var automaticTripCoordinator: AutomaticTripCoordinator
     @AppStorage(AutomaticTrackingSettings.enabledKey) private var automaticTrackingEnabled = false
+    @AppStorage(DistanceUnitSettings.key) private var distanceUnitRaw = DistanceUnitSettings.defaultUnit().rawValue
     @State private var isPulsing = false
     @State private var hasAppeared = false
     @ScaledMetric(relativeTo: .headline) private var secondaryMetricValueSize: CGFloat = 22
@@ -331,7 +332,7 @@ struct DashboardView: View {
                 .contentTransition(.numericText())
 
             HStack(spacing: AppTheme.Spacing.xLarge) {
-                summaryMetric("Today\u{2019}s Miles", value: viewModel.todayBusinessMiles.milesFormatted)
+                summaryMetric("Today\u{2019}s Distance", value: viewModel.todayBusinessMiles.milesFormatted)
                 Divider().overlay(.white.opacity(0.25))
                 summaryMetric("Estimated Tax Savings", value: viewModel.summary.estimatedTaxSavings.currencyFormatted)
                     .accessibilityHint("Based on your selected estimated tax rate.")
@@ -340,7 +341,7 @@ struct DashboardView: View {
             .padding(.top, AppTheme.Spacing.large)
 
             HStack {
-                Text("Business Miles")
+                Text("Business \(distanceUnit.distanceLabel)")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.72))
                 Spacer()
@@ -596,6 +597,10 @@ struct DashboardView: View {
             : automaticTripCoordinator.distanceMiles
     }
 
+    private var distanceUnit: DistanceUnit {
+        DistanceUnit(rawValue: distanceUnitRaw) ?? DistanceUnitSettings.defaultUnit()
+    }
+
     private var activeElapsedTime: TimeInterval {
         tripCoordinator.state == .tracking
             ? tripCoordinator.elapsedTime
@@ -626,8 +631,9 @@ struct DashboardView: View {
                     HStack(alignment: .top, spacing: AppTheme.Spacing.medium) {
                         ProgressRing(
                             progress: min(viewModel.weeklyBusinessMiles / 500, 1),
-                            value: viewModel.weeklyBusinessMiles.formatted(.number.precision(.fractionLength(0))),
-                            label: "Business\nMiles"
+                            value: viewModel.weeklyBusinessMiles.distanceValue(unit: distanceUnit)
+                                .formatted(.number.precision(.fractionLength(0))),
+                            label: "Business\n\(distanceUnit.distanceLabel)"
                         )
                         ProgressRing(
                             progress: min(Double(viewModel.weeklyTrips.count) / 20, 1),

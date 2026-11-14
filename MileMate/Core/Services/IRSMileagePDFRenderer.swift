@@ -127,7 +127,7 @@ final class IRSMileagePDFRenderer {
 
         drawRule(at: 192, color: rule, height: 0.5)
         let metrics = [
-            ("Total Business Miles", report.businessMiles.milesFormatted),
+            ("Total Business \(DistanceUnitSettings.unit().distanceLabel)", report.businessMiles.milesFormatted),
             ("Total Business Trips", "\(report.businessTripCount)"),
             (
                 "Mileage Rate",

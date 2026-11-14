@@ -13,6 +13,7 @@ enum MileMatePreferenceKeys {
         TripFeedbackSettings.enabledKey,
         MileageSettings.rateKey,
         MileageSettings.taxRateKey,
+        DistanceUnitSettings.key,
         "vehicle.nickname",
         "vehicle.year",
         "vehicle.make",

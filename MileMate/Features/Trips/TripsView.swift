@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct TripsView: View {
+    @AppStorage(DistanceUnitSettings.key) private var distanceUnitRaw = DistanceUnitSettings.defaultUnit().rawValue
     private let repository: any MileageRepository
     private let notificationService: any TripNotificationScheduling
     @Binding private var requestedTrip: Trip?
@@ -165,7 +166,7 @@ struct TripsView: View {
                         .font(.caption.weight(.semibold))
                         .tracking(0.8)
                         .foregroundStyle(AppTheme.Color.textSecondary)
-                    Text(viewModel.totalMiles.milesFormatted)
+                    Text(viewModel.totalMiles.distanceFormatted(unit: distanceUnit))
                         .font(.system(size: 38, weight: .bold, design: .rounded))
                     Text("\(viewModel.filteredTrips.count) recorded trips")
                         .font(.subheadline)
@@ -249,7 +250,7 @@ struct TripsView: View {
                 Divider()
 
                 HStack {
-                    tripValue("DISTANCE", value: trip.distanceMiles.milesFormatted)
+                    tripValue("DISTANCE", value: trip.distanceMiles.distanceFormatted(unit: distanceUnit))
                     Spacer()
                     tripValue("EST. DEDUCTION", value: trip.estimatedDeduction.currencyFormatted, tint: AppTheme.Color.positive)
                     Spacer()
@@ -258,6 +259,10 @@ struct TripsView: View {
             }
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private var distanceUnit: DistanceUnit {
+        DistanceUnit(rawValue: distanceUnitRaw) ?? DistanceUnitSettings.defaultUnit()
     }
 
     private var vehicleFilterTitle: String {

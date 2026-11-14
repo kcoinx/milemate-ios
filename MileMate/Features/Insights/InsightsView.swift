@@ -3,6 +3,7 @@ import SwiftUI
 struct InsightsView: View {
     @State private var viewModel: InsightsViewModel
     @State private var ringProgress = 0.0
+    @AppStorage(DistanceUnitSettings.key) private var distanceUnitRaw = DistanceUnitSettings.defaultUnit().rawValue
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(repository: any MileageRepository) {
@@ -55,14 +56,17 @@ struct InsightsView: View {
                     .tracking(1.4)
                     .foregroundStyle(AppTheme.Color.textSecondary)
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(viewModel.weeklyBusinessMiles.formatted(.number.precision(.fractionLength(1))))
+                    Text(
+                        viewModel.weeklyBusinessMiles.distanceValue(unit: distanceUnit)
+                            .formatted(.number.precision(.fractionLength(1)))
+                    )
                         .font(.system(size: 64, weight: .bold, design: .rounded))
                         .contentTransition(.numericText())
-                    Text("mi")
+                    Text(distanceUnit.abbreviation)
                         .font(.title2.weight(.semibold))
                         .foregroundStyle(AppTheme.Color.textSecondary)
                 }
-                Text("Business miles this week")
+                Text("Business distance this week")
                     .font(.title3.weight(.semibold))
                 if let change = viewModel.weekChangePercentage {
                     HStack(spacing: 7) {
@@ -75,6 +79,10 @@ struct InsightsView: View {
                 }
             }
         }
+    }
+
+    private var distanceUnit: DistanceUnit {
+        DistanceUnit(rawValue: distanceUnitRaw) ?? DistanceUnitSettings.defaultUnit()
     }
 
     private var mileageSplit: some View {
@@ -177,9 +185,12 @@ struct InsightsView: View {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
                 SectionHeader(title: "Monthly progress")
                 HStack(alignment: .lastTextBaseline) {
-                    Text(viewModel.monthlyBusinessMiles.formatted(.number.precision(.fractionLength(1))))
+                    Text(
+                        viewModel.monthlyBusinessMiles.distanceValue(unit: distanceUnit)
+                            .formatted(.number.precision(.fractionLength(1)))
+                    )
                         .font(.system(size: 38, weight: .bold, design: .rounded))
-                    Text("business miles")
+                    Text("business \(distanceUnit.distanceLabel.lowercased())")
                         .foregroundStyle(AppTheme.Color.textSecondary)
                     Spacer()
                     Text(viewModel.monthlyProgress.formatted(.percent.precision(.fractionLength(0))))

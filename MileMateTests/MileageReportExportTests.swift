@@ -301,7 +301,7 @@ final class MileageReportExportTests: XCTestCase {
             selection: selection(rate: 0.70),
             reportToken: "IRS1"
         )
-        let csv = MileageCSVRenderer.csvString(for: report)
+        let csv = MileageCSVRenderer.csvString(for: report, unit: .miles)
         let irsName = MileageReportPreparationService.irsFileName(
             for: report.selection
         )
@@ -312,6 +312,26 @@ final class MileageReportExportTests: XCTestCase {
         XCTAssertTrue(csv.contains(",Business,"))
         XCTAssertTrue(csv.contains("\"Receipt, toll\""))
         XCTAssertTrue(irsName.hasSuffix("-IRS-Mileage-Report.pdf"))
+    }
+
+    func testCSVUsesSelectedDisplayUnitWithoutChangingReportTotals() throws {
+        let report = try MileageReportPreparationService.prepare(
+            trips: [trip(classification: .business, miles: 10)],
+            places: [],
+            profile: nil,
+            selection: selection(rate: 0.70),
+            reportToken: "UNIT1"
+        )
+
+        let milesCSV = MileageCSVRenderer.csvString(for: report, unit: .miles)
+        let kilometersCSV = MileageCSVRenderer.csvString(for: report, unit: .kilometers)
+
+        XCTAssertTrue(milesCSV.contains("Distance Miles"))
+        XCTAssertTrue(milesCSV.contains(",10.000,"))
+        XCTAssertTrue(kilometersCSV.contains("Distance Kilometers"))
+        XCTAssertTrue(kilometersCSV.contains(",16.093,"))
+        XCTAssertEqual(report.businessMiles, 10, accuracy: 0.000_001)
+        XCTAssertEqual(report.estimatedDeduction, 7, accuracy: 0.000_001)
     }
 
     func testAnnualSummaryAggregatesMonthsAndMostActiveMonth() {

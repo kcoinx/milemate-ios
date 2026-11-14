@@ -2,6 +2,59 @@ import XCTest
 @testable import MileMate
 
 final class MileageDeductionServiceTests: XCTestCase {
+    func testDistanceConversionUsesExactInternationalFactor() {
+        XCTAssertEqual(DistanceUnit.kilometers.value(fromMiles: 1), 1.609344, accuracy: 0.000_001)
+        XCTAssertEqual(
+            DistanceUnit.kilometers.miles(from: 1.609344),
+            1,
+            accuracy: 0.000_001
+        )
+    }
+
+    func testDistanceFormattingIsConsistentInBothUnits() {
+        XCTAssertEqual(10.0.distanceFormatted(unit: .miles), "10.0 mi")
+        XCTAssertEqual(10.0.distanceFormatted(unit: .kilometers), "16.1 km")
+    }
+
+    func testRegionalDistanceDefaults() {
+        XCTAssertEqual(
+            DistanceUnitSettings.defaultUnit(for: Locale(identifier: "en_US")),
+            .miles
+        )
+        XCTAssertEqual(
+            DistanceUnitSettings.defaultUnit(for: Locale(identifier: "en_CA")),
+            .kilometers
+        )
+        XCTAssertEqual(
+            DistanceUnitSettings.defaultUnit(for: Locale(identifier: "fr_FR")),
+            .kilometers
+        )
+    }
+
+    func testDistancePreferencePersistsAcrossDefaultsRecreation() throws {
+        let suiteName = "DistanceUnitSettingsTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        DistanceUnitSettings.registerDefault(
+            in: defaults,
+            locale: Locale(identifier: "en_US")
+        )
+        XCTAssertEqual(DistanceUnitSettings.unit(in: defaults), .miles)
+
+        defaults.set(DistanceUnit.kilometers.rawValue, forKey: DistanceUnitSettings.key)
+        let recreated = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        XCTAssertEqual(DistanceUnitSettings.unit(in: recreated), .kilometers)
+    }
+
+    func testChangingDisplayUnitDoesNotMutateTripOrTaxCalculation() {
+        let trip = makeBusinessTrip(miles: 10)
+        let deductionBefore = trip.estimatedDeduction
+        _ = trip.distanceMiles.distanceFormatted(unit: .kilometers)
+
+        XCTAssertEqual(trip.distanceMiles, 10, accuracy: 0.000_001)
+        XCTAssertEqual(trip.estimatedDeduction, deductionBefore, accuracy: 0.000_001)
+    }
+
     func testMissingSavedRateUsesTwentyTwoPercentDefault() throws {
         try withTemporaryDefaults { defaults in
             XCTAssertEqual(MileageSettings.estimatedTaxPercentage(in: defaults), 22)

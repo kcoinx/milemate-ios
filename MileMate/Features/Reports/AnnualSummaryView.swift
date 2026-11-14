@@ -46,6 +46,7 @@ final class AnnualSummaryViewModel {
 }
 
 struct AnnualSummaryView: View {
+    @AppStorage(DistanceUnitSettings.key) private var distanceUnitRaw = DistanceUnitSettings.defaultUnit().rawValue
     @State private var viewModel: AnnualSummaryViewModel
 
     init(
@@ -129,7 +130,7 @@ struct AnnualSummaryView: View {
                 )
 
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xSmall) {
-                    Text("BUSINESS MILES")
+                    Text("BUSINESS \(distanceUnit.distanceLabel.uppercased())")
                         .font(.caption.weight(.semibold))
                         .tracking(0.8)
                         .foregroundStyle(AppTheme.Color.textSecondary)
@@ -195,12 +196,12 @@ struct AnnualSummaryView: View {
     private var monthlyMileage: some View {
         AppCard {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
-                SectionHeader(title: "Monthly business mileage")
+                SectionHeader(title: "Monthly business distance")
                 if viewModel.summary.businessMiles > 0 {
                     Chart(viewModel.summary.monthlyMileage) { item in
                         BarMark(
                             x: .value("Month", item.label),
-                            y: .value("Business miles", item.miles)
+                            y: .value("Business distance", item.miles.distanceValue(unit: distanceUnit))
                         )
                         .foregroundStyle(AppTheme.Color.brand.gradient)
                         .cornerRadius(4)
@@ -213,7 +214,7 @@ struct AnnualSummaryView: View {
                     }
                     .frame(height: 190)
                     .accessibilityLabel(
-                        "Monthly business mileage for \(plainYear(viewModel.selectedYear))"
+                        "Monthly business distance for \(plainYear(viewModel.selectedYear)) in \(distanceUnit.distanceLabel.lowercased())"
                     )
                 } else {
                     VStack(spacing: AppTheme.Spacing.small) {
@@ -236,7 +237,7 @@ struct AnnualSummaryView: View {
     private var vehicleBreakdown: some View {
         AppCard {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
-                SectionHeader(title: "Business miles by vehicle")
+                SectionHeader(title: "Business distance by vehicle")
                 ForEach(viewModel.summary.vehicleBreakdown) { item in
                     LabeledContent {
                         Text(item.miles.milesFormatted)
@@ -285,6 +286,10 @@ struct AnnualSummaryView: View {
 
     private func plainYear(_ year: Int) -> String {
         String(year)
+    }
+
+    private var distanceUnit: DistanceUnit {
+        DistanceUnit(rawValue: distanceUnitRaw) ?? DistanceUnitSettings.defaultUnit()
     }
 
     private func metric(_ title: String, value: String) -> some View {

@@ -9,13 +9,16 @@ enum MileageCSVRenderer {
         }
     }
 
-    static func render(_ report: MileageReportData) throws -> URL {
+    static func render(
+        _ report: MileageReportData,
+        unit: DistanceUnit = DistanceUnitSettings.unit()
+    ) throws -> URL {
         let fileName = MileageReportPreparationService.csvFileName(
             for: report.selection
         )
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(fileName, isDirectory: false)
-        let csv = csvString(for: report)
+        let csv = csvString(for: report, unit: unit)
 
         do {
             try Data(csv.utf8).write(to: url, options: .atomic)
@@ -25,19 +28,22 @@ enum MileageCSVRenderer {
         }
     }
 
-    static func csvString(for report: MileageReportData) -> String {
+    static func csvString(
+        for report: MileageReportData,
+        unit: DistanceUnit = DistanceUnitSettings.unit()
+    ) -> String {
         let headers = [
             "Date",
             "Start Time",
             "End Time",
             "Start Location",
             "End Location",
-            "Distance Miles",
+            "Distance \(unit.title)",
             "Duration Minutes",
             "Classification",
             "Trip Purpose",
             "Vehicle",
-            "Mileage Rate",
+            "Mileage Rate Per Mile",
             "Estimated Deduction",
             "Notes"
         ]
@@ -62,7 +68,7 @@ enum MileageCSVRenderer {
                 timeFormatter.string(from: trip.endedAt),
                 trip.start,
                 trip.end,
-                decimal(trip.distanceMiles, fractionDigits: 3),
+                decimal(trip.distanceMiles.distanceValue(unit: unit), fractionDigits: 3),
                 decimal(trip.durationMinutes, fractionDigits: 1),
                 Trip.Classification.business.rawValue,
                 trip.purpose,

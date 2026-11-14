@@ -141,7 +141,7 @@ final class MileagePDFRenderer {
 
         let boxWidth = (pageRect.width - margin * 2 - 24) / 4
         let summaries = [
-            ("BUSINESS MILES", report.businessMiles.milesFormatted),
+            ("BUSINESS \(DistanceUnitSettings.unit().distanceLabel.uppercased())", report.businessMiles.milesFormatted),
             ("BUSINESS TRIPS", "\(report.businessTripCount)"),
             (
                 "IRS MILEAGE RATE",

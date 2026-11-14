@@ -5,14 +5,17 @@ enum TripNotificationCopy {
     static let completionTitle = "MileMate — Trip Complete"
     static let reviewTitle = "Trips Waiting for Review"
 
-    static func completionBody(for trip: Trip) -> String {
-        let miles = trip.distanceMiles.formatted(.number.precision(.fractionLength(1)))
+    static func completionBody(
+        for trip: Trip,
+        unit: DistanceUnit = DistanceUnitSettings.unit()
+    ) -> String {
+        let distance = trip.distanceMiles.distanceFormatted(unit: unit)
         let minutes = max(Int((trip.duration / 60).rounded()), 1)
         let duration = minutes == 1 ? "1 minute" : "\(minutes) minutes"
         if trip.classification == .unclassified {
-            return "You drove \(miles) miles in \(duration). Business or Personal? Tap to classify your trip."
+            return "You drove \(distance) in \(duration). Business or Personal? Tap to classify your trip."
         }
-        return "You drove \(miles) miles in \(duration). Saved as \(trip.classification.rawValue)."
+        return "You drove \(distance) in \(duration). Saved as \(trip.classification.rawValue)."
     }
 
     static func reviewBody(count: Int) -> String {

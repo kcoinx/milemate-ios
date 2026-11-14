@@ -262,12 +262,18 @@ final class TripNotificationTests: XCTestCase {
     func testCompletionAndAggregatedReviewCopy() {
         XCTAssertEqual(TripNotificationCopy.completionTitle, "MileMate — Trip Complete")
         XCTAssertEqual(
-            TripNotificationCopy.completionBody(for: reviewTrip(classification: .unclassified)),
-            "You drove 2.0 miles in 30 minutes. Business or Personal? Tap to classify your trip."
+            TripNotificationCopy.completionBody(
+                for: reviewTrip(classification: .unclassified),
+                unit: .miles
+            ),
+            "You drove 2.0 mi in 30 minutes. Business or Personal? Tap to classify your trip."
         )
         XCTAssertEqual(
-            TripNotificationCopy.completionBody(for: reviewTrip(classification: .business)),
-            "You drove 2.0 miles in 30 minutes. Saved as Business."
+            TripNotificationCopy.completionBody(
+                for: reviewTrip(classification: .business),
+                unit: .miles
+            ),
+            "You drove 2.0 mi in 30 minutes. Saved as Business."
         )
         XCTAssertEqual(
             TripNotificationCopy.reviewBody(count: 1),

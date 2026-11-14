@@ -2,6 +2,7 @@ import Charts
 import SwiftUI
 
 struct ReportsView: View {
+    @AppStorage(DistanceUnitSettings.key) private var distanceUnitRaw = DistanceUnitSettings.defaultUnit().rawValue
     private enum ExportAction: Equatable {
         case professionalPDF
         case csv
@@ -146,7 +147,7 @@ struct ReportsView: View {
     private var vehicleBreakdown: some View {
         AppCard {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
-                SectionHeader(title: "Business miles by vehicle")
+                SectionHeader(title: "Business distance by vehicle")
                 ForEach(viewModel.vehicleBreakdown) { item in
                     LabeledContent(item.vehicle, value: item.miles.milesFormatted)
                     if item.id != viewModel.vehicleBreakdown.last?.id { Divider() }
@@ -176,7 +177,7 @@ struct ReportsView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("BUSINESS MILES")
+                    Text("BUSINESS \(distanceUnit.distanceLabel.uppercased())")
                         .font(.caption.weight(.semibold))
                         .tracking(0.8)
                         .foregroundStyle(AppTheme.Color.textSecondary)
@@ -213,7 +214,7 @@ struct ReportsView: View {
 
                 Label(
                     viewModel.summary.businessMiles > 0
-                        ? "Estimated deduction is based on your business miles and configured mileage rate."
+                        ? "Estimated deduction is based on your business distance and configured per-mile rate."
                         : "Only Business trips contribute to your estimated deduction.",
                     systemImage: "info.circle"
                 )
@@ -383,7 +384,7 @@ struct ReportsView: View {
     private var mileageChart: some View {
         AppCard {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
-                SectionHeader(title: "Business mileage by week")
+                SectionHeader(title: "Business distance by week")
 
                 if viewModel.weeklyMileage.isEmpty {
                     Label {
@@ -399,7 +400,7 @@ struct ReportsView: View {
                     Chart(viewModel.weeklyMileage) { item in
                         BarMark(
                             x: .value("Week", item.weekStart, unit: .weekOfYear),
-                            y: .value("Business miles", item.miles)
+                            y: .value("Business distance", item.miles.distanceValue(unit: distanceUnit))
                         )
                         .foregroundStyle(AppTheme.Color.brand.gradient)
                         .cornerRadius(5)
@@ -434,7 +435,7 @@ struct ReportsView: View {
                         }
                     }
                     .frame(height: 190)
-                    .accessibilityLabel("Business mileage by week")
+                    .accessibilityLabel("Business distance by week in \(distanceUnit.distanceLabel.lowercased())")
                 }
             }
         }
@@ -467,7 +468,7 @@ struct ReportsView: View {
         AppCard {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
                 SectionHeader(title: "2026 at a glance")
-                summaryRow("Business Mileage", value: viewModel.summary.businessMiles.milesFormatted)
+                summaryRow("Business Distance", value: viewModel.summary.businessMiles.milesFormatted)
                 Divider()
                 summaryRow("Business Trips", value: "\(viewModel.summary.tripCount)")
                 Divider()
@@ -476,6 +477,10 @@ struct ReportsView: View {
                 summaryRow("Estimated Deduction", value: viewModel.summary.estimatedDeduction.currencyFormatted, emphasized: true)
             }
         }
+    }
+
+    private var distanceUnit: DistanceUnit {
+        DistanceUnit(rawValue: distanceUnitRaw) ?? DistanceUnitSettings.defaultUnit()
     }
 
     private func reportMetric(
