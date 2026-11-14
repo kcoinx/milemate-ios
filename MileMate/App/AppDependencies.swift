@@ -7,6 +7,7 @@ struct AppDependencies {
     let tripCoordinator: ManualTripCoordinator
     let automaticTripCoordinator: AutomaticTripCoordinator
     let notificationService: any TripNotificationScheduling
+    let accountSession: AccountSessionController
     let router: AppRouter
     let modelContainer: ModelContainer
 
@@ -22,16 +23,21 @@ struct AppDependencies {
             let repository = SwiftDataMileageRepository(modelContainer: container)
             let locationService = CoreLocationService()
             let notificationService = LocalTripNotificationService(repository: repository)
+            let accountSession = AccountSessionController(repository: repository)
             let manualCoordinator = ManualTripCoordinator(
                 locationService: locationService,
                 repository: repository,
-                notificationService: notificationService
+                notificationService: notificationService,
+                canStartNewTrip: { accountSession.requestTrackingAccess() },
+                tripDidSave: { trip in accountSession.recordSavedTrip(trip) }
             )
             let automaticCoordinator = AutomaticTripCoordinator(
                 locationService: CoreAutomaticLocationService(),
                 motionService: CoreMotionActivityService(),
                 repository: repository,
                 notificationService: notificationService,
+                canStartNewTrip: { accountSession.requestTrackingAccess() },
+                tripDidSave: { trip in accountSession.recordSavedTrip(trip) },
                 isManualTrackingActive: {
                     switch manualCoordinator.state {
                     case .requestingPermission, .tracking, .reviewing:
@@ -52,6 +58,7 @@ struct AppDependencies {
                 tripCoordinator: manualCoordinator,
                 automaticTripCoordinator: automaticCoordinator,
                 notificationService: notificationService,
+                accountSession: accountSession,
                 router: appRouter,
                 modelContainer: container
             )

@@ -20,6 +20,7 @@ struct AppTabView: View {
                     tripCoordinator: dependencies.tripCoordinator,
                     automaticTripCoordinator: dependencies.automaticTripCoordinator,
                     notificationService: dependencies.notificationService,
+                    accountSession: dependencies.accountSession,
                     router: dependencies.router
                 )
             }

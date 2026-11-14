@@ -119,7 +119,7 @@ struct PrivacyPolicyView: View {
         ),
         LegalDocumentSection(
             title: "Storage and Sharing",
-            body: "The current MileMate architecture stores its mileage database locally on this device. The app does not currently include accounts, cloud synchronization, advertising, or analytics services. Map and place-search requests may be processed by Apple's MapKit and geocoding services under Apple's applicable terms and privacy practices. MileMate does not send the local mileage database to the product owner or advertising companies."
+            body: "MileMate stores its mileage database locally on this device. If you choose to create an account, Apple or Google and MileMate's authentication provider process the information needed to sign you in. Account sign-in does not automatically upload or back up your mileage history. Map and place-search requests may be processed by Apple's MapKit and geocoding services under Apple's applicable terms and privacy practices. MileMate does not use the local mileage database for advertising."
         ),
         LegalDocumentSection(
             title: "Retention and Deletion",

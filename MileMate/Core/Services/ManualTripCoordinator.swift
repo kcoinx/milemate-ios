@@ -38,6 +38,8 @@ final class ManualTripCoordinator: TripReviewCoordinating {
     private let locationService: any LocationService
     private let repository: any MileageRepository
     private let notificationService: (any TripNotificationScheduling)?
+    private let canStartNewTrip: @MainActor () -> Bool
+    private let tripDidSave: @MainActor (Trip) -> Void
     private var processor = LocationSampleProcessor()
     private var elapsedTask: Task<Void, Never>?
     private var geocodeTask: Task<Void, Never>?
@@ -63,6 +65,8 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         locationService: any LocationService,
         repository: any MileageRepository,
         notificationService: (any TripNotificationScheduling)? = nil,
+        canStartNewTrip: @escaping @MainActor () -> Bool = { true },
+        tripDidSave: @escaping @MainActor (Trip) -> Void = { _ in },
         reminderEligibilityDuration: TimeInterval = 4 * 60 * 60,
         inactivityReminderDelay: TimeInterval = 30 * 60,
         safeguardCheckInterval: TimeInterval = 60
@@ -70,6 +74,8 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         self.locationService = locationService
         self.repository = repository
         self.notificationService = notificationService
+        self.canStartNewTrip = canStartNewTrip
+        self.tripDidSave = tripDidSave
         self.reminderEligibilityDuration = reminderEligibilityDuration
         self.inactivityReminderDelay = inactivityReminderDelay
         self.safeguardCheckInterval = safeguardCheckInterval
@@ -100,6 +106,7 @@ final class ManualTripCoordinator: TripReviewCoordinating {
 
     func startTrip() {
         guard state != .tracking else { return }
+        guard canStartNewTrip() else { return }
         switch locationService.authorizationStatus {
         case .authorizedAlways:
             beginTracking()
@@ -167,6 +174,7 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         trip.appliedRuleID = appliedRuleID
         trip.updatedAt = .now
         try await repository.save(trip)
+        tripDidSave(trip)
         await notificationService?.reconcileReviewReminder()
         NotificationCenter.default.post(name: .mileageTripsDidChange, object: trip.id)
         pendingTrip = nil
@@ -194,6 +202,11 @@ final class ManualTripCoordinator: TripReviewCoordinating {
     }
 
     private func beginTracking() {
+        guard canStartNewTrip() else {
+            pendingStart = false
+            state = .ready
+            return
+        }
         processor.reset()
         distanceMeters = 0
         elapsedTime = 0

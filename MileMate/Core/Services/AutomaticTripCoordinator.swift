@@ -77,6 +77,8 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     private let motionService: any MotionActivityService
     private let repository: any MileageRepository
     private let notificationService: any TripNotificationScheduling
+    private let canStartNewTrip: @MainActor () -> Bool
+    private let tripDidSave: @MainActor (Trip) -> Void
     private let isManualTrackingActive: @MainActor () -> Bool
     private let stopIntervalOverride: TimeInterval?
     private let detectionTimeout: TimeInterval
@@ -111,6 +113,8 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         motionService: any MotionActivityService,
         repository: any MileageRepository,
         notificationService: any TripNotificationScheduling,
+        canStartNewTrip: @escaping @MainActor () -> Bool = { true },
+        tripDidSave: @escaping @MainActor (Trip) -> Void = { _ in },
         stopInterval: TimeInterval? = nil,
         detectionTimeout: TimeInterval = 180,
         isManualTrackingActive: @escaping @MainActor () -> Bool
@@ -119,6 +123,8 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         self.motionService = motionService
         self.repository = repository
         self.notificationService = notificationService
+        self.canStartNewTrip = canStartNewTrip
+        self.tripDidSave = tripDidSave
         self.stopIntervalOverride = stopInterval
         self.detectionTimeout = detectionTimeout
         self.isManualTrackingActive = isManualTrackingActive
@@ -200,7 +206,13 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             TrackingDiagnostics.log("automatic tracking disabled; detector not started")
             return
         }
-        guard state != .detecting, state != .tracking else { return }
+        if state == .tracking { return }
+        guard canStartNewTrip() else {
+            if state == .detecting { resetToIdle() }
+            state = .idle
+            return
+        }
+        guard state != .detecting else { return }
 
         requestLocationAuthorizationIfNeeded()
 
@@ -337,6 +349,11 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
                 TrackingDiagnostics.log("location wake ignored because manual tracking is active")
                 return
             }
+            guard canStartNewTrip() || state == .tracking else {
+                TrackingDiagnostics.log("automatic location wake ignored because the guest trip limit is complete")
+                if state == .detecting { resetToIdle() }
+                return
+            }
             if state == .idle {
                 pendingLowPowerSamples = Array(
                     (pendingLowPowerSamples + samples).suffix(4)
@@ -400,6 +417,10 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     private func handleMotion(_ activity: MotionActivitySample) {
         guard AutomaticTrackingSettings.isEnabled,
               !isManualTrackingActive() else {
+            return
+        }
+        guard canStartNewTrip() || state == .tracking else {
+            if state == .detecting { resetToIdle() }
             return
         }
 
@@ -535,6 +556,10 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     }
 
     private func beginTracking() {
+        guard canStartNewTrip() else {
+            resetToIdle()
+            return
+        }
         detectionTimeoutTask?.cancel()
         detectionTimeoutTask = nil
         state = .tracking
@@ -658,6 +683,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
                     )
                     do {
                         try await self.repository.save(classifiedTrip)
+                        self.tripDidSave(classifiedTrip)
                         NotificationCenter.default.post(
                             name: .mileageTripsDidChange,
                             object: classifiedTrip.id
@@ -674,6 +700,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             }
             do {
                 try await self.repository.save(assignedTrip)
+                self.tripDidSave(assignedTrip)
                 NotificationCenter.default.post(
                     name: .mileageTripsDidChange,
                     object: assignedTrip.id

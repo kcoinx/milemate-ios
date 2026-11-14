@@ -27,7 +27,7 @@ struct MileMateApp: App {
 
     var body: some Scene {
         WindowGroup {
-            AppTabView(dependencies: dependencies)
+            MileMateRootView(dependencies: dependencies)
         }
         .modelContainer(dependencies.modelContainer)
     }

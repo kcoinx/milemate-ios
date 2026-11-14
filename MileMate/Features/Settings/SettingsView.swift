@@ -1,3 +1,4 @@
+import AuthenticationServices
 import CoreLocation
 import SwiftUI
 import UIKit
@@ -24,6 +25,7 @@ struct SettingsView: View {
     private let manualTripCoordinator: ManualTripCoordinator
     @Bindable private var automaticTripCoordinator: AutomaticTripCoordinator
     private let notificationService: any TripNotificationScheduling
+    @Bindable private var accountSession: AccountSessionController
     private let router: AppRouter
     @AppStorage("appAppearance") private var appearance = AppAppearance.system.rawValue
     @AppStorage(AutomaticTrackingSettings.enabledKey) private var automaticTrackingEnabled = false
@@ -50,18 +52,20 @@ struct SettingsView: View {
         manualTripCoordinator: ManualTripCoordinator,
         automaticTripCoordinator: AutomaticTripCoordinator,
         notificationService: any TripNotificationScheduling,
+        accountSession: AccountSessionController,
         router: AppRouter
     ) {
         _viewModel = State(initialValue: SettingsViewModel(repository: repository))
         self.manualTripCoordinator = manualTripCoordinator
         _automaticTripCoordinator = Bindable(wrappedValue: automaticTripCoordinator)
         self.notificationService = notificationService
+        _accountSession = Bindable(wrappedValue: accountSession)
         self.router = router
     }
 
     var body: some View {
         List {
-            profileSection
+            accountSection
 
             settingsSection("Tracking") {
                 Toggle(isOn: automaticTrackingBinding) {
@@ -382,29 +386,103 @@ struct SettingsView: View {
         } message: {
             Text(deletionErrorMessage ?? "")
         }
+        .confirmationDialog(
+            "Delete MileMate Account?",
+            isPresented: $accountSession.presentsDeletionConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Account", role: .destructive) {
+                Task { await accountSession.deleteAccount() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently deletes your authentication account. Trips stored locally on this iPhone will not be deleted.")
+        }
+        .alert(
+            "Account Action Failed",
+            isPresented: Binding(
+                get: { accountSession.authenticationError != nil },
+                set: { if !$0 { accountSession.authenticationError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { accountSession.authenticationError = nil }
+        } message: {
+            Text(accountSession.authenticationError ?? "")
+        }
     }
 
-    private var profileSection: some View {
-        Section {
-            NavigationLink {
-                ProfileSettingsView()
-            } label: {
+    @ViewBuilder
+    private var accountSection: some View {
+        Section("Account") {
+            if let account = accountSession.account {
                 HStack(spacing: AppTheme.Spacing.large) {
-                    Text("AM")
-                        .font(.title3.weight(.bold))
+                    Text(accountInitials(account))
+                        .font(.headline.weight(.bold))
                         .foregroundStyle(.white)
-                        .frame(width: 58, height: 58)
+                        .frame(width: 46, height: 46)
                         .background(AppTheme.Color.brand.gradient, in: Circle())
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Alex Morgan").font(.appTitle)
-                        Text("Independent Consultant")
-                            .font(.subheadline)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(account.displayName ?? "MileMate Account")
+                            .font(.headline)
+                        if let email = account.email {
+                            Text(email)
+                                .font(.subheadline)
+                                .foregroundStyle(AppTheme.Color.textSecondary)
+                                .lineLimit(1)
+                        }
+                        Text("Signed in with \(account.provider.rawValue)")
+                            .font(.caption)
                             .foregroundStyle(AppTheme.Color.textSecondary)
                     }
                 }
-                .padding(.vertical, AppTheme.Spacing.small)
+                .padding(.vertical, 4)
+                Button("Sign Out") { accountSession.signOut() }
+                Button("Delete Account", role: .destructive) {
+                    accountSession.presentsDeletionConfirmation = true
+                }
+                .disabled(accountSession.isAuthenticating)
+            } else {
+                LabeledContent {
+                    Text("\(accountSession.remainingGuestTrips) of 10 trips remaining")
+                        .foregroundStyle(AppTheme.Color.textSecondary)
+                } label: {
+                    Label("Guest", systemImage: "person.crop.circle")
+                }
+                SignInWithAppleButton(.continue) { request in
+                    accountSession.prepareAppleSignIn(request)
+                } onCompletion: { result in
+                    accountSession.completeAppleSignIn(result)
+                }
+                .signInWithAppleButtonStyle(.black)
+                .frame(height: 48)
+                .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.small))
+                Button {
+                    Task { await accountSession.authenticateWithGoogle() }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image("GoogleMark")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 18, height: 18)
+                        Text("Continue with Google")
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+                Text("Signing in keeps all trips already stored on this iPhone. Cloud backup is not enabled yet.")
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.Color.textSecondary)
             }
         }
+    }
+
+    private func accountInitials(_ account: AuthenticatedAccount) -> String {
+        let source = account.displayName ?? account.email ?? "MileMate"
+        let words = source.split(separator: " ").prefix(2)
+        let initials = words.compactMap { word in word.first }.map { character in
+            String(character)
+        }.joined()
+        return initials.isEmpty ? "M" : initials.uppercased()
     }
 
     private func settingsSection<Content: View>(
