@@ -6,6 +6,7 @@ protocol AutomaticLocationService: AnyObject {
     var authorizationStatus: CLAuthorizationStatus { get }
     var backgroundCapabilityAvailable: Bool { get }
     var significantLocationMonitoringAvailable: Bool { get }
+    var preciseLocationAvailable: Bool { get }
     var eventHandler: ((LocationServiceEvent) -> Void)? { get set }
     func requestWhenInUseAuthorization()
     func requestAlwaysAuthorization()
@@ -39,6 +40,10 @@ final class CoreAutomaticLocationService: NSObject, AutomaticLocationService, CL
 
     var significantLocationMonitoringAvailable: Bool {
         CLLocationManager.significantLocationChangeMonitoringAvailable()
+    }
+
+    var preciseLocationAvailable: Bool {
+        manager.accuracyAuthorization == .fullAccuracy
     }
 
     func requestWhenInUseAuthorization() {
@@ -131,6 +136,7 @@ final class MockAutomaticLocationService: AutomaticLocationService {
     var authorizationStatus: CLAuthorizationStatus = CLAuthorizationStatus.authorizedAlways
     var backgroundCapabilityAvailable = true
     var significantLocationMonitoringAvailable = true
+    var preciseLocationAvailable = true
     var eventHandler: ((LocationServiceEvent) -> Void)?
     private(set) var isLowPowerMonitoring = false
     private(set) var isPreciseTracking = false
@@ -156,6 +162,10 @@ final class MockAutomaticLocationService: AutomaticLocationService {
 
     func send(_ samples: [LocationSample]) {
         eventHandler?(.locations(samples))
+    }
+
+    func sendFailure(_ message: String = "Location temporarily unavailable") {
+        eventHandler?(.failed(message))
     }
 }
 #endif

@@ -47,14 +47,74 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         enableAutomaticTracking()
         defer { clearAutomaticTrackingState() }
         let (coordinator, location, motion) = makeCoordinator()
+        motion.recentActivity = activity(.automotive, confidence: .medium)
 
         coordinator.startIfEnabled()
         location.send(drivingSamples(latitudeDelta: 0.005))
-        XCTAssertEqual(coordinator.state, .idle)
-
-        motion.send(activity(.automotive, confidence: .medium))
 
         XCTAssertEqual(coordinator.state, .tracking)
+        XCTAssertEqual(motion.recentActivityRefreshCount, 1)
+    }
+
+    func testSlowDrivingRequiresStrongAutomotiveAndSustainedMovement() {
+        XCTAssertTrue(
+            AutomaticDrivingConfirmation.qualifies(
+                distanceMeters: 180,
+                highestObservedSpeed: 2.2,
+                acceptedSampleCount: 4,
+                automotiveConfidence: .high
+            )
+        )
+        XCTAssertFalse(
+            AutomaticDrivingConfirmation.qualifies(
+                distanceMeters: 180,
+                highestObservedSpeed: 2.2,
+                acceptedSampleCount: 4,
+                automotiveConfidence: .medium
+            )
+        )
+        XCTAssertFalse(
+            AutomaticDrivingConfirmation.qualifies(
+                distanceMeters: 70,
+                highestObservedSpeed: 2.2,
+                acceptedSampleCount: 4,
+                automotiveConfidence: .high
+            )
+        )
+    }
+
+    func testCyclingEvidenceCancelsUnconfirmedDrive() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, _, motion) = makeCoordinator()
+
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .medium))
+        XCTAssertEqual(coordinator.state, .detecting)
+
+        motion.send(activity(.cycling, confidence: .high))
+        XCTAssertEqual(coordinator.state, .idle)
+    }
+
+    func testTripEndPreferenceDefaultsToTenMinutesAndSupportsExpectedChoices() {
+        let defaults = UserDefaults.standard
+        let original = defaults.object(forKey: AutomaticTrackingSettings.tripEndDelayKey)
+        defer {
+            if let original {
+                defaults.set(original, forKey: AutomaticTrackingSettings.tripEndDelayKey)
+            } else {
+                defaults.removeObject(forKey: AutomaticTrackingSettings.tripEndDelayKey)
+            }
+        }
+
+        defaults.removeObject(forKey: AutomaticTrackingSettings.tripEndDelayKey)
+        XCTAssertEqual(AutomaticTrackingSettings.tripEndDelay, 600)
+        for delay in AutomaticTrackingSettings.supportedTripEndDelays {
+            defaults.set(delay, forKey: AutomaticTrackingSettings.tripEndDelayKey)
+            XCTAssertEqual(AutomaticTrackingSettings.tripEndDelay, delay)
+        }
+        defaults.set(42, forKey: AutomaticTrackingSettings.tripEndDelayKey)
+        XCTAssertEqual(AutomaticTrackingSettings.tripEndDelay, 600)
     }
 
     func testStationaryMotionDuringGPSWarmupDoesNotCancelDetection() {
@@ -154,6 +214,24 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .tracking)
     }
 
+    func testTransientBackgroundLocationInterruptionPreservesActiveTripAndRearmsDetection() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, location, motion) = makeCoordinator()
+
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .high))
+        location.send(drivingSamples(latitudeDelta: 0.005))
+        XCTAssertEqual(coordinator.state, .tracking)
+
+        location.sendFailure()
+
+        XCTAssertEqual(coordinator.state, .tracking)
+        XCTAssertTrue(location.isLowPowerMonitoring)
+        XCTAssertTrue(motion.isUpdating)
+        XCTAssertEqual(motion.recentActivityRefreshCount, 1)
+    }
+
     func testDetectingAndActiveTrackingRestoreAfterCoordinatorRecreation() {
         enableAutomaticTracking()
         defer { clearAutomaticTrackingState() }
@@ -245,6 +323,15 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         XCTAssertEqual(
             AutomaticTrackingReadiness.evaluate(
                 location: .authorizedAlways,
+                preciseLocationAvailable: false,
+                motion: .authorized,
+                backgroundCapabilityAvailable: true
+            ),
+            .preciseLocationRequired
+        )
+        XCTAssertEqual(
+            AutomaticTrackingReadiness.evaluate(
+                location: .authorizedAlways,
                 motion: .denied,
                 backgroundCapabilityAvailable: true
             ),
@@ -324,6 +411,10 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         XCTAssertEqual(
             TrackingPermissionAction(readiness: .motionPermissionRequired)?.title,
             "Review Motion & Fitness"
+        )
+        XCTAssertEqual(
+            TrackingPermissionAction(readiness: .preciseLocationRequired)?.title,
+            "Review Location"
         )
         XCTAssertNil(TrackingPermissionAction(readiness: .ready))
         XCTAssertNil(TrackingPermissionAction(readiness: .backgroundCapabilityUnavailable))

@@ -526,6 +526,8 @@ struct DashboardView: View {
             return "Drive normally. MileMate will automatically detect and record qualifying trips."
         case .locationPermissionRequired:
             return "Allow Always Location access so MileMate can automatically track trips."
+        case .preciseLocationRequired:
+            return "Turn on Precise Location for MileMate so mileage can be recorded reliably."
         case .motionPermissionRequired:
             return "Allow Motion & Fitness so MileMate can detect when you are driving."
         case .backgroundCapabilityUnavailable:
@@ -541,6 +543,8 @@ struct DashboardView: View {
             return "Automatic Tracking Active"
         case .locationPermissionRequired:
             return "Location Needed"
+        case .preciseLocationRequired:
+            return "Precise Location Needed"
         case .motionPermissionRequired:
             return "Motion & Fitness Needed"
         case .backgroundCapabilityUnavailable:

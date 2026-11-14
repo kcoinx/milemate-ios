@@ -37,6 +37,7 @@ protocol MotionActivityService: AnyObject {
     var eventHandler: ((MotionActivitySample) -> Void)? { get set }
     func startUpdates()
     func stopUpdates()
+    func refreshRecentActivity(since date: Date)
 }
 
 @MainActor
@@ -87,6 +88,23 @@ final class CoreMotionActivityService: MotionActivityService {
         manager.stopActivityUpdates()
     }
 
+    func refreshRecentActivity(since date: Date) {
+        guard CMMotionActivityManager.isActivityAvailable() else { return }
+        manager.queryActivityStarting(from: date, to: .now, to: .main) { [weak self] activities, _ in
+            guard let activity = activities?.max(by: { first, second in
+                first.startDate < second.startDate
+            }) else { return }
+            let sample = MotionActivitySample(
+                kind: Self.kind(for: activity),
+                confidence: Self.confidence(for: activity.confidence),
+                timestamp: activity.startDate
+            )
+            Task { @MainActor [weak self] in
+                self?.eventHandler?(sample)
+            }
+        }
+    }
+
     nonisolated private static func kind(for activity: CMMotionActivity) -> MotionKind {
         if activity.automotive { return MotionKind.automotive }
         if activity.cycling { return MotionKind.cycling }
@@ -117,9 +135,17 @@ final class MockMotionActivityService: MotionActivityService {
     var activityMonitoringAvailable = true
     var eventHandler: ((MotionActivitySample) -> Void)?
     private(set) var isUpdating = false
+    private(set) var recentActivityRefreshCount = 0
+    var recentActivity: MotionActivitySample?
 
     func startUpdates() { isUpdating = true }
     func stopUpdates() { isUpdating = false }
+    func refreshRecentActivity(since date: Date) {
+        recentActivityRefreshCount += 1
+        if let recentActivity {
+            eventHandler?(recentActivity)
+        }
+    }
 
     func send(_ sample: MotionActivitySample) {
         guard isUpdating else { return }

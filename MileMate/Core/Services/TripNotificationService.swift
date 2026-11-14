@@ -2,15 +2,17 @@
 import Foundation
 
 enum TripNotificationCopy {
-    static let completionTitle = "Trip Complete"
+    static let completionTitle = "MileMate — Trip Complete"
     static let reviewTitle = "Trips Waiting for Review"
 
     static func completionBody(for trip: Trip) -> String {
         let miles = trip.distanceMiles.formatted(.number.precision(.fractionLength(1)))
+        let minutes = max(Int((trip.duration / 60).rounded()), 1)
+        let duration = minutes == 1 ? "1 minute" : "\(minutes) minutes"
         if trip.classification == .unclassified {
-            return "\(miles) miles recorded. Tap to review."
+            return "You drove \(miles) miles in \(duration). Business or Personal? Tap to classify your trip."
         }
-        return "\(miles) miles recorded and classified as \(trip.classification.rawValue)."
+        return "You drove \(miles) miles in \(duration). Saved as \(trip.classification.rawValue)."
     }
 
     static func reviewBody(count: Int) -> String {
@@ -39,8 +41,8 @@ enum TripNotificationSettings {
 
     static func registerDefaults(in defaults: UserDefaults = .standard) {
         defaults.register(defaults: [
-            completionEnabledKey: true,
-            remindersEnabledKey: true
+            completionEnabledKey: false,
+            remindersEnabledKey: false
         ])
     }
 

@@ -5,7 +5,10 @@ import Observation
 enum AutomaticTrackingSettings {
     static let enabledKey = "automaticTrackingEnabled"
     static let minimumDistanceKey = "automaticMinimumTripDistance"
+    static let tripEndDelayKey = "automaticTripEndDelay"
     static let defaultMinimumDistance = 0.30
+    static let defaultTripEndDelay: TimeInterval = 600
+    static let supportedTripEndDelays: [TimeInterval] = [300, 600, 1_200]
 
     static var isEnabled: Bool {
         UserDefaults.standard.bool(forKey: enabledKey)
@@ -14,6 +17,28 @@ enum AutomaticTrackingSettings {
     static var minimumDistance: Double {
         let value = UserDefaults.standard.double(forKey: minimumDistanceKey)
         return value > 0 ? value : defaultMinimumDistance
+    }
+
+    static var tripEndDelay: TimeInterval {
+        let value = UserDefaults.standard.double(forKey: tripEndDelayKey)
+        return supportedTripEndDelays.contains(value) ? value : defaultTripEndDelay
+    }
+}
+
+enum AutomaticDrivingConfirmation {
+    static func qualifies(
+        distanceMeters: Double,
+        highestObservedSpeed: Double,
+        acceptedSampleCount: Int,
+        automotiveConfidence: MotionConfidence?
+    ) -> Bool {
+        let standardDrivingConfirmed = distanceMeters >= 80 && highestObservedSpeed >= 4
+        let slowDrivingConfirmed =
+            automotiveConfidence == .high &&
+            acceptedSampleCount >= 3 &&
+            distanceMeters >= 160 &&
+            highestObservedSpeed >= 1.5
+        return standardDrivingConfirmed || slowDrivingConfirmed
     }
 }
 
@@ -40,6 +65,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         let samples: [LocationSample]
         let distanceMeters: Double
         let automotiveConfirmed: Bool
+        let automotiveConfidence: MotionConfidence?
         let highestObservedSpeed: Double
         let isTracking: Bool
         let candidateStopStartedAt: Date?
@@ -52,10 +78,11 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     private let repository: any MileageRepository
     private let notificationService: any TripNotificationScheduling
     private let isManualTrackingActive: @MainActor () -> Bool
-    private let stopInterval: TimeInterval
+    private let stopIntervalOverride: TimeInterval?
     private let detectionTimeout: TimeInterval
     private var processor = LocationSampleProcessor()
     private var automotiveConfirmed = false
+    private var automotiveConfidence: MotionConfidence?
     private var detectionStartedAt: Date?
     private var candidateStartedAt: Date?
     private var highestObservedSpeed = 0.0
@@ -84,7 +111,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         motionService: any MotionActivityService,
         repository: any MileageRepository,
         notificationService: any TripNotificationScheduling,
-        stopInterval: TimeInterval = 180,
+        stopInterval: TimeInterval? = nil,
         detectionTimeout: TimeInterval = 180,
         isManualTrackingActive: @escaping @MainActor () -> Bool
     ) {
@@ -92,7 +119,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         self.motionService = motionService
         self.repository = repository
         self.notificationService = notificationService
-        self.stopInterval = stopInterval
+        self.stopIntervalOverride = stopInterval
         self.detectionTimeout = detectionTimeout
         self.isManualTrackingActive = isManualTrackingActive
 
@@ -132,9 +159,14 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         locationService.backgroundCapabilityAvailable
     }
 
+    var preciseLocationAvailable: Bool {
+        locationService.preciseLocationAvailable
+    }
+
     var trackingReadiness: AutomaticTrackingReadiness {
         AutomaticTrackingReadiness.evaluate(
             location: locationService.authorizationStatus,
+            preciseLocationAvailable: locationService.preciseLocationAvailable,
             motion: motionService.permissionStatus,
             backgroundCapabilityAvailable: locationService.backgroundCapabilityAvailable,
             significantLocationMonitoringAvailable: locationService.significantLocationMonitoringAvailable,
@@ -145,6 +177,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     var readinessSnapshot: AutomaticTrackingReadinessSnapshot {
         AutomaticTrackingReadinessSnapshot(
             locationAuthorization: locationService.authorizationStatus,
+            preciseLocationAvailable: locationService.preciseLocationAvailable,
             motionAuthorization: motionService.permissionStatus,
             backgroundCapabilityAvailable: locationService.backgroundCapabilityAvailable,
             significantLocationMonitoringAvailable: locationService.significantLocationMonitoringAvailable,
@@ -152,6 +185,10 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             automaticTrackingEnabled: AutomaticTrackingSettings.isEnabled,
             result: trackingReadiness
         )
+    }
+
+    private var stopInterval: TimeInterval {
+        stopIntervalOverride ?? AutomaticTrackingSettings.tripEndDelay
     }
 
     func startIfEnabled() {
@@ -307,6 +344,9 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
                 TrackingDiagnostics.log(
                     "low-power location wake buffered while awaiting automotive motion evidence; sampleCount=\(samples.count)"
                 )
+                startMotionMonitoring()
+                motionService.refreshRecentActivity(since: .now.addingTimeInterval(-300))
+                TrackingDiagnostics.log("motion monitoring re-armed after low-power location wake")
                 return
             }
             guard state == .detecting || state == .tracking else {
@@ -321,9 +361,17 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         case .failed(let message):
             guard state == .detecting || state == .tracking else { return }
             TrackingDiagnostics.log("automatic location service failed while \(state): \(message)")
-            state = .failed(message)
-            stopPreciseSession()
+            guard trackingReadiness == .ready else {
+                state = .permissionRequired
+                return
+            }
+            // Core Location failures can be transient during background execution.
+            // Preserve the active detector/trip and re-arm the low-power wake path
+            // instead of discarding the in-memory route until the app is reopened.
             locationService.startLowPowerMonitoring()
+            startMotionMonitoring()
+            motionService.refreshRecentActivity(since: .now.addingTimeInterval(-300))
+            TrackingDiagnostics.log("automatic detector preserved after transient location interruption")
         }
     }
 
@@ -361,6 +409,10 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
 
         if activity.kind == .automotive, activity.confidence != .low {
             automotiveConfirmed = true
+            if automotiveConfidence == nil ||
+                activity.confidence.rawValue > (automotiveConfidence?.rawValue ?? 0) {
+                automotiveConfidence = activity.confidence
+            }
             TrackingDiagnostics.log("automotive movement accepted as detection evidence")
             cancelStopCountdown()
             if state == .idle {
@@ -440,20 +492,19 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         var rejectionCounts: [String: Int] = [:]
         for sample in samples {
             let reportsStationarySpeed = sample.speed >= 0 && sample.speed < 1.5
-            if state == .tracking, sample.speed >= 0 {
-                reportsStationarySpeed
-                    ? scheduleStopCountdown(lowSpeedEvidence: true)
-                    : cancelStopCountdown()
-            }
-
-            if state == .tracking, reportsStationarySpeed {
-                continue
-            }
             let processingResult = processor.processWithResult(sample)
             guard processingResult == .accepted else {
+                if state == .tracking, reportsStationarySpeed {
+                    scheduleStopCountdown(lowSpeedEvidence: true)
+                }
                 let reason = diagnosticName(for: processingResult)
                 rejectionCounts[reason, default: 0] += 1
                 continue
+            }
+            if state == .tracking {
+                reportsStationarySpeed
+                    ? scheduleStopCountdown(lowSpeedEvidence: true)
+                    : cancelStopCountdown()
             }
             if sample.speed >= 0 {
                 highestObservedSpeed = max(highestObservedSpeed, sample.speed)
@@ -469,8 +520,12 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
 
             if state == .detecting,
                automotiveConfirmed,
-               distanceMeters >= Self.confirmationDistanceMeters,
-               highestObservedSpeed >= Self.minimumDrivingSpeed {
+               AutomaticDrivingConfirmation.qualifies(
+                   distanceMeters: distanceMeters,
+                   highestObservedSpeed: highestObservedSpeed,
+                   acceptedSampleCount: processor.acceptedSamples.count,
+                   automotiveConfidence: automotiveConfidence
+               ) {
                 beginTracking()
             }
         }
@@ -543,6 +598,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         guard state == .tracking, let startedAt = candidateStartedAt else { return }
         let route = currentRoute
         let miles = distanceMiles
+        let stoppedAt = candidateStopStartedAt ?? .now
         stopPreciseSession()
         clearPersistedActiveTrip()
 
@@ -557,7 +613,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         let trip = Trip(
             id: UUID(),
             startedAt: startedAt,
-            endedAt: .now,
+            endedAt: max(stoppedAt, startedAt),
             originName: "Unknown location",
             destinationName: "Unknown location",
             distanceMiles: miles,
@@ -567,6 +623,11 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             endCoordinate: route.last,
             route: route
         )
+        if persistPendingTrip(trip) {
+            TrackingDiagnostics.log("completed automatic trip staged for crash-safe persistence")
+        } else {
+            TrackingDiagnostics.log("completed automatic trip could not be staged for recovery")
+        }
         resetToIdle()
         Task { [weak self] in
             guard let self else { return }
@@ -601,6 +662,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
                             name: .mileageTripsDidChange,
                             object: classifiedTrip.id
                         )
+                        self.clearPersistedPendingTrip()
                         await self.notificationService.scheduleTripCompletion(for: classifiedTrip)
                         TrackingDiagnostics.log("automatic trip persisted successfully with approved classification rule")
                         self.reverseGeocodeStoredTrip(classifiedTrip)
@@ -616,11 +678,15 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
                     name: .mileageTripsDidChange,
                     object: assignedTrip.id
                 )
+                self.clearPersistedPendingTrip()
                 self.completeAutomaticTrip(assignedTrip)
                 TrackingDiagnostics.log("automatic trip persisted successfully for review")
                 self.reverseGeocodeStoredTrip(assignedTrip)
             } catch {
                 TrackingDiagnostics.log("automatic trip could not be persisted")
+                self.pendingTrip = assignedTrip
+                self.persistPendingTrip(assignedTrip)
+                self.state = .reviewing
             }
         }
     }
@@ -648,6 +714,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         detectionTimeoutTask = nil
         cancelStopCountdown()
         automotiveConfirmed = false
+        automotiveConfidence = nil
     }
 
     private func resetToIdle() {
@@ -662,6 +729,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         pendingLowPowerSamples.removeAll()
         highestObservedSpeed = 0
         if AutomaticTrackingSettings.isEnabled {
+            startMotionMonitoring()
             locationService.startLowPowerMonitoring()
             state = .idle
         } else {
@@ -680,6 +748,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             samples: processor.acceptedSamples,
             distanceMeters: distanceMeters,
             automotiveConfirmed: automotiveConfirmed,
+            automotiveConfidence: automotiveConfidence,
             highestObservedSpeed: highestObservedSpeed,
             isTracking: state == .tracking,
             candidateStopStartedAt: candidateStopStartedAt,
@@ -706,6 +775,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         processor.restore(samples: envelope.samples, distanceMeters: envelope.distanceMeters)
         distanceMeters = envelope.distanceMeters
         automotiveConfirmed = envelope.automotiveConfirmed
+        automotiveConfidence = envelope.automotiveConfidence
         highestObservedSpeed = envelope.highestObservedSpeed
         candidateStopStartedAt = envelope.candidateStopStartedAt
         motionStopEvidence = envelope.motionStopEvidence ?? false

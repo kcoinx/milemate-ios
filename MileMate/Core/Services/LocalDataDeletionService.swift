@@ -6,6 +6,7 @@ enum MileMatePreferenceKeys {
         "appAppearance",
         AutomaticTrackingSettings.enabledKey,
         AutomaticTrackingSettings.minimumDistanceKey,
+        AutomaticTrackingSettings.tripEndDelayKey,
         TripNotificationSettings.completionEnabledKey,
         TripNotificationSettings.remindersEnabledKey,
         ClassificationSettings.automaticRulesEnabledKey,

@@ -24,12 +24,14 @@ enum BackgroundLocationCapability {
 enum AutomaticTrackingReadiness: Equatable {
     case ready
     case locationPermissionRequired
+    case preciseLocationRequired
     case motionPermissionRequired
     case backgroundCapabilityUnavailable
     case detectionServicesUnavailable
 
     static func evaluate(
         location: CLAuthorizationStatus,
+        preciseLocationAvailable: Bool = true,
         motion: MotionPermissionStatus,
         backgroundCapabilityAvailable: Bool,
         significantLocationMonitoringAvailable: Bool = true,
@@ -37,6 +39,9 @@ enum AutomaticTrackingReadiness: Equatable {
     ) -> AutomaticTrackingReadiness {
         guard location == .authorizedAlways else {
             return .locationPermissionRequired
+        }
+        guard preciseLocationAvailable else {
+            return .preciseLocationRequired
         }
         guard case .authorized = motion else {
             return .motionPermissionRequired
@@ -54,6 +59,7 @@ enum AutomaticTrackingReadiness: Equatable {
 
 struct AutomaticTrackingReadinessSnapshot: Equatable {
     let locationAuthorization: CLAuthorizationStatus
+    let preciseLocationAvailable: Bool
     let motionAuthorization: MotionPermissionStatus
     let backgroundCapabilityAvailable: Bool
     let significantLocationMonitoringAvailable: Bool
@@ -65,6 +71,7 @@ struct AutomaticTrackingReadinessSnapshot: Equatable {
         """
         Automatic Tracking Readiness:
         Location Authorization: \(locationAuthorization.diagnosticName)
+        Precise Location: \(preciseLocationAvailable ? "available" : "unavailable")
         Motion Authorization: \(motionAuthorization.diagnosticName)
         Background Location Capability: \(backgroundCapabilityAvailable ? "available" : "unavailable")
         Significant Change Monitoring: \(significantLocationMonitoringAvailable ? "available" : "unavailable")
@@ -80,6 +87,7 @@ extension AutomaticTrackingReadiness {
         switch self {
         case .ready: "ready"
         case .locationPermissionRequired: "unavailable — Always Location authorization is required"
+        case .preciseLocationRequired: "unavailable — Precise Location is required for reliable mileage"
         case .motionPermissionRequired: "unavailable — Motion & Fitness authorization is required"
         case .backgroundCapabilityUnavailable: "unavailable — UIBackgroundModes does not contain location"
         case .detectionServicesUnavailable: "unavailable - a required location or motion detection service is unavailable"
@@ -118,7 +126,7 @@ enum TrackingPermissionAction: Equatable {
 
     init?(readiness: AutomaticTrackingReadiness) {
         switch readiness {
-        case .locationPermissionRequired:
+        case .locationPermissionRequired, .preciseLocationRequired:
             self = .location
         case .motionPermissionRequired:
             self = .motion

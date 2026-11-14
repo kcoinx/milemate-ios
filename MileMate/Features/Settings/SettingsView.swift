@@ -29,10 +29,12 @@ struct SettingsView: View {
     @AppStorage(AutomaticTrackingSettings.enabledKey) private var automaticTrackingEnabled = false
     @AppStorage(AutomaticTrackingSettings.minimumDistanceKey)
     private var automaticMinimumDistance = AutomaticTrackingSettings.defaultMinimumDistance
+    @AppStorage(AutomaticTrackingSettings.tripEndDelayKey)
+    private var automaticTripEndDelay = Int(AutomaticTrackingSettings.defaultTripEndDelay)
     @AppStorage(TripNotificationSettings.completionEnabledKey, store: .standard)
-    private var tripDetectedNotificationsEnabled = true
+    private var tripDetectedNotificationsEnabled = false
     @AppStorage(TripNotificationSettings.remindersEnabledKey, store: .standard)
-    private var tripReviewRemindersEnabled = true
+    private var tripReviewRemindersEnabled = false
     @AppStorage(ClassificationSettings.automaticRulesEnabledKey)
     private var automaticClassificationEnabled = false
     @State private var showingAutomaticTrackingExplanation = false
@@ -123,6 +125,15 @@ struct SettingsView: View {
                         )
                     }
 
+                    Picker("End Trip After", selection: $automaticTripEndDelay) {
+                        Text("5 minutes").tag(300)
+                        Text("10 minutes").tag(600)
+                        Text("20 minutes").tag(1_200)
+                    }
+                    Text("How long MileMate waits after confirmed inactivity before completing an automatic trip.")
+                        .font(.footnote)
+                        .foregroundStyle(AppTheme.Color.textSecondary)
+
                     Text("PERMISSIONS")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(AppTheme.Color.textSecondary)
@@ -130,7 +141,9 @@ struct SettingsView: View {
                         "Location",
                         status: locationPermissionText,
                         icon: "location.circle.fill",
-                        isSufficient: automaticTripCoordinator.locationAuthorizationStatus == .authorizedAlways
+                        isSufficient:
+                            automaticTripCoordinator.locationAuthorizationStatus == .authorizedAlways &&
+                            automaticTripCoordinator.preciseLocationAvailable
                     )
                     permissionStatusRow(
                         "Motion & Fitness",
@@ -437,7 +450,9 @@ struct SettingsView: View {
     private var locationPermissionText: String {
         switch automaticTripCoordinator.locationAuthorizationStatus {
         case CLAuthorizationStatus.authorizedAlways:
-            return "Always Allowed"
+            return automaticTripCoordinator.preciseLocationAvailable
+                ? "Always Allowed"
+                : "Precise Location Off"
         case CLAuthorizationStatus.authorizedWhenInUse:
             return "While Using App"
         case CLAuthorizationStatus.denied:

@@ -37,6 +37,31 @@ final class TripNotificationTests: XCTestCase {
         XCTAssertNil(coordinator.pendingTrip)
     }
 
+    func testPersistenceFailureStagesTripWithoutSendingCompletionNotification() async {
+        defer { clearState() }
+        UserDefaults.standard.set(true, forKey: enabledKey)
+        UserDefaults.standard.set(0.30, forKey: minimumDistanceKey)
+        UserDefaults.standard.removeObject(forKey: pendingTripKey)
+        let notifications = MockTripNotificationService()
+        let location = MockAutomaticLocationService()
+        let motion = MockMotionActivityService()
+        let coordinator = AutomaticTripCoordinator(
+            locationService: location,
+            motionService: motion,
+            repository: FailingMileageRepository(),
+            notificationService: notifications,
+            stopInterval: 0.01,
+            isManualTrackingActive: { false }
+        )
+
+        await completeQualifyingTrip(coordinator, location: location, motion: motion)
+
+        XCTAssertTrue(notifications.scheduledTripIDs.isEmpty)
+        XCTAssertNotNil(coordinator.pendingTrip)
+        XCTAssertEqual(coordinator.state, .reviewing)
+        XCTAssertNotNil(UserDefaults.standard.data(forKey: pendingTripKey))
+    }
+
     func testCompletedTripDoesNotBlockDetectionOfNextTrip() async {
         defer { clearState() }
         let notifications = MockTripNotificationService()
@@ -142,16 +167,14 @@ final class TripNotificationTests: XCTestCase {
         XCTAssertEqual(NotificationSettingsRecovery(status: .notDetermined), .requestPermission)
     }
 
-    func testNotificationPreferencesPersistAcrossRecreationAndLifecycleReads() throws {
+    func testNotificationPreferencesRequireExplicitOptInAndPersistAcrossRecreation() throws {
         let suiteName = "TripNotificationTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
         TripNotificationSettings.registerDefaults(in: defaults)
 
-        XCTAssertTrue(defaults.bool(forKey: TripNotificationSettings.completionEnabledKey))
-        XCTAssertTrue(defaults.bool(forKey: TripNotificationSettings.remindersEnabledKey))
-        defaults.set(false, forKey: TripNotificationSettings.completionEnabledKey)
-        defaults.set(false, forKey: TripNotificationSettings.remindersEnabledKey)
+        XCTAssertFalse(defaults.bool(forKey: TripNotificationSettings.completionEnabledKey))
+        XCTAssertFalse(defaults.bool(forKey: TripNotificationSettings.remindersEnabledKey))
 
         let recreatedDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         XCTAssertFalse(recreatedDefaults.bool(forKey: TripNotificationSettings.completionEnabledKey))
@@ -237,7 +260,15 @@ final class TripNotificationTests: XCTestCase {
     }
 
     func testCompletionAndAggregatedReviewCopy() {
-        XCTAssertEqual(TripNotificationCopy.completionTitle, "Trip Complete")
+        XCTAssertEqual(TripNotificationCopy.completionTitle, "MileMate — Trip Complete")
+        XCTAssertEqual(
+            TripNotificationCopy.completionBody(for: reviewTrip(classification: .unclassified)),
+            "You drove 2.0 miles in 30 minutes. Business or Personal? Tap to classify your trip."
+        )
+        XCTAssertEqual(
+            TripNotificationCopy.completionBody(for: reviewTrip(classification: .business)),
+            "You drove 2.0 miles in 30 minutes. Saved as Business."
+        )
         XCTAssertEqual(
             TripNotificationCopy.reviewBody(count: 1),
             "1 trip is waiting for review. Tap to classify it."
@@ -407,6 +438,20 @@ private actor RecordingMileageRepository: MileageRepository {
     func delete(_ trip: Trip) async throws {
         trips.removeAll { $0.id == trip.id }
     }
+}
+
+private actor FailingMileageRepository: MileageRepository {
+    enum SaveError: Error { case unavailable }
+
+    func fetchTrips() async throws -> [Trip] { [] }
+    func fetchSummary() async throws -> MileageSummary {
+        MileageSummaryCalculator.summary(for: [])
+    }
+    func fetchProfile() async throws -> UserProfile { MockData.profile }
+    func save(_ trip: Trip) async throws { throw SaveError.unavailable }
+    func update(_ trip: Trip) async throws { throw SaveError.unavailable }
+    func delete(_ trip: Trip) async throws {}
+    func replaceAllTrips(with trips: [Trip]) async throws {}
 }
 
 @MainActor
