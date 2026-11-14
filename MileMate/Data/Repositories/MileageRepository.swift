@@ -1,5 +1,42 @@
 import Foundation
 
+struct LocalDataScope: Hashable, Sendable {
+    let identifier: String
+
+    static func authenticated(userID: String) -> Self {
+        Self(identifier: "account:\(userID)")
+    }
+
+    static func guest(id: UUID) -> Self {
+        Self(identifier: "guest:\(id.uuidString.lowercased())")
+    }
+}
+
+final class LocalDataScopeProvider: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedScope: LocalDataScope?
+
+    init(scope: LocalDataScope? = nil) {
+        storedScope = scope
+    }
+
+    var current: LocalDataScope? {
+        lock.withLock { storedScope }
+    }
+
+    func setCurrent(_ scope: LocalDataScope?) {
+        lock.withLock { storedScope = scope }
+    }
+}
+
+enum LocalDataScopeError: LocalizedError {
+    case noActiveAccount
+
+    var errorDescription: String? {
+        "Choose a MileMate account or guest session before accessing mileage data."
+    }
+}
+
 protocol MileageRepository: Sendable {
     func fetchTrips() async throws -> [Trip]
     func fetchSummary() async throws -> MileageSummary
@@ -17,6 +54,7 @@ protocol MileageRepository: Sendable {
     func saveClassificationRule(_ rule: ClassificationRule) async throws
     func deleteClassificationRule(id: UUID) async throws
     func deleteAllLocalData() async throws
+    func migrateLocalData(from source: LocalDataScope, to destination: LocalDataScope) async throws
 }
 
 extension MileageRepository {
@@ -30,6 +68,7 @@ extension MileageRepository {
     func saveClassificationRule(_ rule: ClassificationRule) async throws {}
     func deleteClassificationRule(id: UUID) async throws {}
     func deleteAllLocalData() async throws {}
+    func migrateLocalData(from source: LocalDataScope, to destination: LocalDataScope) async throws {}
 }
 
 extension Notification.Name {

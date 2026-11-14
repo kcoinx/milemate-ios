@@ -4,6 +4,7 @@ import SwiftData
 @Model
 final class StoredTrip {
     @Attribute(.unique) var id: UUID
+    var ownerScope: String?
     var startedAt: Date
     var endedAt: Date
     var originName: String
@@ -31,8 +32,9 @@ final class StoredTrip {
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
 
-    init(trip: Trip) {
+    init(trip: Trip, ownerScope: String? = nil) {
         id = trip.id
+        self.ownerScope = ownerScope
         startedAt = trip.startedAt
         endedAt = trip.endedAt
         originName = trip.originName

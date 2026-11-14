@@ -4,6 +4,7 @@ import SwiftData
 @Model
 final class StoredVehicle {
     @Attribute(.unique) var id: UUID
+    var ownerScope: String?
     var nickname: String
     var year: Int?
     var make: String
@@ -13,8 +14,9 @@ final class StoredVehicle {
     var createdAt: Date
     var updatedAt: Date
 
-    init(vehicle: Vehicle) {
+    init(vehicle: Vehicle, ownerScope: String? = nil) {
         id = vehicle.id
+        self.ownerScope = ownerScope
         nickname = vehicle.nickname
         year = vehicle.year
         make = vehicle.make

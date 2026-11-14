@@ -306,6 +306,31 @@ struct SettingsView: View {
                 .frame(minHeight: 44)
                 .accessibilityHint("Begins a two-step permanent data deletion confirmation")
             }
+
+            Section {
+                Button("Log Out") { accountSession.logOut() }
+                    .frame(minHeight: 44)
+                    .disabled(accountActionsDisabled)
+                    .accessibilityHint("Returns to the MileMate welcome and sign-in screen")
+            } header: {
+                Text("Session")
+            } footer: {
+                if accountActionsDisabled {
+                    Text("Finish or discard the current trip before changing accounts.")
+                }
+            }
+
+            if accountSession.isAuthenticated {
+                Section {
+                    Button("Delete Account", role: .destructive) {
+                        accountSession.presentsDeletionConfirmation = true
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(accountSession.isAuthenticating || accountActionsDisabled)
+                } footer: {
+                    Text("Deletes your MileMate sign-in account after confirmation. Local mileage remains isolated on this iPhone.")
+                }
+            }
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
@@ -436,13 +461,6 @@ struct SettingsView: View {
                     }
                 }
                 .padding(.vertical, 4)
-                Button("Log Out") { accountSession.logOut() }
-                    .frame(minHeight: 44)
-                    .accessibilityHint("Returns to the MileMate welcome and sign-in screen")
-                Button("Delete Account", role: .destructive) {
-                    accountSession.presentsDeletionConfirmation = true
-                }
-                .disabled(accountSession.isAuthenticating)
             } else {
                 LabeledContent {
                     Text("\(accountSession.remainingGuestTrips) of 10 trips remaining")
@@ -458,6 +476,7 @@ struct SettingsView: View {
                 .signInWithAppleButtonStyle(.black)
                 .frame(height: 48)
                 .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.small))
+                .disabled(accountSession.isAuthenticating || accountActionsDisabled)
                 Button {
                     Task { await accountSession.authenticateWithGoogle() }
                 } label: {
@@ -471,13 +490,26 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.bordered)
-                Text("Signing in keeps all trips already stored on this iPhone. Cloud backup is not enabled yet.")
+                .disabled(accountSession.isAuthenticating || accountActionsDisabled)
+                Text("Signing in moves this guest trial's trips into your account on this iPhone. Cloud backup is not enabled yet.")
                     .font(.footnote)
                     .foregroundStyle(AppTheme.Color.textSecondary)
-                Button("Log Out") { accountSession.logOut() }
-                    .frame(minHeight: 44)
-                    .accessibilityHint("Returns to the MileMate welcome and sign-in screen")
             }
+        }
+    }
+
+    private var accountActionsDisabled: Bool {
+        switch manualTripCoordinator.state {
+        case .requestingPermission, .tracking, .reviewing:
+            return true
+        case .ready, .permissionDenied, .failed:
+            break
+        }
+        switch automaticTripCoordinator.state {
+        case .detecting, .tracking, .reviewing:
+            return true
+        case .disabled, .idle, .permissionRequired, .failed:
+            return false
         }
     }
 

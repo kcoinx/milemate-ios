@@ -16,6 +16,7 @@ final class AccountSessionController {
     private let secureStore: any SecureAccountStoring
     private let authenticationService: any AuthenticationServicing
     private let repository: any MileageRepository
+    private let dataScopeProvider: LocalDataScopeProvider
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private var currentAppleNonce: String?
@@ -29,10 +30,12 @@ final class AccountSessionController {
 
     init(
         repository: any MileageRepository,
+        dataScopeProvider: LocalDataScopeProvider = LocalDataScopeProvider(),
         secureStore: any SecureAccountStoring = KeychainAccountStore(),
         authenticationService: any AuthenticationServicing = FirebaseAuthenticationService()
     ) {
         self.repository = repository
+        self.dataScopeProvider = dataScopeProvider
         self.secureStore = secureStore
         self.authenticationService = authenticationService
         let decoder = JSONDecoder()
@@ -47,6 +50,7 @@ final class AccountSessionController {
         } else {
             state = .firstLaunch
         }
+        dataScopeProvider.setCurrent(Self.localDataScope(for: state))
         if case .guest = state { scheduleGuestReconciliation() }
     }
 
@@ -99,6 +103,7 @@ final class AccountSessionController {
             guest = GuestTrialRecord(guestID: UUID(), countedTripIDs: [])
         }
         state = .guest(guest)
+        dataScopeProvider.setCurrent(.guest(id: guest.guestID))
         persistGuest(guest)
         scheduleGuestReconciliation()
     }
@@ -177,6 +182,7 @@ final class AccountSessionController {
         authenticationError = nil
         presentsUpgrade = false
         state = .firstLaunch
+        dataScopeProvider.setCurrent(nil)
     }
 
     func deleteAccount() async {
@@ -200,11 +206,23 @@ final class AccountSessionController {
         defer { isAuthenticating = false }
         do {
             var account = try await operation()
-            account.migratedGuestID = guest?.guestID
+            let guestAtSignIn = guest
+            account.migratedGuestID = guestAtSignIn?.guestID
+            let accountScope = LocalDataScope.authenticated(userID: account.userID)
+            if let guestAtSignIn {
+                try await repository.migrateLocalData(
+                    from: .guest(id: guestAtSignIn.guestID),
+                    to: accountScope
+                )
+            }
             try secureStore.set(try encoder.encode(account), for: Key.authenticated)
             try? secureStore.remove(Key.loggedOut)
             state = .authenticated(account)
+            dataScopeProvider.setCurrent(accountScope)
             presentsUpgrade = false
+            NotificationCenter.default.post(name: .mileageTripsDidChange, object: nil)
+            NotificationCenter.default.post(name: .mileageVehiclesDidChange, object: nil)
+            NotificationCenter.default.post(name: .mileageClassificationDataDidChange, object: nil)
         } catch let error as AuthenticationError where error == .canceled {
             return
         } catch {
@@ -220,6 +238,17 @@ final class AccountSessionController {
     private func scheduleGuestReconciliation() {
         isReconcilingGuestTrial = true
         Task { await reconcileGuestTrial() }
+    }
+
+    private static func localDataScope(for state: AccountAccessState) -> LocalDataScope? {
+        switch state {
+        case .firstLaunch:
+            nil
+        case .guest(let guest):
+            .guest(id: guest.guestID)
+        case .authenticated(let account):
+            .authenticated(userID: account.userID)
+        }
     }
 
     private static func randomNonce() -> String {

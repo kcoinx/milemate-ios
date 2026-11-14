@@ -4,6 +4,7 @@ import SwiftData
 @Model
 final class StoredFrequentPlace {
     @Attribute(.unique) var id: UUID
+    var ownerScope: String?
     var label: String
     var latitude: Double
     var longitude: Double
@@ -12,8 +13,9 @@ final class StoredFrequentPlace {
     var createdAt: Date
     var updatedAt: Date
 
-    init(place: FrequentPlace) {
+    init(place: FrequentPlace, ownerScope: String? = nil) {
         id = place.id
+        self.ownerScope = ownerScope
         label = place.label
         latitude = place.latitude
         longitude = place.longitude
@@ -49,6 +51,7 @@ final class StoredFrequentPlace {
 @Model
 final class StoredClassificationRule {
     @Attribute(.unique) var id: UUID
+    var ownerScope: String?
     var startPlaceID: UUID
     var startLabel: String
     var endPlaceID: UUID
@@ -58,8 +61,9 @@ final class StoredClassificationRule {
     var createdAt: Date
     var updatedAt: Date
 
-    init(rule: ClassificationRule) {
+    init(rule: ClassificationRule, ownerScope: String? = nil) {
         id = rule.id
+        self.ownerScope = ownerScope
         startPlaceID = rule.startPlaceID
         startLabel = rule.startLabel
         endPlaceID = rule.endPlaceID

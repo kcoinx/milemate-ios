@@ -3,12 +3,23 @@ import SwiftData
 
 @ModelActor
 actor SwiftDataMileageRepository: MileageRepository {
+    nonisolated let scopeProvider: LocalDataScopeProvider
+
+    init(modelContainer: ModelContainer, scopeProvider: LocalDataScopeProvider) {
+        let context = ModelContext(modelContainer)
+        self.modelExecutor = DefaultSerialModelExecutor(modelContext: context)
+        self.modelContainer = modelContainer
+        self.scopeProvider = scopeProvider
+    }
+
     func fetchTrips() async throws -> [Trip] {
+        let ownerScope = try activeScopeIdentifier()
         let descriptor = FetchDescriptor<StoredTrip>(
+            predicate: #Predicate { $0.ownerScope == ownerScope },
             sortBy: [SortDescriptor(\.startedAt, order: .reverse)]
         )
         let storedTrips = try modelContext.fetch(descriptor)
-        let defaultVehicle = try ensureDefaultVehicle()
+        let defaultVehicle = try ensureDefaultVehicle(ownerScope: ownerScope)
         var migrated = false
         for storedTrip in storedTrips where storedTrip.vehicleID == nil {
             var trip = storedTrip.domainModel
@@ -34,14 +45,16 @@ actor SwiftDataMileageRepository: MileageRepository {
     }
 
     func save(_ trip: Trip) async throws {
-        modelContext.insert(StoredTrip(trip: trip))
+        let ownerScope = try activeScopeIdentifier()
+        modelContext.insert(StoredTrip(trip: trip, ownerScope: ownerScope))
         try modelContext.save()
     }
 
     func update(_ trip: Trip) async throws {
+        let ownerScope = try activeScopeIdentifier()
         let id = trip.id
         var descriptor = FetchDescriptor<StoredTrip>(
-            predicate: #Predicate { $0.id == id }
+            predicate: #Predicate { $0.id == id && $0.ownerScope == ownerScope }
         )
         descriptor.fetchLimit = 1
         guard let stored = try modelContext.fetch(descriptor).first else { return }
@@ -50,9 +63,10 @@ actor SwiftDataMileageRepository: MileageRepository {
     }
 
     func delete(_ trip: Trip) async throws {
+        let ownerScope = try activeScopeIdentifier()
         let id = trip.id
         var descriptor = FetchDescriptor<StoredTrip>(
-            predicate: #Predicate { $0.id == id }
+            predicate: #Predicate { $0.id == id && $0.ownerScope == ownerScope }
         )
         descriptor.fetchLimit = 1
         guard let stored = try modelContext.fetch(descriptor).first else { return }
@@ -61,8 +75,10 @@ actor SwiftDataMileageRepository: MileageRepository {
     }
 
     func fetchVehicles() async throws -> [Vehicle] {
-        _ = try ensureDefaultVehicle()
+        let ownerScope = try activeScopeIdentifier()
+        _ = try ensureDefaultVehicle(ownerScope: ownerScope)
         let descriptor = FetchDescriptor<StoredVehicle>(
+            predicate: #Predicate { $0.ownerScope == ownerScope },
             sortBy: [SortDescriptor(\.nickname)]
         )
         return try modelContext.fetch(descriptor)
@@ -75,9 +91,12 @@ actor SwiftDataMileageRepository: MileageRepository {
     }
 
     func saveVehicle(_ vehicle: Vehicle) async throws {
+        let ownerScope = try activeScopeIdentifier()
         if vehicle.isDefault {
             let defaults = try modelContext.fetch(
-                FetchDescriptor<StoredVehicle>(predicate: #Predicate { $0.isDefault })
+                FetchDescriptor<StoredVehicle>(
+                    predicate: #Predicate { $0.isDefault && $0.ownerScope == ownerScope }
+                )
             )
             for stored in defaults where stored.id != vehicle.id {
                 stored.isDefault = false
@@ -86,26 +105,29 @@ actor SwiftDataMileageRepository: MileageRepository {
         }
         let id = vehicle.id
         var descriptor = FetchDescriptor<StoredVehicle>(
-            predicate: #Predicate { $0.id == id }
+            predicate: #Predicate { $0.id == id && $0.ownerScope == ownerScope }
         )
         descriptor.fetchLimit = 1
         if let stored = try modelContext.fetch(descriptor).first {
             stored.update(from: vehicle)
         } else {
-            modelContext.insert(StoredVehicle(vehicle: vehicle))
+            modelContext.insert(StoredVehicle(vehicle: vehicle, ownerScope: ownerScope))
         }
         try modelContext.save()
     }
 
     func deleteVehicle(id: UUID, reassignTo vehicle: Vehicle?) async throws {
+        let ownerScope = try activeScopeIdentifier()
         var descriptor = FetchDescriptor<StoredVehicle>(
-            predicate: #Predicate { $0.id == id }
+            predicate: #Predicate { $0.id == id && $0.ownerScope == ownerScope }
         )
         descriptor.fetchLimit = 1
         guard let storedVehicle = try modelContext.fetch(descriptor).first else { return }
 
         if let vehicle {
-            let trips = try modelContext.fetch(FetchDescriptor<StoredTrip>())
+            let trips = try modelContext.fetch(
+                FetchDescriptor<StoredTrip>(predicate: #Predicate { $0.ownerScope == ownerScope })
+            )
                 .filter { $0.vehicleID == id }
             for storedTrip in trips {
                 var trip = storedTrip.domainModel
@@ -118,7 +140,9 @@ actor SwiftDataMileageRepository: MileageRepository {
         try modelContext.save()
 
         if wasDefault {
-            let remaining = try modelContext.fetch(FetchDescriptor<StoredVehicle>())
+            let remaining = try modelContext.fetch(
+                FetchDescriptor<StoredVehicle>(predicate: #Predicate { $0.ownerScope == ownerScope })
+            )
             if let replacement = remaining.first {
                 replacement.isDefault = true
                 replacement.updatedAt = .now
@@ -128,29 +152,33 @@ actor SwiftDataMileageRepository: MileageRepository {
     }
 
     func fetchFrequentPlaces() async throws -> [FrequentPlace] {
+        let ownerScope = try activeScopeIdentifier()
         let descriptor = FetchDescriptor<StoredFrequentPlace>(
+            predicate: #Predicate { $0.ownerScope == ownerScope },
             sortBy: [SortDescriptor(\.label)]
         )
         return try modelContext.fetch(descriptor).map(\.domainModel)
     }
 
     func saveFrequentPlace(_ place: FrequentPlace) async throws {
+        let ownerScope = try activeScopeIdentifier()
         let id = place.id
         var descriptor = FetchDescriptor<StoredFrequentPlace>(
-            predicate: #Predicate { $0.id == id }
+            predicate: #Predicate { $0.id == id && $0.ownerScope == ownerScope }
         )
         descriptor.fetchLimit = 1
         if let stored = try modelContext.fetch(descriptor).first {
             stored.update(from: place)
         } else {
-            modelContext.insert(StoredFrequentPlace(place: place))
+            modelContext.insert(StoredFrequentPlace(place: place, ownerScope: ownerScope))
         }
         try modelContext.save()
     }
 
     func deleteFrequentPlace(id: UUID) async throws {
+        let ownerScope = try activeScopeIdentifier()
         var descriptor = FetchDescriptor<StoredFrequentPlace>(
-            predicate: #Predicate { $0.id == id }
+            predicate: #Predicate { $0.id == id && $0.ownerScope == ownerScope }
         )
         descriptor.fetchLimit = 1
         if let stored = try modelContext.fetch(descriptor).first {
@@ -160,29 +188,33 @@ actor SwiftDataMileageRepository: MileageRepository {
     }
 
     func fetchClassificationRules() async throws -> [ClassificationRule] {
+        let ownerScope = try activeScopeIdentifier()
         let descriptor = FetchDescriptor<StoredClassificationRule>(
+            predicate: #Predicate { $0.ownerScope == ownerScope },
             sortBy: [SortDescriptor(\.createdAt)]
         )
         return try modelContext.fetch(descriptor).map(\.domainModel)
     }
 
     func saveClassificationRule(_ rule: ClassificationRule) async throws {
+        let ownerScope = try activeScopeIdentifier()
         let id = rule.id
         var descriptor = FetchDescriptor<StoredClassificationRule>(
-            predicate: #Predicate { $0.id == id }
+            predicate: #Predicate { $0.id == id && $0.ownerScope == ownerScope }
         )
         descriptor.fetchLimit = 1
         if let stored = try modelContext.fetch(descriptor).first {
             stored.update(from: rule)
         } else {
-            modelContext.insert(StoredClassificationRule(rule: rule))
+            modelContext.insert(StoredClassificationRule(rule: rule, ownerScope: ownerScope))
         }
         try modelContext.save()
     }
 
     func deleteClassificationRule(id: UUID) async throws {
+        let ownerScope = try activeScopeIdentifier()
         var descriptor = FetchDescriptor<StoredClassificationRule>(
-            predicate: #Predicate { $0.id == id }
+            predicate: #Predicate { $0.id == id && $0.ownerScope == ownerScope }
         )
         descriptor.fetchLimit = 1
         if let stored = try modelContext.fetch(descriptor).first {
@@ -192,23 +224,53 @@ actor SwiftDataMileageRepository: MileageRepository {
     }
 
     func deleteAllLocalData() async throws {
-        for trip in try modelContext.fetch(FetchDescriptor<StoredTrip>()) {
+        let ownerScope = try activeScopeIdentifier()
+        for trip in try modelContext.fetch(
+            FetchDescriptor<StoredTrip>(predicate: #Predicate { $0.ownerScope == ownerScope })
+        ) {
             modelContext.delete(trip)
         }
-        for vehicle in try modelContext.fetch(FetchDescriptor<StoredVehicle>()) {
+        for vehicle in try modelContext.fetch(
+            FetchDescriptor<StoredVehicle>(predicate: #Predicate { $0.ownerScope == ownerScope })
+        ) {
             modelContext.delete(vehicle)
         }
-        for place in try modelContext.fetch(FetchDescriptor<StoredFrequentPlace>()) {
+        for place in try modelContext.fetch(
+            FetchDescriptor<StoredFrequentPlace>(predicate: #Predicate { $0.ownerScope == ownerScope })
+        ) {
             modelContext.delete(place)
         }
-        for rule in try modelContext.fetch(FetchDescriptor<StoredClassificationRule>()) {
+        for rule in try modelContext.fetch(
+            FetchDescriptor<StoredClassificationRule>(predicate: #Predicate { $0.ownerScope == ownerScope })
+        ) {
             modelContext.delete(rule)
         }
         try modelContext.save()
     }
 
-    private func ensureDefaultVehicle() throws -> Vehicle {
-        let existing = try modelContext.fetch(FetchDescriptor<StoredVehicle>())
+    func migrateLocalData(from source: LocalDataScope, to destination: LocalDataScope) async throws {
+        guard source != destination else { return }
+        let sourceID = source.identifier
+        let destinationID = destination.identifier
+        for model in try modelContext.fetch(
+            FetchDescriptor<StoredTrip>(predicate: #Predicate { $0.ownerScope == sourceID })
+        ) { model.ownerScope = destinationID }
+        for model in try modelContext.fetch(
+            FetchDescriptor<StoredVehicle>(predicate: #Predicate { $0.ownerScope == sourceID })
+        ) { model.ownerScope = destinationID }
+        for model in try modelContext.fetch(
+            FetchDescriptor<StoredFrequentPlace>(predicate: #Predicate { $0.ownerScope == sourceID })
+        ) { model.ownerScope = destinationID }
+        for model in try modelContext.fetch(
+            FetchDescriptor<StoredClassificationRule>(predicate: #Predicate { $0.ownerScope == sourceID })
+        ) { model.ownerScope = destinationID }
+        try modelContext.save()
+    }
+
+    private func ensureDefaultVehicle(ownerScope: String) throws -> Vehicle {
+        let existing = try modelContext.fetch(
+            FetchDescriptor<StoredVehicle>(predicate: #Predicate { $0.ownerScope == ownerScope })
+        )
         let defaults = existing.filter(\.isDefault)
         if let currentDefault = defaults.first {
             for duplicate in defaults.dropFirst() {
@@ -231,8 +293,14 @@ actor SwiftDataMileageRepository: MileageRepository {
             model: UserDefaults.standard.string(forKey: "vehicle.model") ?? "",
             isDefault: true
         )
-        modelContext.insert(StoredVehicle(vehicle: vehicle))
+        modelContext.insert(StoredVehicle(vehicle: vehicle, ownerScope: ownerScope))
         try modelContext.save()
         return vehicle
     }
+
+    private func activeScopeIdentifier() throws -> String {
+        guard let scope = scopeProvider.current else { throw LocalDataScopeError.noActiveAccount }
+        return scope.identifier
+    }
+
 }

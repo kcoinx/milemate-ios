@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import XCTest
 @testable import MileMate
 
@@ -169,6 +170,110 @@ final class AccountSessionTests: XCTestCase {
         XCTAssertEqual(automatic.state, .idle)
         XCTAssertFalse(automaticLocation.isPreciseTracking)
         XCTAssertFalse(automaticLocation.isLowPowerMonitoring)
+    }
+
+    func testDifferentAuthenticatedAccountsSeeOnlyTheirOwnTrips() async throws {
+        let (repository, scopeProvider, _) = try makeSwiftDataRepository()
+        let firstTrip = testTrip()
+        let secondTrip = testTrip()
+
+        scopeProvider.setCurrent(.authenticated(userID: "google-user-one"))
+        try await repository.save(firstTrip)
+
+        scopeProvider.setCurrent(.authenticated(userID: "google-user-two"))
+        let secondAccountBeforeSave = try await repository.fetchTrips()
+        XCTAssertTrue(secondAccountBeforeSave.isEmpty)
+        try await repository.save(secondTrip)
+        let secondAccountTrips = try await repository.fetchTrips()
+        XCTAssertEqual(secondAccountTrips.map { $0.id }, [secondTrip.id])
+
+        scopeProvider.setCurrent(.authenticated(userID: "google-user-one"))
+        let firstAccountTrips = try await repository.fetchTrips()
+        XCTAssertEqual(firstAccountTrips.map { $0.id }, [firstTrip.id])
+    }
+
+    func testGuestSessionsAreIsolatedFromAccountsAndOtherGuests() async throws {
+        let (repository, scopeProvider, _) = try makeSwiftDataRepository()
+        let firstGuestID = UUID()
+        let secondGuestID = UUID()
+        let guestTrip = testTrip()
+
+        scopeProvider.setCurrent(.guest(id: firstGuestID))
+        try await repository.save(guestTrip)
+
+        scopeProvider.setCurrent(.guest(id: secondGuestID))
+        let secondGuestTrips = try await repository.fetchTrips()
+        XCTAssertTrue(secondGuestTrips.isEmpty)
+
+        scopeProvider.setCurrent(.authenticated(userID: "signed-in-user"))
+        let accountTrips = try await repository.fetchTrips()
+        XCTAssertTrue(accountTrips.isEmpty)
+
+        scopeProvider.setCurrent(.guest(id: firstGuestID))
+        let firstGuestTrips = try await repository.fetchTrips()
+        XCTAssertEqual(firstGuestTrips.map { $0.id }, [guestTrip.id])
+    }
+
+    func testGuestUpgradeMigratesOnlyThatGuestData() async throws {
+        let (repository, scopeProvider, _) = try makeSwiftDataRepository()
+        let upgradingGuest = LocalDataScope.guest(id: UUID())
+        let otherGuest = LocalDataScope.guest(id: UUID())
+        let account = LocalDataScope.authenticated(userID: "upgraded-user")
+        let upgradingTrip = testTrip()
+        let otherTrip = testTrip()
+
+        scopeProvider.setCurrent(upgradingGuest)
+        try await repository.save(upgradingTrip)
+        scopeProvider.setCurrent(otherGuest)
+        try await repository.save(otherTrip)
+
+        try await repository.migrateLocalData(from: upgradingGuest, to: account)
+        scopeProvider.setCurrent(account)
+        let accountTrips = try await repository.fetchTrips()
+        XCTAssertEqual(accountTrips.map { $0.id }, [upgradingTrip.id])
+
+        scopeProvider.setCurrent(otherGuest)
+        let otherGuestTrips = try await repository.fetchTrips()
+        XCTAssertEqual(otherGuestTrips.map { $0.id }, [otherTrip.id])
+    }
+
+    func testLegacyTripsWithoutKnownOwnerRemainUnassigned() async throws {
+        let (repository, scopeProvider, container) = try makeSwiftDataRepository()
+        let legacyTrip = testTrip()
+        container.mainContext.insert(StoredTrip(trip: legacyTrip))
+        try container.mainContext.save()
+
+        scopeProvider.setCurrent(.authenticated(userID: "new-user"))
+        let accountTrips = try await repository.fetchTrips()
+        XCTAssertTrue(accountTrips.isEmpty)
+
+        scopeProvider.setCurrent(.guest(id: UUID()))
+        let guestTrips = try await repository.fetchTrips()
+        XCTAssertTrue(guestTrips.isEmpty)
+    }
+
+    private func makeSwiftDataRepository() throws -> (
+        SwiftDataMileageRepository,
+        LocalDataScopeProvider,
+        ModelContainer
+    ) {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(
+            for: StoredTrip.self,
+            StoredVehicle.self,
+            StoredFrequentPlace.self,
+            StoredClassificationRule.self,
+            configurations: configuration
+        )
+        let scopeProvider = LocalDataScopeProvider()
+        return (
+            SwiftDataMileageRepository(
+                modelContainer: container,
+                scopeProvider: scopeProvider
+            ),
+            scopeProvider,
+            container
+        )
     }
 
     private func makeController(
