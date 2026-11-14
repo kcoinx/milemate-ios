@@ -25,6 +25,10 @@ struct GuestTrialRecord: Codable, Equatable, Sendable {
     var completedTripCount: Int { countedTripIDs.count }
     var remainingTripCount: Int { max(Self.tripLimit - completedTripCount, 0) }
     var canRecordAnotherTrip: Bool { completedTripCount < Self.tripLimit }
+
+    static func countsTowardTrial(_ trip: Trip) -> Bool {
+        trip.classification != .unclassified
+    }
 }
 
 enum AccountAccessState: Equatable, Sendable {

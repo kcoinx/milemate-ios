@@ -262,6 +262,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         } else {
             try await repository.save(trip)
         }
+        tripDidSave(trip)
         notificationService.cancelNotifications(for: trip.id)
         await notificationService.reconcileReviewReminder()
         NotificationCenter.default.post(name: .mileageTripsDidChange, object: trip.id)
@@ -700,7 +701,6 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             }
             do {
                 try await self.repository.save(assignedTrip)
-                self.tripDidSave(assignedTrip)
                 NotificationCenter.default.post(
                     name: .mileageTripsDidChange,
                     object: assignedTrip.id

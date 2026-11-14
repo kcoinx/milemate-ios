@@ -11,8 +11,11 @@ struct MileMateRootView: View {
 
     var body: some View {
         Group {
-            if accountSession.requiresWelcome {
-                WelcomeView(accountSession: accountSession, allowsGuestAccess: true)
+            if accountSession.requiresWelcome || accountSession.requiresGuestUpgrade {
+                WelcomeView(
+                    accountSession: accountSession,
+                    allowsGuestAccess: !accountSession.requiresGuestUpgrade
+                )
                     .transition(.opacity)
             } else {
                 AppTabView(dependencies: dependencies)
@@ -35,10 +38,6 @@ struct MileMateRootView: View {
             if authenticated {
                 dependencies.automaticTripCoordinator.startIfEnabled()
             }
-        }
-        .sheet(isPresented: $accountSession.presentsUpgrade) {
-            WelcomeView(accountSession: accountSession, allowsGuestAccess: false)
-                .presentationDetents([.large])
         }
     }
 }

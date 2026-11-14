@@ -76,6 +76,11 @@ final class AccountSessionController {
 
     var remainingGuestTrips: Int { guest?.remainingTripCount ?? GuestTrialRecord.tripLimit }
 
+    var requiresGuestUpgrade: Bool {
+        guard let guest else { return false }
+        return !guest.canRecordAnotherTrip
+    }
+
     @discardableResult
     func requestTrackingAccess() -> Bool {
         switch state {
@@ -110,6 +115,7 @@ final class AccountSessionController {
 
     func recordSavedTrip(_ trip: Trip) {
         guard case .guest(var guest) = state else { return }
+        guard GuestTrialRecord.countsTowardTrial(trip) else { return }
         let inserted = guest.countedTripIDs.insert(trip.id).inserted
         guard inserted else { return }
         state = .guest(guest)
@@ -121,17 +127,21 @@ final class AccountSessionController {
         isReconcilingGuestTrial = true
         defer { isReconcilingGuestTrial = false }
         guard case .guest(let guestAtStart) = state else { return }
-        let trips = (try? await repository.fetchTrips()) ?? []
+        guard let trips = try? await repository.fetchTrips() else { return }
         guard case .guest(var guest) = state,
               guest.guestID == guestAtStart.guestID else {
             return
         }
-        let savedIDs = Set(trips.map { trip in trip.id })
-        let reconciledIDs = guest.countedTripIDs.union(savedIDs)
+        let reconciledIDs = Set(
+            trips.compactMap { trip in
+                GuestTrialRecord.countsTowardTrial(trip) ? trip.id : nil
+            }
+        )
         guard reconciledIDs != guest.countedTripIDs else { return }
         guest.countedTripIDs = reconciledIDs
         state = .guest(guest)
         persistGuest(guest)
+        presentsUpgrade = !guest.canRecordAnotherTrip
     }
 
     func completeAppleSignIn(_ result: Result<ASAuthorization, Error>) {

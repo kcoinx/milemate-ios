@@ -68,6 +68,70 @@ final class AccountSessionTests: XCTestCase {
         XCTAssertEqual(controller.remainingGuestTrips, 7)
     }
 
+    func testUnreviewedAutomaticTripsDoNotConsumeGuestTrial() async {
+        let unreviewedTrips = (0..<10).map { index in
+            testTrip(
+                id: UUID(),
+                minutesAgo: index,
+                classification: .unclassified
+            )
+        }
+        let repository = AccountTestRepository(trips: unreviewedTrips)
+        let controller = makeController(repository: repository)
+        controller.continueAsGuest()
+
+        for trip in unreviewedTrips {
+            controller.recordSavedTrip(trip)
+        }
+        await controller.reconcileGuestTrial()
+
+        XCTAssertEqual(controller.guest?.completedTripCount, 0)
+        XCTAssertEqual(controller.remainingGuestTrips, 10)
+        XCTAssertFalse(controller.requiresGuestUpgrade)
+        XCTAssertTrue(controller.requestTrackingAccess())
+    }
+
+    func testReconciliationRepairsPreviouslyCountedUnreviewedTrips() async {
+        let store = InMemoryAccountStore()
+        let tripIDs = (0..<10).map { _ in UUID() }
+        let repository = AccountTestRepository(
+            trips: tripIDs.map { id in
+                testTrip(id: id, classification: .unclassified)
+            }
+        )
+        let controller = makeController(repository: repository, store: store)
+        controller.continueAsGuest()
+
+        for id in tripIDs {
+            controller.recordSavedTrip(testTrip(id: id))
+        }
+        XCTAssertTrue(controller.requiresGuestUpgrade)
+
+        await controller.reconcileGuestTrial()
+
+        XCTAssertEqual(controller.guest?.completedTripCount, 0)
+        XCTAssertFalse(controller.requiresGuestUpgrade)
+    }
+
+    func testGuestUpgradeRoutingRemainsStableUntilAuthentication() async {
+        let controller = makeController()
+        controller.continueAsGuest()
+        for _ in 0..<10 {
+            controller.recordSavedTrip(testTrip())
+        }
+
+        XCTAssertTrue(controller.requiresGuestUpgrade)
+        XCTAssertFalse(controller.requiresWelcome)
+        XCTAssertFalse(controller.requestTrackingAccess())
+        XCTAssertTrue(controller.requiresGuestUpgrade)
+
+        await controller.authenticateWithGoogle()
+
+        XCTAssertFalse(controller.requiresGuestUpgrade)
+        XCTAssertFalse(controller.requiresWelcome)
+        XCTAssertTrue(controller.isAuthenticated)
+    }
+
     func testGuestUpgradePreservesTripsAndRestoresAuthenticatedSession() async throws {
         let trip = testTrip()
         let repository = AccountTestRepository(trips: [trip])
@@ -362,7 +426,11 @@ final class AccountSessionTests: XCTestCase {
         )
     }
 
-    private func testTrip(id: UUID = UUID(), minutesAgo: Int = 0) -> Trip {
+    private func testTrip(
+        id: UUID = UUID(),
+        minutesAgo: Int = 0,
+        classification: Trip.Classification = .business
+    ) -> Trip {
         let end = Date.now.addingTimeInterval(TimeInterval(-minutesAgo * 60))
         return Trip(
             id: id,
@@ -371,7 +439,7 @@ final class AccountSessionTests: XCTestCase {
             originName: "Start",
             destinationName: "End",
             distanceMiles: 4,
-            classification: .business,
+            classification: classification,
             purpose: "Client Meeting"
         )
     }
