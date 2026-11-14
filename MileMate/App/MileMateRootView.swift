@@ -22,6 +22,7 @@ struct MileMateRootView: View {
         .animation(.easeInOut(duration: 0.25), value: accountSession.requiresWelcome)
         .onChange(of: accountSession.requiresWelcome) { wasRequired, isRequired in
             if wasRequired && !isRequired {
+                dependencies.router.selectedTab = .dashboard
                 dependencies.automaticTripCoordinator.startIfEnabled()
             }
         }

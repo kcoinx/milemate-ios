@@ -26,6 +26,7 @@ final class ReportsViewModel {
     }
 
     private let repository: any MileageRepository
+    private let accountSession: AccountSessionController?
     private(set) var trips: [Trip] = []
     private(set) var vehicles: [Vehicle] = []
     private(set) var places: [FrequentPlace] = []
@@ -35,8 +36,12 @@ final class ReportsViewModel {
     var customStartDate: Date = Calendar.current.startOfDay(for: .now)
     var customEndDate: Date = Calendar.current.startOfDay(for: .now)
 
-    init(repository: any MileageRepository) {
+    init(
+        repository: any MileageRepository,
+        accountSession: AccountSessionController? = nil
+    ) {
         self.repository = repository
+        self.accountSession = accountSession
     }
 
     var summary: MileageSummary {
@@ -91,6 +96,11 @@ final class ReportsViewModel {
         vehicles = (try? await fetchedVehicles) ?? []
         places = (try? await fetchedPlaces) ?? []
         profile = try? await fetchedProfile
+        if accountSession != nil {
+            let displayName = accountSession?.account?.displayName ?? ""
+            profile?.firstName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            profile?.occupation = ""
+        }
     }
 
     func prepareReportData(generatedAt: Date = .now) throws -> MileageReportData {

@@ -23,8 +23,8 @@ enum MockData {
     private static let now = Date()
 
     static let profile = UserProfile(
-        firstName: "Alex",
-        occupation: "Independent Consultant",
+        firstName: "",
+        occupation: "",
         vehicleName: "2024 Tesla Model Y",
         deductionRate: 0.70,
         taxRate: 0.22

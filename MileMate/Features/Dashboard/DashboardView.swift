@@ -5,6 +5,7 @@ struct DashboardView: View {
     private let repository: any MileageRepository
     private let notificationService: any TripNotificationScheduling
     private let router: AppRouter
+    @Bindable private var accountSession: AccountSessionController
     @State private var viewModel: DashboardViewModel
     @Bindable private var tripCoordinator: ManualTripCoordinator
     @Bindable private var automaticTripCoordinator: AutomaticTripCoordinator
@@ -21,11 +22,13 @@ struct DashboardView: View {
         tripCoordinator: ManualTripCoordinator,
         automaticTripCoordinator: AutomaticTripCoordinator,
         notificationService: any TripNotificationScheduling,
+        accountSession: AccountSessionController,
         router: AppRouter
     ) {
         self.repository = repository
         self.notificationService = notificationService
         self.router = router
+        _accountSession = Bindable(wrappedValue: accountSession)
         _viewModel = State(initialValue: DashboardViewModel(repository: repository))
         _tripCoordinator = Bindable(wrappedValue: tripCoordinator)
         _automaticTripCoordinator = Bindable(wrappedValue: automaticTripCoordinator)
@@ -109,7 +112,7 @@ struct DashboardView: View {
 
     private var greeting: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text("\(greetingText), \(viewModel.profile.firstName)")
+            Text(personalizedGreeting)
                 .font(.appLargeTitle)
             Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
                 .foregroundStyle(AppTheme.Color.textSecondary)
@@ -123,6 +126,18 @@ struct DashboardView: View {
         case 12..<17: "Good afternoon"
         default: "Good evening"
         }
+    }
+
+    private var personalizedGreeting: String {
+        guard let rawDisplayName = accountSession.account?.displayName,
+              let firstName = rawDisplayName
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .split(whereSeparator: { $0.isWhitespace })
+                .first,
+              !firstName.isEmpty else {
+            return greetingText
+        }
+        return "\(greetingText), \(firstName)"
     }
 
     private var deductionHero: some View {

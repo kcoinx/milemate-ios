@@ -10,6 +10,7 @@ final class AccountSessionController {
     private enum Key {
         static let guest = "account.guestTrial.v1"
         static let authenticated = "account.authenticated.v1"
+        static let loggedOut = "account.loggedOut.v1"
     }
 
     private let secureStore: any SecureAccountStoring
@@ -38,6 +39,8 @@ final class AccountSessionController {
         if let data = try? secureStore.data(for: Key.authenticated),
            let account = try? decoder.decode(AuthenticatedAccount.self, from: data) {
             state = .authenticated(account)
+        } else if (try? secureStore.data(for: Key.loggedOut)) != nil {
+            state = .firstLaunch
         } else if let data = try? secureStore.data(for: Key.guest),
                   let guest = try? decoder.decode(GuestTrialRecord.self, from: data) {
             state = .guest(guest)
@@ -85,6 +88,7 @@ final class AccountSessionController {
     }
 
     func continueAsGuest() {
+        try? secureStore.remove(Key.loggedOut)
         let guest: GuestTrialRecord
         if let existing = self.guest {
             guest = existing
@@ -111,8 +115,12 @@ final class AccountSessionController {
     func reconcileGuestTrial() async {
         isReconcilingGuestTrial = true
         defer { isReconcilingGuestTrial = false }
-        guard case .guest(var guest) = state else { return }
+        guard case .guest(let guestAtStart) = state else { return }
         let trips = (try? await repository.fetchTrips()) ?? []
+        guard case .guest(var guest) = state,
+              guest.guestID == guestAtStart.guestID else {
+            return
+        }
         let savedIDs = Set(trips.map { trip in trip.id })
         let reconciledIDs = guest.countedTripIDs.union(savedIDs)
         guard reconciledIDs != guest.countedTripIDs else { return }
@@ -163,17 +171,12 @@ final class AccountSessionController {
         await authenticate { try await authenticationService.signInWithGoogle() }
     }
 
-    func signOut() {
+    func logOut() {
         try? secureStore.remove(Key.authenticated)
-        if let data = try? secureStore.data(for: Key.guest),
-           let guest = try? decoder.decode(GuestTrialRecord.self, from: data) {
-            state = .guest(guest)
-        } else {
-            let guest = GuestTrialRecord(guestID: UUID(), countedTripIDs: [])
-            state = .guest(guest)
-            persistGuest(guest)
-        }
-        scheduleGuestReconciliation()
+        try? secureStore.set(Data([1]), for: Key.loggedOut)
+        authenticationError = nil
+        presentsUpgrade = false
+        state = .firstLaunch
     }
 
     func deleteAccount() async {
@@ -182,7 +185,7 @@ final class AccountSessionController {
         defer { isAuthenticating = false }
         do {
             try await authenticationService.deleteAccount(account)
-            signOut()
+            logOut()
         } catch {
             authenticationError = error.localizedDescription
         }
@@ -199,6 +202,7 @@ final class AccountSessionController {
             var account = try await operation()
             account.migratedGuestID = guest?.guestID
             try secureStore.set(try encoder.encode(account), for: Key.authenticated)
+            try? secureStore.remove(Key.loggedOut)
             state = .authenticated(account)
             presentsUpgrade = false
         } catch let error as AuthenticationError where error == .canceled {

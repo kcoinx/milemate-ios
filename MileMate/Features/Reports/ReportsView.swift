@@ -21,10 +21,19 @@ struct ReportsView: View {
     @State private var exportErrorMessage: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(repository: any MileageRepository, router: AppRouter) {
+    init(
+        repository: any MileageRepository,
+        accountSession: AccountSessionController,
+        router: AppRouter
+    ) {
         self.repository = repository
         self.router = router
-        _viewModel = State(initialValue: ReportsViewModel(repository: repository))
+        _viewModel = State(
+            initialValue: ReportsViewModel(
+                repository: repository,
+                accountSession: accountSession
+            )
+        )
     }
 
     var body: some View {

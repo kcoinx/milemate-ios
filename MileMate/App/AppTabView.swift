@@ -36,6 +36,7 @@ struct AppTabView: View {
             tab(.reports) {
                 ReportsView(
                     repository: dependencies.mileageRepository,
+                    accountSession: dependencies.accountSession,
                     router: dependencies.router
                 )
             }
@@ -46,6 +47,7 @@ struct AppTabView: View {
                     manualTripCoordinator: dependencies.tripCoordinator,
                     automaticTripCoordinator: dependencies.automaticTripCoordinator,
                     notificationService: dependencies.notificationService,
+                    accountSession: dependencies.accountSession,
                     router: dependencies.router
                 )
             }

@@ -97,7 +97,24 @@ final class AccountSessionTests: XCTestCase {
         XCTAssertEqual(restored.account?.provider, .google)
     }
 
-    func testSignOutAndAccountDeletionPreserveLocalTripHistory() async throws {
+    func testLogOutReturnsToWelcomeAndPreservesGuestProgressAcrossRelaunch() async {
+        let store = InMemoryAccountStore()
+        let repository = AccountTestRepository()
+        let controller = makeController(repository: repository, store: store)
+        controller.continueAsGuest()
+        controller.recordSavedTrip(testTrip())
+        await controller.authenticateWithApple(token: "verified-token", rawNonce: "nonce", displayName: nil)
+
+        controller.logOut()
+
+        XCTAssertTrue(controller.requiresWelcome)
+        let relaunched = makeController(repository: repository, store: store)
+        XCTAssertTrue(relaunched.requiresWelcome)
+        relaunched.continueAsGuest()
+        XCTAssertEqual(relaunched.guest?.completedTripCount, 1)
+    }
+
+    func testAccountDeletionReturnsToWelcomeAndPreservesLocalTripHistory() async throws {
         let trip = testTrip()
         let repository = AccountTestRepository(trips: [trip])
         let controller = makeController(repository: repository)
@@ -107,6 +124,7 @@ final class AccountSessionTests: XCTestCase {
         await controller.deleteAccount()
 
         XCTAssertFalse(controller.isAuthenticated)
+        XCTAssertTrue(controller.requiresWelcome)
         let remainingTrips = try await repository.fetchTrips()
         XCTAssertEqual(remainingTrips.map { $0.id }, [trip.id])
     }

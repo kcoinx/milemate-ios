@@ -436,7 +436,9 @@ struct SettingsView: View {
                     }
                 }
                 .padding(.vertical, 4)
-                Button("Sign Out") { accountSession.signOut() }
+                Button("Log Out") { accountSession.logOut() }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Returns to the MileMate welcome and sign-in screen")
                 Button("Delete Account", role: .destructive) {
                     accountSession.presentsDeletionConfirmation = true
                 }
@@ -472,6 +474,9 @@ struct SettingsView: View {
                 Text("Signing in keeps all trips already stored on this iPhone. Cloud backup is not enabled yet.")
                     .font(.footnote)
                     .foregroundStyle(AppTheme.Color.textSecondary)
+                Button("Log Out") { accountSession.logOut() }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Returns to the MileMate welcome and sign-in screen")
             }
         }
     }
@@ -649,23 +654,6 @@ struct SettingsView: View {
         } label: {
             settingLabel(title, icon: icon, tint: tint)
         }
-    }
-}
-
-private struct ProfileSettingsView: View {
-    @State private var name = "Alex Morgan"
-    @State private var occupation = "Independent Consultant"
-
-    var body: some View {
-        Form {
-            Section("Personal details") {
-                TextField("Name", text: $name)
-                TextField("Occupation", text: $occupation)
-            }
-        }
-        .settingsDetailScrollBehavior()
-        .scrollIndicators(.hidden)
-        .navigationTitle("Profile")
     }
 }
 
