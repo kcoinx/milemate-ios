@@ -45,13 +45,7 @@ struct WelcomeView: View {
             GeometryReader { proxy in
                 ScrollView {
                     VStack(spacing: AppTheme.Spacing.large) {
-                        Spacer(minLength: min(max(proxy.size.height * 0.24, 130), 210))
-
-                        Image("LaunchBrandMark")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 74, height: 74)
-                            .accessibilityLabel("MileMate")
+                        Spacer(minLength: min(max(proxy.size.height * 0.34, 200), 280))
 
                         VStack(spacing: AppTheme.Spacing.small) {
                             Text(allowsGuestAccess ? "Every Mile Matters." : "Keep Your Miles Moving.")
@@ -422,7 +416,7 @@ private struct SemiTruckView: View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 3)
-                    .fill(Color(red: 0.45, green: 0.50, blue: 0.53))
+                    .fill(Color(red: 0.55, green: 0.59, blue: 0.61))
                     .frame(width: proxy.size.width * 0.66, height: proxy.size.height * 0.56)
                     .offset(x: proxy.size.width * 0.04, y: proxy.size.height * 0.10)
                     .overlay(alignment: .trailing) {
@@ -433,7 +427,7 @@ private struct SemiTruckView: View {
                     }
 
                 TruckCabShape()
-                    .fill(Color(red: 0.16, green: 0.29, blue: 0.36))
+                    .fill(Color(red: 0.21, green: 0.36, blue: 0.44))
                     .frame(width: proxy.size.width * 0.30, height: proxy.size.height * 0.66)
                     .offset(x: proxy.size.width * 0.68, y: proxy.size.height * 0.08)
 
@@ -500,7 +494,7 @@ private struct DeliveryVanView: View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
                 DeliveryVanBodyShape()
-                    .fill(Color(red: 0.70, green: 0.73, blue: 0.72))
+                    .fill(Color(red: 0.78, green: 0.80, blue: 0.78))
                 DeliveryVanWindowShape()
                     .fill(Color(red: 0.08, green: 0.15, blue: 0.19))
                     .frame(width: proxy.size.width * 0.24, height: proxy.size.height * 0.30)
@@ -559,7 +553,7 @@ private struct RideshareSedanView: View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
                 SedanBodyShape()
-                    .fill(Color(red: 0.08, green: 0.25, blue: 0.34))
+                    .fill(Color(red: 0.11, green: 0.32, blue: 0.42))
                 SedanWindowShape()
                     .fill(Color(red: 0.055, green: 0.10, blue: 0.13))
                     .frame(width: proxy.size.width * 0.43, height: proxy.size.height * 0.27)
