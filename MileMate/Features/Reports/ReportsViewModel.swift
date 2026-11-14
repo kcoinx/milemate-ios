@@ -26,7 +26,7 @@ final class ReportsViewModel {
     }
 
     private let repository: any MileageRepository
-    private let accountSession: AccountSessionController?
+    private let accountDisplayName: String?
     private(set) var trips: [Trip] = []
     private(set) var vehicles: [Vehicle] = []
     private(set) var places: [FrequentPlace] = []
@@ -38,10 +38,10 @@ final class ReportsViewModel {
 
     init(
         repository: any MileageRepository,
-        accountSession: AccountSessionController? = nil
+        accountDisplayName: String? = nil
     ) {
         self.repository = repository
-        self.accountSession = accountSession
+        self.accountDisplayName = accountDisplayName
     }
 
     var summary: MileageSummary {
@@ -96,9 +96,10 @@ final class ReportsViewModel {
         vehicles = (try? await fetchedVehicles) ?? []
         places = (try? await fetchedPlaces) ?? []
         profile = try? await fetchedProfile
-        if accountSession != nil {
-            let displayName = accountSession?.account?.displayName ?? ""
-            profile?.firstName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let accountDisplayName {
+            profile?.firstName = accountDisplayName.trimmingCharacters(
+                in: CharacterSet.whitespacesAndNewlines
+            )
             profile?.occupation = ""
         }
     }

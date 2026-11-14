@@ -36,7 +36,7 @@ struct AppTabView: View {
             tab(.reports) {
                 ReportsView(
                     repository: dependencies.mileageRepository,
-                    accountSession: dependencies.accountSession,
+                    accountDisplayName: dependencies.accountSession.account?.displayName,
                     router: dependencies.router
                 )
             }

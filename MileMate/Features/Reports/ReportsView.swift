@@ -23,7 +23,7 @@ struct ReportsView: View {
 
     init(
         repository: any MileageRepository,
-        accountSession: AccountSessionController,
+        accountDisplayName: String?,
         router: AppRouter
     ) {
         self.repository = repository
@@ -31,7 +31,7 @@ struct ReportsView: View {
         _viewModel = State(
             initialValue: ReportsViewModel(
                 repository: repository,
-                accountSession: accountSession
+                accountDisplayName: accountDisplayName ?? ""
             )
         )
     }
