@@ -148,7 +148,6 @@ final class AccountSessionController {
         trialRecord.countedTripIDs = reconciledIDs
         synchronizeGuestState()
         persistGuest(trialRecord)
-        presentsUpgrade = !trialRecord.canRecordAnotherTrip && !proEntitlementProvider.hasProAccess
     }
 
     func completeAppleSignIn(_ result: Result<ASAuthorization, Error>) {

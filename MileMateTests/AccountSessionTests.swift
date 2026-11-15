@@ -113,6 +113,39 @@ final class AccountSessionTests: XCTestCase {
         XCTAssertFalse(controller.requiresGuestUpgrade)
     }
 
+    func testReconciliationDoesNotAutomaticallyPresentPaywall() async {
+        let trips = (0..<10).map { index in
+            testTrip(id: UUID(), minutesAgo: index)
+        }
+        let controller = makeController(repository: AccountTestRepository(trips: trips))
+        controller.continueAsGuest()
+
+        await controller.reconcileGuestTrial()
+
+        XCTAssertTrue(controller.requiresGuestUpgrade)
+        XCTAssertFalse(controller.presentsUpgrade)
+        XCTAssertFalse(controller.requestTrackingAccess())
+        XCTAssertTrue(controller.presentsUpgrade)
+    }
+
+    func testDismissedPaywallStaysDismissedDuringReconciliation() async {
+        let trips = (0..<10).map { index in
+            testTrip(id: UUID(), minutesAgo: index)
+        }
+        let controller = makeController(repository: AccountTestRepository(trips: trips))
+        controller.continueAsGuest()
+        await controller.reconcileGuestTrial()
+        XCTAssertFalse(controller.requestTrackingAccess())
+        XCTAssertTrue(controller.presentsUpgrade)
+
+        controller.presentsUpgrade = false
+        await controller.reconcileGuestTrial()
+
+        XCTAssertFalse(controller.presentsUpgrade)
+        XCTAssertTrue(controller.requiresGuestUpgrade)
+        XCTAssertEqual(controller.remainingGuestTrips, 0)
+    }
+
     func testSigningInDoesNotResetExhaustedTrial() async {
         let controller = makeController()
         controller.continueAsGuest()
@@ -127,10 +160,13 @@ final class AccountSessionTests: XCTestCase {
 
         await controller.authenticateWithGoogle()
 
+        await controller.reconcileGuestTrial()
+
         XCTAssertTrue(controller.requiresGuestUpgrade)
         XCTAssertFalse(controller.requiresWelcome)
         XCTAssertTrue(controller.isAuthenticated)
         XCTAssertEqual(controller.remainingGuestTrips, 0)
+        XCTAssertFalse(controller.presentsUpgrade)
         XCTAssertFalse(controller.requestTrackingAccess())
     }
 

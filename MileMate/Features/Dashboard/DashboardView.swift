@@ -18,6 +18,7 @@ struct DashboardView: View {
     @ScaledMetric(relativeTo: .subheadline) private var compactMetricValueSize: CGFloat = 22
     @ScaledMetric(relativeTo: .title2) private var activeMetricValueSize: CGFloat = 25
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     init(
         repository: any MileageRepository,
@@ -91,18 +92,48 @@ struct DashboardView: View {
         Button {
             accountSession.presentsUpgrade = true
         } label: {
-            HStack(spacing: AppTheme.Spacing.small) {
-                Image(systemName: "sparkles")
-                Text("Upgrade to Pro")
-                    .font(.subheadline.weight(.semibold))
+            HStack(spacing: AppTheme.Spacing.medium) {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xSmall) {
+                    Text("Upgrade to Pro")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(colorScheme == .dark ? Color.white : AppTheme.Color.textPrimary)
+                    Text("Unlock unlimited trip tracking")
+                        .font(.subheadline)
+                        .foregroundStyle(
+                            colorScheme == .dark
+                                ? Color.white.opacity(0.62)
+                                : AppTheme.Color.textSecondary
+                        )
+                        .lineLimit(1)
+                }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppTheme.Color.brand)
             }
-            .foregroundStyle(AppTheme.Color.brand)
-            .padding(.horizontal, AppTheme.Spacing.medium)
-            .frame(minHeight: 44)
-            .background(AppTheme.Color.brand.opacity(0.09), in: Capsule())
+            .padding(.horizontal, AppTheme.Spacing.large)
+            .padding(.vertical, AppTheme.Spacing.medium)
+            .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+            .background(
+                colorScheme == .dark
+                    ? Color(red: 0.105, green: 0.115, blue: 0.125)
+                    : AppTheme.Color.surface,
+                in: RoundedRectangle(cornerRadius: AppTheme.Radius.medium)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.medium)
+                    .stroke(
+                        colorScheme == .dark
+                            ? Color.white.opacity(0.07)
+                            : AppTheme.Color.divider.opacity(0.16),
+                        lineWidth: 0.5
+                    )
+            }
+            .shadow(
+                color: colorScheme == .dark ? Color.black.opacity(0.24) : Color.black.opacity(0.05),
+                radius: 10,
+                y: 5
+            )
         }
         .buttonStyle(.plain)
         .accessibilityHint("Shows MileMate Pro purchase options")
