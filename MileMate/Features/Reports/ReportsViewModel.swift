@@ -76,11 +76,10 @@ final class ReportsViewModel {
         ) else {
             return nil
         }
-        let clippedInterval = DateInterval(
-            start: max(interval.start, selectedInterval.start),
-            end: min(interval.end, selectedInterval.end)
-        )
-        guard clippedInterval.start < clippedInterval.end else { return nil }
+        let clippedStart = max(interval.start, selectedInterval.start)
+        let clippedEnd = min(interval.end, selectedInterval.end)
+        guard clippedStart < clippedEnd else { return nil }
+        let clippedInterval = DateInterval(start: clippedStart, end: clippedEnd)
         let hasTrips = qualifyingBusinessTrips.contains { trip in
             clippedInterval.contains(trip.startedAt)
         }

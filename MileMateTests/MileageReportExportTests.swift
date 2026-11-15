@@ -443,7 +443,12 @@ final class MileageReportExportTests: XCTestCase {
         let businessTrip = MockData.trips.first { trip in
             trip.classification == .business
         }
-        let emptyDate = Calendar.current.date(
+        let dateBeforeSelectedPeriod = Calendar.current.date(
+            byAdding: .year,
+            value: -10,
+            to: .now
+        ) ?? .distantPast
+        let dateAfterSelectedPeriod = Calendar.current.date(
             byAdding: .year,
             value: 10,
             to: .now
@@ -454,7 +459,8 @@ final class MileageReportExportTests: XCTestCase {
                 viewModel.businessWeek(containing: trip.startedAt)
             }
         )
-        XCTAssertNil(viewModel.businessWeek(containing: emptyDate))
+        XCTAssertNil(viewModel.businessWeek(containing: dateBeforeSelectedPeriod))
+        XCTAssertNil(viewModel.businessWeek(containing: dateAfterSelectedPeriod))
     }
 
     @MainActor

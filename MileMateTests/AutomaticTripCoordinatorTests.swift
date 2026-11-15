@@ -381,17 +381,8 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
     func testInvalidLocationAuthorizationFailsDetectionSafely() {
         enableAutomaticTracking()
         defer { clearAutomaticTrackingState() }
-        let location = MockAutomaticLocationService()
+        let (coordinator, location, motion) = makeCoordinator()
         location.authorizationStatus = .authorizedWhenInUse
-        let motion = MockMotionActivityService()
-        let coordinator = AutomaticTripCoordinator(
-            locationService: location,
-            motionService: motion,
-            repository: MockMileageRepository(),
-            notificationService: MockTripNotificationService(),
-            dataScopeProvider: testScopeProvider(),
-            isManualTrackingActive: { false }
-        )
 
         coordinator.startIfEnabled()
         motion.send(activity(.automotive, confidence: .high))
