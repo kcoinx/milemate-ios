@@ -190,8 +190,11 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
 
         coordinator.startIfEnabled()
         motion.send(activity(.automotive, confidence: .medium))
-        try? await Task.sleep(for: .milliseconds(30))
+        let didReturnToIdle = await waitUntil {
+            coordinator.state == .idle
+        }
 
+        XCTAssertTrue(didReturnToIdle)
         XCTAssertEqual(coordinator.state, .idle)
         XCTAssertTrue(location.isLowPowerMonitoring)
         XCTAssertFalse(location.isPreciseTracking)
@@ -387,7 +390,8 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         coordinator.startIfEnabled()
         motion.send(activity(.automotive, confidence: .high))
 
-        XCTAssertEqual(coordinator.state, .permissionRequired)
+        XCTAssertEqual(coordinator.state, .disabled)
+        XCTAssertEqual(coordinator.trackingReadiness, .locationPermissionRequired)
         XCTAssertFalse(location.isPreciseTracking)
     }
 
@@ -730,6 +734,18 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         UserDefaults.standard.dictionaryRepresentation().keys.contains {
             $0.hasPrefix(RecoverySnapshotQuarantine.keyPrefix + sourceKey + ".")
         }
+    }
+
+    private func waitUntil(
+        timeout: Duration = .seconds(1),
+        condition: @escaping @MainActor () -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !condition(), clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return condition()
     }
 
     private func activity(
