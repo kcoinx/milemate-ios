@@ -68,6 +68,20 @@ final class AccountSessionTests: XCTestCase {
         XCTAssertEqual(controller.remainingGuestTrips, 7)
     }
 
+    func testScheduledAndExplicitReconciliationAreCoalescedAndFullyAwaited() async {
+        let repository = AccountTestRepository(trips: [testTrip()])
+        let controller = makeController(repository: repository)
+        controller.continueAsGuest()
+
+        XCTAssertTrue(controller.isReconcilingGuestTrial)
+        await controller.reconcileGuestTrial()
+
+        let fetchCallCount = await repository.fetchTripsCallCount()
+        XCTAssertFalse(controller.isReconcilingGuestTrial)
+        XCTAssertEqual(fetchCallCount, 1)
+        XCTAssertEqual(controller.remainingGuestTrips, 9)
+    }
+
     func testUnreviewedAutomaticTripsDoNotConsumeGuestTrial() async {
         let unreviewedTrips = (0..<10).map { index in
             testTrip(
@@ -228,10 +242,13 @@ final class AccountSessionTests: XCTestCase {
     }
 
     func testSigningInDoesNotResetExhaustedTrial() async {
-        let controller = makeController()
+        let trips = (0..<10).map { _ in testTrip() }
+        let controller = makeController(
+            repository: AccountTestRepository(trips: trips)
+        )
         controller.continueAsGuest()
-        for _ in 0..<10 {
-            controller.recordSavedTrip(testTrip())
+        for trip in trips {
+            controller.recordSavedTrip(trip)
         }
 
         XCTAssertTrue(controller.requiresGuestUpgrade)
@@ -253,9 +270,13 @@ final class AccountSessionTests: XCTestCase {
 
     func testTrialAllowanceSurvivesLogoutAndGuestReturn() async {
         let store = InMemoryAccountStore()
-        let controller = makeController(store: store)
+        let trips = (0..<4).map { _ in testTrip() }
+        let controller = makeController(
+            repository: AccountTestRepository(trips: trips),
+            store: store
+        )
         controller.continueAsGuest()
-        for _ in 0..<4 { controller.recordSavedTrip(testTrip()) }
+        for trip in trips { controller.recordSavedTrip(trip) }
         await controller.authenticateWithGoogle()
 
         controller.logOut()
@@ -328,6 +349,25 @@ final class AccountSessionTests: XCTestCase {
         XCTAssertFalse(controller.presentsUpgrade)
     }
 
+    func testDismissalClearsARequestStillPendingDuringReconciliation() async {
+        let trips = (0..<10).map { _ in testTrip() }
+        let entitlement = AccountTestProEntitlement(hasProAccess: true)
+        let controller = makeController(
+            repository: AccountTestRepository(trips: trips),
+            proEntitlement: entitlement
+        )
+        controller.continueAsGuest()
+        for trip in trips { controller.recordSavedTrip(trip) }
+        entitlement.hasProAccess = false
+
+        XCTAssertFalse(controller.requestTrackingAccess())
+        controller.presentsUpgrade = true
+        controller.presentsUpgrade = false
+        await controller.reconcileGuestTrial()
+
+        XCTAssertFalse(controller.presentsUpgrade)
+    }
+
     func testTrackingRequestDuringReconciliationDoesNotPresentUpgradeWhenTripsAreRestored() async {
         let tripIDs = (0..<10).map { _ in UUID() }
         let repository = AccountTestRepository(
@@ -351,12 +391,13 @@ final class AccountSessionTests: XCTestCase {
         XCTAssertTrue(controller.requestTrackingAccess())
     }
 
-    func testTrackingRequestDuringReconciliationDoesNotPresentUpgradeForActivePro() async {
+    func testActiveProCanTrackDuringReconciliationWithoutPresentingUpgrade() async {
         let entitlement = AccountTestProEntitlement(hasProAccess: true)
         let controller = makeController(proEntitlement: entitlement)
         controller.continueAsGuest()
 
-        XCTAssertFalse(controller.requestTrackingAccess())
+        XCTAssertTrue(controller.requestTrackingAccess())
+        XCTAssertFalse(controller.presentsUpgrade)
         await waitForGuestReconciliation(controller)
 
         XCTAssertFalse(controller.presentsUpgrade)
@@ -380,6 +421,26 @@ final class AccountSessionTests: XCTestCase {
         controller.continueAsGuest()
         await waitForGuestReconciliation(controller)
         XCTAssertFalse(controller.presentsUpgrade)
+    }
+
+    func testAuthenticationChangeClearsPendingTrackingRequest() async {
+        let trips = (0..<10).map { _ in testTrip() }
+        let entitlement = AccountTestProEntitlement(hasProAccess: true)
+        let controller = makeController(
+            repository: AccountTestRepository(trips: trips),
+            proEntitlement: entitlement
+        )
+        controller.continueAsGuest()
+        for trip in trips { controller.recordSavedTrip(trip) }
+        entitlement.hasProAccess = false
+
+        XCTAssertFalse(controller.requestTrackingAccess())
+        await controller.authenticateWithGoogle()
+        await controller.reconcileGuestTrial()
+
+        XCTAssertTrue(controller.isAuthenticated)
+        XCTAssertFalse(controller.presentsUpgrade)
+        XCTAssertEqual(controller.remainingGuestTrips, 0)
     }
 
     func testReconciliationFailureClearsPendingTrackingRequest() async {
@@ -802,6 +863,7 @@ private actor AccountTestRepository: MileageRepository {
     private let deleteAllShouldFail: Bool
     private let updateShouldFail: Bool
     private let fetchShouldFail: Bool
+    private var fetchCallCount = 0
 
     init(
         trips: [Trip] = [],
@@ -815,11 +877,13 @@ private actor AccountTestRepository: MileageRepository {
         self.fetchShouldFail = fetchShouldFail
     }
     func fetchTrips() async throws -> [Trip] {
+        fetchCallCount += 1
         if fetchShouldFail {
             throw AuthenticationError.provider("Fetch failed")
         }
         return trips
     }
+    func fetchTripsCallCount() -> Int { fetchCallCount }
     func fetchSummary() async throws -> MileageSummary {
         MileageSummaryCalculator.summary(for: trips)
     }

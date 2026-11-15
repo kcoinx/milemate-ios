@@ -24,14 +24,20 @@ final class AccountSessionController {
     private var trialRecord: GuestTrialRecord
     private var pendingTrackingAccessRequest = false
     private var sessionGeneration = 0
-    private var activeReconciliations: Set<UUID> = []
-    private var successfulReconciliations: Set<UUID> = []
+    private var reconciliationTask: Task<Void, Never>?
+    private var reconciliationID: UUID?
 
     private(set) var state: AccountAccessState
     private(set) var isAuthenticating = false
     private(set) var isReconcilingGuestTrial = false
     var authenticationError: String?
-    var presentsUpgrade = false
+    var presentsUpgrade = false {
+        didSet {
+            if !presentsUpgrade {
+                pendingTrackingAccessRequest = false
+            }
+        }
+    }
     var presentsDeletionConfirmation = false
 
     init(
@@ -101,12 +107,15 @@ final class AccountSessionController {
     @discardableResult
     func requestTrackingAccess() -> Bool {
         guard !requiresWelcome else { return false }
+        if proEntitlementProvider.isEntitlementReady,
+           proEntitlementProvider.hasProAccess {
+            return true
+        }
         if isReconcilingGuestTrial {
             pendingTrackingAccessRequest = true
             return false
         }
         guard proEntitlementProvider.isEntitlementReady else { return false }
-        if proEntitlementProvider.hasProAccess { return true }
         if trialRecord.canRecordAnotherTrip { return true }
         presentsUpgrade = true
         return false
@@ -134,21 +143,15 @@ final class AccountSessionController {
     }
 
     func reconcileGuestTrial() async {
-        let reconciliationID = UUID()
-        let generationAtStart = sessionGeneration
-        activeReconciliations.insert(reconciliationID)
-        isReconcilingGuestTrial = true
-        await reconcileGuestTrial(
-            reconciliationID: reconciliationID,
-            generationAtStart: generationAtStart
-        )
+        let task = reconciliationTask ?? startGuestReconciliation()
+        await task.value
     }
 
-    private func reconcileGuestTrial(
+    private func performGuestReconciliation(
         reconciliationID: UUID,
-        generationAtStart: Int
+        generationAtStart: Int,
+        scopeAtStart: LocalDataScope?
     ) async {
-        let scopeAtStart = dataScopeProvider.current
         var completedSuccessfully = false
         defer {
             finishGuestReconciliation(
@@ -159,8 +162,10 @@ final class AccountSessionController {
             )
         }
         guard let scopeAtStart else { return }
+        guard !Task.isCancelled else { return }
         guard let trips = try? await repository.fetchTrips() else { return }
-        guard sessionGeneration == generationAtStart,
+        guard !Task.isCancelled,
+              sessionGeneration == generationAtStart,
               dataScopeProvider.current == scopeAtStart else { return }
         completedSuccessfully = true
         let savedIDs = Set(trips.map { trip in trip.id })
@@ -272,7 +277,7 @@ final class AccountSessionController {
         operation: () async throws -> AuthenticatedAccount
     ) async {
         guard !isAuthenticating else { return }
-        pendingTrackingAccessRequest = false
+        invalidatePendingAccessAndReconciliation()
         isAuthenticating = true
         authenticationError = nil
         defer { isAuthenticating = false }
@@ -287,7 +292,6 @@ final class AccountSessionController {
                     to: accountScope
                 )
             }
-            invalidatePendingAccessAndReconciliation()
             try secureStore.set(try encoder.encode(account), for: Key.authenticated)
             try? secureStore.remove(Key.loggedOut)
             state = .authenticated(account)
@@ -316,16 +320,27 @@ final class AccountSessionController {
     }
 
     private func scheduleGuestReconciliation() {
+        guard reconciliationTask == nil else { return }
+        _ = startGuestReconciliation()
+    }
+
+    @discardableResult
+    private func startGuestReconciliation() -> Task<Void, Never> {
         let reconciliationID = UUID()
         let generationAtStart = sessionGeneration
-        activeReconciliations.insert(reconciliationID)
+        let scopeAtStart = dataScopeProvider.current
+        self.reconciliationID = reconciliationID
         isReconcilingGuestTrial = true
-        Task {
-            await reconcileGuestTrial(
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performGuestReconciliation(
                 reconciliationID: reconciliationID,
-                generationAtStart: generationAtStart
+                generationAtStart: generationAtStart,
+                scopeAtStart: scopeAtStart
             )
         }
+        reconciliationTask = task
+        return task
     }
 
     private func finishGuestReconciliation(
@@ -334,20 +349,16 @@ final class AccountSessionController {
         scopeAtStart: LocalDataScope?,
         completedSuccessfully: Bool
     ) {
-        let belongsToCurrentSession = sessionGeneration == generationAtStart &&
-            dataScopeProvider.current == scopeAtStart
-        if belongsToCurrentSession, completedSuccessfully {
-            successfulReconciliations.insert(reconciliationID)
-        }
-        activeReconciliations.remove(reconciliationID)
-        isReconcilingGuestTrial = !activeReconciliations.isEmpty
-        guard activeReconciliations.isEmpty,
-              belongsToCurrentSession else {
+        guard self.reconciliationID == reconciliationID else { return }
+        reconciliationTask = nil
+        self.reconciliationID = nil
+        isReconcilingGuestTrial = false
+        guard sessionGeneration == generationAtStart,
+              dataScopeProvider.current == scopeAtStart else {
+            pendingTrackingAccessRequest = false
             return
         }
-        let completedAtLeastOnce = !successfulReconciliations.isEmpty
-        successfulReconciliations.removeAll()
-        if completedAtLeastOnce {
+        if completedSuccessfully {
             resolvePendingTrackingAccessRequest()
         } else {
             pendingTrackingAccessRequest = false
@@ -369,8 +380,9 @@ final class AccountSessionController {
     private func invalidatePendingAccessAndReconciliation() {
         sessionGeneration += 1
         pendingTrackingAccessRequest = false
-        activeReconciliations.removeAll()
-        successfulReconciliations.removeAll()
+        reconciliationTask?.cancel()
+        reconciliationTask = nil
+        reconciliationID = nil
         isReconcilingGuestTrial = false
     }
 
