@@ -214,7 +214,7 @@ private struct WelcomeMotionBackground: View {
         let sceneryPhase = phase(at: date, duration: 16)
         let roadPhase = phase(at: date, duration: 2.8)
         let truckPhase = phase(at: date, duration: 14.5, offset: 0.18)
-        let vanPhase = phase(at: date, duration: 11.5, offset: 0.62)
+        let semiPhase = phase(at: date, duration: 12.5, offset: 0.62)
         let sedanPhase = phase(at: date, duration: 8.8, offset: 0.03)
 
         return ZStack(alignment: .topLeading) {
@@ -233,17 +233,17 @@ private struct WelcomeMotionBackground: View {
                 .offset(y: size.height * 0.16)
 
             PickupTruckView(wheelRotation: truckPhase * 1_440)
-                .frame(width: 142, height: 54)
+                .frame(width: 150, height: 58)
                 .position(
-                    x: travelX(progress: truckPhase, width: size.width, vehicleWidth: 142),
+                    x: travelX(progress: truckPhase, width: size.width, vehicleWidth: 150),
                     y: size.height * 0.29
                 )
 
-            SUVView(wheelRotation: vanPhase * 1_800)
-                .frame(width: 124, height: 50)
+            SemiTruckView(wheelRotation: semiPhase * 1_620)
+                .frame(width: 172, height: 64)
                 .position(
-                    x: travelX(progress: vanPhase, width: size.width, vehicleWidth: 124),
-                    y: size.height * 0.39
+                    x: travelX(progress: semiPhase, width: size.width, vehicleWidth: 172),
+                    y: size.height * 0.385
                 )
 
             RideshareSedanView(wheelRotation: sedanPhase * 2_160)
@@ -429,8 +429,13 @@ private struct PickupTruckView: View {
 
                 RoundedRectangle(cornerRadius: 1.5)
                     .fill(Color(red: 0.035, green: 0.07, blue: 0.09))
-                    .frame(width: proxy.size.width * 0.31, height: proxy.size.height * 0.10)
-                    .offset(x: proxy.size.width * 0.065, y: proxy.size.height * 0.31)
+                    .frame(width: proxy.size.width * 0.34, height: proxy.size.height * 0.18)
+                    .offset(x: proxy.size.width * 0.055, y: proxy.size.height * 0.27)
+
+                Rectangle()
+                    .fill(Color(red: 0.34, green: 0.50, blue: 0.56).opacity(0.68))
+                    .frame(width: proxy.size.width * 0.34, height: 2)
+                    .offset(x: proxy.size.width * 0.055, y: proxy.size.height * 0.27)
 
                 PickupWindowShape()
                     .fill(Color(red: 0.045, green: 0.10, blue: 0.13))
@@ -504,85 +509,103 @@ private struct PickupWindowShape: Shape {
     }
 }
 
-private struct SUVView: View {
+private struct SemiTruckView: View {
     let wheelRotation: Double
 
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
-                SUVBodyShape()
+                SemiTruckBodyShape()
                     .fill(
                         LinearGradient(
-                            colors: [Color(red: 0.74, green: 0.76, blue: 0.74), Color(red: 0.44, green: 0.48, blue: 0.48)],
+                            colors: [Color(red: 0.78, green: 0.83, blue: 0.85), Color(red: 0.34, green: 0.40, blue: 0.43)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
-                SUVWindowShape()
+
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(red: 0.37, green: 0.49, blue: 0.54), Color(red: 0.13, green: 0.23, blue: 0.28)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: proxy.size.width * 0.54, height: proxy.size.height * 0.53)
+                    .offset(x: proxy.size.width * 0.02, y: proxy.size.height * 0.13)
+
+                Rectangle()
+                    .fill(Color.white.opacity(0.16))
+                    .frame(width: proxy.size.width * 0.50, height: 1)
+                    .offset(x: proxy.size.width * 0.04, y: proxy.size.height * 0.20)
+
+                SemiTruckWindowShape()
                     .fill(Color(red: 0.045, green: 0.095, blue: 0.12))
-                    .frame(width: proxy.size.width * 0.62, height: proxy.size.height * 0.29)
-                    .offset(x: proxy.size.width * 0.22, y: proxy.size.height * 0.17)
-                ForEach([CGFloat(0.43), CGFloat(0.62)], id: \.self) { x in
-                    Rectangle()
-                        .fill(Color.black.opacity(0.42))
-                        .frame(width: 1.2, height: proxy.size.height * 0.26)
-                        .offset(x: proxy.size.width * x, y: proxy.size.height * 0.18)
-                }
+                    .frame(width: proxy.size.width * 0.25, height: proxy.size.height * 0.31)
+                    .offset(x: proxy.size.width * 0.61, y: proxy.size.height * 0.17)
+
                 Rectangle()
                     .fill(Color.white.opacity(0.15))
-                    .frame(width: proxy.size.width * 0.78, height: 1)
-                    .offset(x: proxy.size.width * 0.10, y: proxy.size.height * 0.55)
+                    .frame(width: proxy.size.width * 0.27, height: 1)
+                    .offset(x: proxy.size.width * 0.60, y: proxy.size.height * 0.52)
                 Capsule()
                     .fill(Color(red: 0.95, green: 0.84, blue: 0.58))
-                    .frame(width: 5, height: 2.5)
-                    .offset(x: proxy.size.width * 0.94, y: proxy.size.height * 0.49)
+                    .frame(width: 6, height: 3)
+                    .offset(x: proxy.size.width * 0.955, y: proxy.size.height * 0.54)
                 Capsule()
                     .fill(Color(red: 0.72, green: 0.14, blue: 0.11))
-                    .frame(width: 3.5, height: 4)
-                    .offset(x: proxy.size.width * 0.035, y: proxy.size.height * 0.47)
-                HStack(spacing: proxy.size.width * 0.55) {
-                    VehicleWheel(rotation: wheelRotation).frame(width: 15, height: 15)
-                    VehicleWheel(rotation: wheelRotation).frame(width: 15, height: 15)
-                }
-                .offset(x: proxy.size.width * 0.14, y: proxy.size.height * 0.65)
+                    .frame(width: 3.5, height: 5)
+                    .offset(x: proxy.size.width * 0.025, y: proxy.size.height * 0.50)
+
+                VehicleWheel(rotation: wheelRotation)
+                    .frame(width: 15, height: 15)
+                    .offset(x: proxy.size.width * 0.15, y: proxy.size.height * 0.67)
+                VehicleWheel(rotation: wheelRotation)
+                    .frame(width: 15, height: 15)
+                    .offset(x: proxy.size.width * 0.48, y: proxy.size.height * 0.67)
+                VehicleWheel(rotation: wheelRotation)
+                    .frame(width: 17, height: 17)
+                    .offset(x: proxy.size.width * 0.78, y: proxy.size.height * 0.64)
             }
         }
         .shadow(color: .black.opacity(0.30), radius: 3, y: 2)
     }
 }
 
-private struct SUVBodyShape: Shape {
+private struct SemiTruckBodyShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: rect.width * 0.03, y: rect.height * 0.57))
-        path.addLine(to: CGPoint(x: rect.width * 0.12, y: rect.height * 0.30))
+        path.move(to: CGPoint(x: rect.width * 0.01, y: rect.height * 0.13))
+        path.addLine(to: CGPoint(x: rect.width * 0.57, y: rect.height * 0.13))
+        path.addLine(to: CGPoint(x: rect.width * 0.59, y: rect.height * 0.22))
+        path.addLine(to: CGPoint(x: rect.width * 0.86, y: rect.height * 0.22))
         path.addQuadCurve(
-            to: CGPoint(x: rect.width * 0.72, y: rect.height * 0.15),
-            control: CGPoint(x: rect.width * 0.38, y: rect.height * 0.08)
+            to: CGPoint(x: rect.width * 0.92, y: rect.height * 0.49),
+            control: CGPoint(x: rect.width * 0.90, y: rect.height * 0.28)
         )
-        path.addLine(to: CGPoint(x: rect.width * 0.84, y: rect.height * 0.39))
-        path.addLine(to: CGPoint(x: rect.width * 0.94, y: rect.height * 0.43))
+        path.addLine(to: CGPoint(x: rect.width * 0.97, y: rect.height * 0.55))
         path.addQuadCurve(
-            to: CGPoint(x: rect.width * 0.98, y: rect.height * 0.62),
-            control: CGPoint(x: rect.maxX, y: rect.height * 0.48)
+            to: CGPoint(x: rect.width * 0.99, y: rect.height * 0.71),
+            control: CGPoint(x: rect.maxX, y: rect.height * 0.60)
         )
-        path.addLine(to: CGPoint(x: rect.width * 0.94, y: rect.height * 0.77))
-        path.addLine(to: CGPoint(x: rect.width * 0.05, y: rect.height * 0.77))
+        path.addLine(to: CGPoint(x: rect.width * 0.95, y: rect.height * 0.80))
+        path.addLine(to: CGPoint(x: rect.width * 0.02, y: rect.height * 0.80))
         path.closeSubpath()
         return path
     }
 }
 
-private struct SUVWindowShape: Shape {
+private struct SemiTruckWindowShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: 0, y: rect.height * 0.18))
+        path.move(to: .zero)
+        path.addLine(to: CGPoint(x: rect.width * 0.66, y: 0))
         path.addQuadCurve(
-            to: CGPoint(x: rect.width * 0.78, y: 0),
-            control: CGPoint(x: rect.width * 0.36, y: rect.height * -0.08)
+            to: CGPoint(x: rect.maxX, y: rect.maxY),
+            control: CGPoint(x: rect.width * 0.82, y: rect.height * 0.16)
         )
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.width * 0.04, y: rect.maxY))
+        path.addLine(to: CGPoint(x: 0, y: rect.maxY))
         path.closeSubpath()
         return path
     }
@@ -610,6 +633,19 @@ private struct RideshareSedanView: View {
                     .fill(Color.black.opacity(0.42))
                     .frame(width: 1.1, height: proxy.size.height * 0.25)
                     .offset(x: proxy.size.width * 0.56, y: proxy.size.height * 0.17)
+                Rectangle()
+                    .fill(Color.black.opacity(0.38))
+                    .frame(width: 1.1, height: proxy.size.height * 0.32)
+                    .offset(x: proxy.size.width * 0.39, y: proxy.size.height * 0.43)
+                Rectangle()
+                    .fill(Color.black.opacity(0.38))
+                    .frame(width: 1.1, height: proxy.size.height * 0.32)
+                    .offset(x: proxy.size.width * 0.68, y: proxy.size.height * 0.43)
+                HStack(spacing: proxy.size.width * 0.13) {
+                    Capsule().fill(Color.white.opacity(0.36)).frame(width: 6, height: 1.5)
+                    Capsule().fill(Color.white.opacity(0.36)).frame(width: 6, height: 1.5)
+                }
+                .offset(x: proxy.size.width * 0.45, y: proxy.size.height * 0.51)
                 Rectangle()
                     .fill(Color.white.opacity(0.15))
                     .frame(width: proxy.size.width * 0.76, height: 1)
