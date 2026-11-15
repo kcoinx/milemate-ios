@@ -25,6 +25,7 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         let distanceMeters: Double
         let lastMeaningfulMovementAt: Date?
         let reminderScheduled: Bool?
+        let ownerScopeIdentifier: String?
     }
     enum State: Equatable {
         case ready
@@ -40,6 +41,7 @@ final class ManualTripCoordinator: TripReviewCoordinating {
     private let notificationService: (any TripNotificationScheduling)?
     private let canStartNewTrip: @MainActor () -> Bool
     private let tripDidSave: @MainActor (Trip) -> Void
+    private let dataScopeProvider: LocalDataScopeProvider?
     private var processor = LocationSampleProcessor()
     private var elapsedTask: Task<Void, Never>?
     private var geocodeTask: Task<Void, Never>?
@@ -50,6 +52,8 @@ final class ManualTripCoordinator: TripReviewCoordinating {
     private var requestedAlwaysAuthorization = false
     private var lastMeaningfulMovementAt: Date?
     private var reminderScheduled = false
+    private var activeOwnerScopeIdentifier: String?
+    private var pendingOwnerScopeIdentifier: String?
     private static let activeSessionKey = "manualActiveTrip"
     private let reminderEligibilityDuration: TimeInterval
     private let inactivityReminderDelay: TimeInterval
@@ -67,6 +71,7 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         notificationService: (any TripNotificationScheduling)? = nil,
         canStartNewTrip: @escaping @MainActor () -> Bool = { true },
         tripDidSave: @escaping @MainActor (Trip) -> Void = { _ in },
+        dataScopeProvider: LocalDataScopeProvider? = nil,
         reminderEligibilityDuration: TimeInterval = 4 * 60 * 60,
         inactivityReminderDelay: TimeInterval = 30 * 60,
         safeguardCheckInterval: TimeInterval = 60
@@ -76,6 +81,7 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         self.notificationService = notificationService
         self.canStartNewTrip = canStartNewTrip
         self.tripDidSave = tripDidSave
+        self.dataScopeProvider = dataScopeProvider
         self.reminderEligibilityDuration = reminderEligibilityDuration
         self.inactivityReminderDelay = inactivityReminderDelay
         self.safeguardCheckInterval = safeguardCheckInterval
@@ -104,6 +110,13 @@ final class ManualTripCoordinator: TripReviewCoordinating {
             locationService.backgroundCapabilityAvailable
     }
 
+    var hasProtectedTripState: Bool {
+        activeOwnerScopeIdentifier != nil ||
+            pendingOwnerScopeIdentifier != nil ||
+            pendingTrip != nil ||
+            pendingStart
+    }
+
     func startTrip() {
         guard state != .tracking else { return }
         guard canStartNewTrip() else { return }
@@ -128,6 +141,7 @@ final class ManualTripCoordinator: TripReviewCoordinating {
 
     func stopTrip() {
         guard state == .tracking, let startedAt else { return }
+        guard let ownerScopeIdentifier = activeOwnerScopeIdentifier else { return }
         stopLocationUpdates()
         let endedAt = Date()
         let route = processor.acceptedSamples.map {
@@ -147,6 +161,7 @@ final class ManualTripCoordinator: TripReviewCoordinating {
             endCoordinate: route.last,
             route: route
         )
+        pendingOwnerScopeIdentifier = ownerScopeIdentifier
         state = .reviewing
         notificationService?.cancelLongRunningTripReminder()
         reminderScheduled = false
@@ -166,6 +181,9 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         appliedRuleID: UUID? = nil
     ) async throws {
         guard var trip = pendingTrip else { return }
+        guard pendingOwnerScopeIdentifier == dataScopeProvider?.current?.identifier else {
+            throw LocalDataScopeError.noActiveAccount
+        }
         trip.classification = classification
         trip.purpose = purpose
         trip.notes = notes
@@ -178,11 +196,13 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         await notificationService?.reconcileReviewReminder()
         NotificationCenter.default.post(name: .mileageTripsDidChange, object: trip.id)
         pendingTrip = nil
+        pendingOwnerScopeIdentifier = nil
         resetSession()
     }
 
     func discardPendingTrip() {
         pendingTrip = nil
+        pendingOwnerScopeIdentifier = nil
         stopLocationUpdates()
         resetSession()
     }
@@ -195,6 +215,8 @@ final class ManualTripCoordinator: TripReviewCoordinating {
 
     func prepareForLocalDataDeletion() {
         pendingTrip = nil
+        pendingOwnerScopeIdentifier = nil
+        activeOwnerScopeIdentifier = nil
         stopLocationUpdates()
         clearPersistedSession()
         notificationService?.cancelLongRunningTripReminder()
@@ -207,6 +229,12 @@ final class ManualTripCoordinator: TripReviewCoordinating {
             state = .ready
             return
         }
+        guard let ownerScopeIdentifier = dataScopeProvider?.current?.identifier else {
+            pendingStart = false
+            state = .failed("Choose a MileMate account or guest session before tracking a trip.")
+            return
+        }
+        activeOwnerScopeIdentifier = ownerScopeIdentifier
         processor.reset()
         distanceMeters = 0
         elapsedTime = 0
@@ -218,6 +246,7 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         state = .tracking
         guard locationService.startUpdatingLocation() else {
             startedAt = nil
+            activeOwnerScopeIdentifier = nil
             state = .failed("Background location is unavailable. Review Location permissions and try again.")
             return
         }
@@ -291,6 +320,7 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         startedAt = nil
         lastMeaningfulMovementAt = nil
         reminderScheduled = false
+        activeOwnerScopeIdentifier = nil
         clearPersistedSession()
         notificationService?.cancelLongRunningTripReminder()
         state = .ready
@@ -303,7 +333,8 @@ final class ManualTripCoordinator: TripReviewCoordinating {
             samples: processor.acceptedSamples,
             distanceMeters: distanceMeters,
             lastMeaningfulMovementAt: lastMeaningfulMovementAt,
-            reminderScheduled: reminderScheduled
+            reminderScheduled: reminderScheduled,
+            ownerScopeIdentifier: activeOwnerScopeIdentifier
         )
         if let data = try? JSONEncoder().encode(session) {
             UserDefaults.standard.set(data, forKey: Self.activeSessionKey)
@@ -315,6 +346,12 @@ final class ManualTripCoordinator: TripReviewCoordinating {
               let session = try? JSONDecoder().decode(ActiveSession.self, from: data) else {
             return
         }
+        guard let ownerScopeIdentifier = session.ownerScopeIdentifier,
+              ownerScopeIdentifier == dataScopeProvider?.current?.identifier else {
+            RecoverySnapshotQuarantine.preserve(data, from: Self.activeSessionKey)
+            return
+        }
+        activeOwnerScopeIdentifier = ownerScopeIdentifier
         startedAt = session.startedAt
         processor.restore(samples: session.samples, distanceMeters: session.distanceMeters)
         distanceMeters = session.distanceMeters

@@ -26,6 +26,7 @@ final class AccountSessionController {
     private var sessionGeneration = 0
     private var reconciliationTask: Task<Void, Never>?
     private var reconciliationID: UUID?
+    private var sessionTransitionAllowed: @MainActor () -> Bool = { true }
 
     private(set) var state: AccountAccessState
     private(set) var isAuthenticating = false
@@ -106,7 +107,7 @@ final class AccountSessionController {
 
     @discardableResult
     func requestTrackingAccess() -> Bool {
-        guard !requiresWelcome else { return false }
+        guard !requiresWelcome, !isAuthenticating else { return false }
         if proEntitlementProvider.isEntitlementReady,
            proEntitlementProvider.hasProAccess {
             return true
@@ -122,12 +123,18 @@ final class AccountSessionController {
     }
 
     func continueAsGuest() {
+        guard validateSessionTransition() else { return }
         invalidatePendingAccessAndReconciliation()
         try? secureStore.remove(Key.loggedOut)
         state = .guest(trialRecord)
         dataScopeProvider.setCurrent(.guest(id: trialRecord.guestID))
         persistGuest(trialRecord)
+        authenticationError = nil
         scheduleGuestReconciliation()
+    }
+
+    func configureSessionTransitionGuard(_ isAllowed: @escaping @MainActor () -> Bool) {
+        sessionTransitionAllowed = isAllowed
     }
 
     func recordSavedTrip(_ trip: Trip) {
@@ -230,6 +237,7 @@ final class AccountSessionController {
     }
 
     func logOut() {
+        guard validateSessionTransition() else { return }
         clearAuthenticatedSession()
         authenticationError = nil
     }
@@ -245,6 +253,7 @@ final class AccountSessionController {
 
     func deleteAccount() async {
         guard let account else { return }
+        guard validateSessionTransition() else { return }
         isAuthenticating = true
         defer { isAuthenticating = false }
         do {
@@ -277,6 +286,7 @@ final class AccountSessionController {
         operation: () async throws -> AuthenticatedAccount
     ) async {
         guard !isAuthenticating else { return }
+        guard validateSessionTransition() else { return }
         invalidatePendingAccessAndReconciliation()
         isAuthenticating = true
         authenticationError = nil
@@ -384,6 +394,14 @@ final class AccountSessionController {
         reconciliationTask = nil
         reconciliationID = nil
         isReconcilingGuestTrial = false
+    }
+
+    private func validateSessionTransition() -> Bool {
+        guard sessionTransitionAllowed() else {
+            authenticationError = "Finish or discard the current trip before changing accounts. Your active trip remains safely available."
+            return false
+        }
+        return true
     }
 
     private static func localDataScope(for state: AccountAccessState) -> LocalDataScope? {

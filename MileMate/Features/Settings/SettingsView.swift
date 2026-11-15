@@ -525,6 +525,10 @@ struct SettingsView: View {
     }
 
     private var accountActionsDisabled: Bool {
+        if manualTripCoordinator.hasProtectedTripState ||
+            automaticTripCoordinator.hasProtectedTripState {
+            return true
+        }
         switch manualTripCoordinator.state {
         case .requestingPermission, .tracking, .reviewing:
             return true

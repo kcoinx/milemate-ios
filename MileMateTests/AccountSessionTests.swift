@@ -520,6 +520,40 @@ final class AccountSessionTests: XCTestCase {
         XCTAssertEqual(relaunched.guest?.completedTripCount, 1)
     }
 
+    func testSessionTransitionGuardBlocksLogoutAndSignIn() async {
+        let controller = makeController()
+        controller.continueAsGuest()
+        let guestID = controller.guest?.guestID
+        controller.configureSessionTransitionGuard { false }
+
+        controller.logOut()
+
+        XCTAssertFalse(controller.requiresWelcome)
+        XCTAssertEqual(controller.guest?.guestID, guestID)
+        XCTAssertNotNil(controller.authenticationError)
+
+        await controller.authenticateWithGoogle()
+
+        XCTAssertFalse(controller.isAuthenticated)
+        XCTAssertEqual(controller.guest?.guestID, guestID)
+        XCTAssertNotNil(controller.authenticationError)
+    }
+
+    func testSessionTransitionGuardBlocksAccountDeletion() async {
+        let repository = AccountTestRepository(trips: [testTrip()])
+        let controller = makeController(repository: repository)
+        controller.continueAsGuest()
+        await controller.authenticateWithGoogle()
+        controller.configureSessionTransitionGuard { false }
+
+        await controller.deleteAccount()
+
+        let remainingTrips = try? await repository.fetchTrips()
+        XCTAssertTrue(controller.isAuthenticated)
+        XCTAssertNotNil(controller.authenticationError)
+        XCTAssertEqual(remainingTrips?.count, 1)
+    }
+
     func testAccountDeletionReturnsToWelcomeAndDeletesOwnedLocalTripHistory() async throws {
         let trip = testTrip()
         let repository = AccountTestRepository(trips: [trip])

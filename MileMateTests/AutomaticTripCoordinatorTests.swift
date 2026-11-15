@@ -235,23 +235,126 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
     func testDetectingAndActiveTrackingRestoreAfterCoordinatorRecreation() {
         enableAutomaticTracking()
         defer { clearAutomaticTrackingState() }
-        let (detecting, _, detectingMotion) = makeCoordinator()
+        let detectingScope = testScopeProvider()
+        let (detecting, _, detectingMotion) = makeCoordinator(scopeProvider: detectingScope)
         detecting.startIfEnabled()
         detectingMotion.send(activity(.automotive, confidence: .medium))
 
-        let (restoredDetecting, _, _) = makeCoordinator()
+        let (restoredDetecting, _, _) = makeCoordinator(scopeProvider: detectingScope)
         XCTAssertEqual(restoredDetecting.state, .detecting)
 
         clearAutomaticTrackingState()
         enableAutomaticTracking()
-        let (tracking, trackingLocation, trackingMotion) = makeCoordinator()
+        let trackingScope = testScopeProvider()
+        let (tracking, trackingLocation, trackingMotion) = makeCoordinator(scopeProvider: trackingScope)
         tracking.startIfEnabled()
         trackingMotion.send(activity(.automotive, confidence: .medium))
         trackingLocation.send(drivingSamples(latitudeDelta: 0.005))
         XCTAssertEqual(tracking.state, .tracking)
 
-        let (restoredTracking, _, _) = makeCoordinator()
+        let (restoredTracking, _, _) = makeCoordinator(scopeProvider: trackingScope)
         XCTAssertEqual(restoredTracking.state, .tracking)
+    }
+
+    func testActiveTripIsQuarantinedForDifferentOwner() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let originalScope = testScopeProvider(userID: "original-owner")
+        let (tracking, location, motion) = makeCoordinator(scopeProvider: originalScope)
+        tracking.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .medium))
+        location.send(drivingSamples(latitudeDelta: 0.005))
+        XCTAssertEqual(tracking.state, .tracking)
+
+        let otherScope = testScopeProvider(userID: "different-owner")
+        let (restored, _, _) = makeCoordinator(scopeProvider: otherScope)
+
+        XCTAssertNotEqual(restored.state, .tracking)
+        XCTAssertNil(UserDefaults.standard.data(forKey: "automaticActiveTrip"))
+        XCTAssertTrue(hasQuarantinedSnapshot(for: "automaticActiveTrip"))
+    }
+
+    func testLegacyOwnerlessActiveTripIsQuarantined() throws {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let scope = testScopeProvider()
+        let (tracking, location, motion) = makeCoordinator(scopeProvider: scope)
+        tracking.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .medium))
+        location.send(drivingSamples(latitudeDelta: 0.005))
+        let data = try XCTUnwrap(UserDefaults.standard.data(forKey: "automaticActiveTrip"))
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object.removeValue(forKey: "ownerScopeIdentifier")
+        UserDefaults.standard.set(try JSONSerialization.data(withJSONObject: object), forKey: "automaticActiveTrip")
+
+        let (restored, _, _) = makeCoordinator(scopeProvider: scope)
+
+        XCTAssertNotEqual(restored.state, .tracking)
+        XCTAssertNil(UserDefaults.standard.data(forKey: "automaticActiveTrip"))
+        XCTAssertTrue(hasQuarantinedSnapshot(for: "automaticActiveTrip"))
+    }
+
+    func testPendingTripIsQuarantinedForDifferentOwner() throws {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let tripData = try JSONEncoder().encode(MockData.trips[0])
+        let tripObject = try XCTUnwrap(JSONSerialization.jsonObject(with: tripData))
+        let envelope: [String: Any] = [
+            "trip": tripObject,
+            "ownerScopeIdentifier": LocalDataScope.authenticated(userID: "pending-original").identifier
+        ]
+        UserDefaults.standard.set(
+            try JSONSerialization.data(withJSONObject: envelope),
+            forKey: "automaticPendingTrip"
+        )
+
+        let (restored, _, _) = makeCoordinator(
+            scopeProvider: testScopeProvider(userID: "pending-other")
+        )
+
+        XCTAssertNil(restored.pendingTrip)
+        XCTAssertNil(UserDefaults.standard.data(forKey: "automaticPendingTrip"))
+        XCTAssertTrue(hasQuarantinedSnapshot(for: "automaticPendingTrip"))
+    }
+
+    func testPendingTripRestoresOnlyForItsOriginalOwner() throws {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let ownerScope = LocalDataScope.authenticated(userID: "pending-owner")
+        let trip = MockData.trips[0]
+        let tripData = try JSONEncoder().encode(trip)
+        let tripObject = try XCTUnwrap(JSONSerialization.jsonObject(with: tripData))
+        let envelope: [String: Any] = [
+            "trip": tripObject,
+            "ownerScopeIdentifier": ownerScope.identifier
+        ]
+        UserDefaults.standard.set(
+            try JSONSerialization.data(withJSONObject: envelope),
+            forKey: "automaticPendingTrip"
+        )
+
+        let (restored, _, _) = makeCoordinator(
+            scopeProvider: LocalDataScopeProvider(scope: ownerScope)
+        )
+
+        XCTAssertEqual(restored.state, .reviewing)
+        XCTAssertEqual(restored.pendingTrip?.id, trip.id)
+        XCTAssertFalse(hasQuarantinedSnapshot(for: "automaticPendingTrip"))
+    }
+
+    func testPermissionErrorDoesNotHideProtectedAutomaticTrip() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, location, motion) = makeCoordinator()
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .medium))
+        location.send(drivingSamples(latitudeDelta: 0.005))
+
+        location.authorizationStatus = .denied
+        location.eventHandler?(.authorizationChanged(.denied))
+
+        XCTAssertEqual(coordinator.state, .permissionRequired)
+        XCTAssertTrue(coordinator.hasProtectedTripState)
     }
 
     func testDoesNotDetectWhileManualTrackingIsActive() {
@@ -264,6 +367,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
             motionService: motion,
             repository: MockMileageRepository(),
             notificationService: MockTripNotificationService(),
+            dataScopeProvider: testScopeProvider(),
             isManualTrackingActive: { true }
         )
 
@@ -285,6 +389,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
             motionService: motion,
             repository: MockMileageRepository(),
             notificationService: MockTripNotificationService(),
+            dataScopeProvider: testScopeProvider(),
             isManualTrackingActive: { false }
         )
 
@@ -378,6 +483,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
             motionService: motion,
             repository: MockMileageRepository(),
             notificationService: MockTripNotificationService(),
+            dataScopeProvider: testScopeProvider(),
             isManualTrackingActive: { false }
         )
 
@@ -584,7 +690,8 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
 
     private func makeCoordinator(
         stopInterval: TimeInterval = 180,
-        detectionTimeout: TimeInterval = 180
+        detectionTimeout: TimeInterval = 180,
+        scopeProvider: LocalDataScopeProvider? = nil
     ) -> (
         AutomaticTripCoordinator,
         MockAutomaticLocationService,
@@ -592,11 +699,13 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
     ) {
         let location = MockAutomaticLocationService()
         let motion = MockMotionActivityService()
+        let scopeProvider = scopeProvider ?? testScopeProvider()
         let coordinator = AutomaticTripCoordinator(
             locationService: location,
             motionService: motion,
             repository: MockMileageRepository(),
             notificationService: MockTripNotificationService(),
+            dataScopeProvider: scopeProvider,
             stopInterval: stopInterval,
             detectionTimeout: detectionTimeout,
             isManualTrackingActive: { false }
@@ -616,6 +725,20 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: minimumDistanceKey)
         UserDefaults.standard.removeObject(forKey: pendingTripKey)
         UserDefaults.standard.removeObject(forKey: "automaticActiveTrip")
+        for key in UserDefaults.standard.dictionaryRepresentation().keys
+            where key.hasPrefix(RecoverySnapshotQuarantine.keyPrefix) {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
+    private func testScopeProvider(userID: String = UUID().uuidString) -> LocalDataScopeProvider {
+        LocalDataScopeProvider(scope: .authenticated(userID: userID))
+    }
+
+    private func hasQuarantinedSnapshot(for sourceKey: String) -> Bool {
+        UserDefaults.standard.dictionaryRepresentation().keys.contains {
+            $0.hasPrefix(RecoverySnapshotQuarantine.keyPrefix + sourceKey + ".")
+        }
     }
 
     private func activity(

@@ -57,6 +57,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
 
     private struct PendingTripEnvelope: Codable {
         let trip: Trip
+        let ownerScopeIdentifier: String?
     }
 
     private struct ActiveTripEnvelope: Codable {
@@ -71,6 +72,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         let candidateStopStartedAt: Date?
         let motionStopEvidence: Bool?
         let lowSpeedStopEvidence: Bool?
+        let ownerScopeIdentifier: String?
     }
 
     private let locationService: any AutomaticLocationService
@@ -80,6 +82,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     private let canStartNewTrip: @MainActor () -> Bool
     private let tripDidSave: @MainActor (Trip) -> Void
     private let isManualTrackingActive: @MainActor () -> Bool
+    private let dataScopeProvider: LocalDataScopeProvider?
     private let stopIntervalOverride: TimeInterval?
     private let detectionTimeout: TimeInterval
     private var processor = LocationSampleProcessor()
@@ -97,6 +100,9 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     private var motionStopEvidence = false
     private var lowSpeedStopEvidence = false
     private var pendingLowPowerSamples: [LocationSample] = []
+    private var activeOwnerScopeIdentifier: String?
+    private var pendingOwnerScopeIdentifier: String?
+    private(set) var isFinalizingTrip = false
 
     private(set) var state: State = .disabled
     private(set) var elapsedTime: TimeInterval = 0
@@ -115,6 +121,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         notificationService: any TripNotificationScheduling,
         canStartNewTrip: @escaping @MainActor () -> Bool = { true },
         tripDidSave: @escaping @MainActor (Trip) -> Void = { _ in },
+        dataScopeProvider: LocalDataScopeProvider? = nil,
         stopInterval: TimeInterval? = nil,
         detectionTimeout: TimeInterval = 180,
         isManualTrackingActive: @escaping @MainActor () -> Bool
@@ -125,6 +132,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         self.notificationService = notificationService
         self.canStartNewTrip = canStartNewTrip
         self.tripDidSave = tripDidSave
+        self.dataScopeProvider = dataScopeProvider
         self.stopIntervalOverride = stopInterval
         self.detectionTimeout = detectionTimeout
         self.isManualTrackingActive = isManualTrackingActive
@@ -169,6 +177,13 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         locationService.preciseLocationAvailable
     }
 
+    var hasProtectedTripState: Bool {
+        activeOwnerScopeIdentifier != nil ||
+            pendingOwnerScopeIdentifier != nil ||
+            pendingTrip != nil ||
+            isFinalizingTrip
+    }
+
     var trackingReadiness: AutomaticTrackingReadiness {
         AutomaticTrackingReadiness.evaluate(
             location: locationService.authorizationStatus,
@@ -206,7 +221,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             TrackingDiagnostics.log("automatic tracking disabled; detector not started")
             return
         }
-        if state == .tracking { return }
+        if state == .tracking || isFinalizingTrip { return }
         guard canStartNewTrip() else {
             if state == .detecting { resetToIdle() }
             state = .idle
@@ -224,7 +239,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     }
 
     func setEnabled(_ enabled: Bool) {
-        if !enabled, state == .tracking || state == .reviewing {
+        if !enabled, hasProtectedTripState {
             UserDefaults.standard.set(true, forKey: AutomaticTrackingSettings.enabledKey)
             return
         }
@@ -249,6 +264,9 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         appliedRuleID: UUID? = nil
     ) async throws {
         guard var trip = pendingTrip else { return }
+        guard pendingOwnerScopeIdentifier == dataScopeProvider?.current?.identifier else {
+            throw LocalDataScopeError.noActiveAccount
+        }
         trip.classification = classification
         trip.purpose = purpose
         trip.notes = notes
@@ -267,6 +285,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         await notificationService.reconcileReviewReminder()
         NotificationCenter.default.post(name: .mileageTripsDidChange, object: trip.id)
         pendingTrip = nil
+        pendingOwnerScopeIdentifier = nil
         clearPersistedPendingTrip()
         resetToIdle()
     }
@@ -274,14 +293,17 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     func discardPendingTrip() {
         if let trip = pendingTrip {
             let tripID = trip.id
+            let ownerScopeIdentifier = pendingOwnerScopeIdentifier
             notificationService.cancelNotifications(for: tripID)
-            Task { [repository, notificationService] in
+            Task { [repository, notificationService, dataScopeProvider] in
+                guard dataScopeProvider?.current?.identifier == ownerScopeIdentifier else { return }
                 try? await repository.delete(trip)
                 await notificationService.reconcileReviewReminder()
                 NotificationCenter.default.post(name: .mileageTripsDidChange, object: tripID)
             }
         }
         pendingTrip = nil
+        pendingOwnerScopeIdentifier = nil
         clearPersistedPendingTrip()
         resetToIdle()
     }
@@ -289,6 +311,9 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     func prepareForLocalDataDeletion() {
         stopDetection()
         pendingTrip = nil
+        pendingOwnerScopeIdentifier = nil
+        activeOwnerScopeIdentifier = nil
+        isFinalizingTrip = false
         clearPersistedPendingTrip()
         clearPersistedActiveTrip()
         processor.reset()
@@ -342,6 +367,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             }
 
         case .locations(let samples):
+            guard !isFinalizingTrip else { return }
             guard AutomaticTrackingSettings.isEnabled else {
                 TrackingDiagnostics.log("location wake ignored because automatic tracking is disabled")
                 return
@@ -417,7 +443,8 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
 
     private func handleMotion(_ activity: MotionActivitySample) {
         guard AutomaticTrackingSettings.isEnabled,
-              !isManualTrackingActive() else {
+              !isManualTrackingActive(),
+              !isFinalizingTrip else {
             return
         }
         guard canStartNewTrip() || state == .tracking else {
@@ -471,6 +498,11 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             TrackingDiagnostics.log("detection could not initialize; readiness=\(trackingReadiness.diagnosticReason)")
             return
         }
+        guard let ownerScopeIdentifier = dataScopeProvider?.current?.identifier else {
+            state = .failed("Choose a MileMate account or guest session before tracking a trip.")
+            return
+        }
+        activeOwnerScopeIdentifier = ownerScopeIdentifier
         processor.reset()
         distanceMeters = 0
         elapsedTime = 0
@@ -483,6 +515,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         )
         locationService.stopLowPowerMonitoring()
         guard locationService.startPreciseTracking() else {
+            activeOwnerScopeIdentifier = nil
             state = .permissionRequired
             TrackingDiagnostics.log("detection could not initialize; precise location tracking failed to start")
             locationService.startLowPowerMonitoring()
@@ -622,6 +655,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
 
     private func finishAutomaticTrip() {
         guard state == .tracking, let startedAt = candidateStartedAt else { return }
+        guard let ownerScopeIdentifier = activeOwnerScopeIdentifier else { return }
         let route = currentRoute
         let miles = distanceMiles
         let stoppedAt = candidateStopStartedAt ?? .now
@@ -649,19 +683,28 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             endCoordinate: route.last,
             route: route
         )
-        if persistPendingTrip(trip) {
+        if persistPendingTrip(trip, ownerScopeIdentifier: ownerScopeIdentifier) {
             TrackingDiagnostics.log("completed automatic trip staged for crash-safe persistence")
         } else {
             TrackingDiagnostics.log("completed automatic trip could not be staged for recovery")
         }
-        resetToIdle()
+        isFinalizingTrip = true
+        resetToIdle(preservingOwner: true)
         Task { [weak self] in
             guard let self else { return }
+            guard self.dataScopeProvider?.current?.identifier == ownerScopeIdentifier else {
+                self.quarantinePendingTripAfterScopeMismatch()
+                return
+            }
             var assignedTrip = trip
             async let fetchedVehicles = self.repository.fetchVehicles()
             async let fetchedPlaces = self.repository.fetchFrequentPlaces()
             async let fetchedRules = self.repository.fetchClassificationRules()
             let vehicles = (try? await fetchedVehicles) ?? []
+            guard self.dataScopeProvider?.current?.identifier == ownerScopeIdentifier else {
+                self.quarantinePendingTripAfterScopeMismatch()
+                return
+            }
             assignedTrip = VehicleAssignmentService.assigningDefault(
                 to: assignedTrip,
                 vehicles: vehicles
@@ -683,6 +726,10 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
                         to: assignedTrip
                     )
                     do {
+                        guard self.dataScopeProvider?.current?.identifier == ownerScopeIdentifier else {
+                            self.quarantinePendingTripAfterScopeMismatch()
+                            return
+                        }
                         try await self.repository.save(classifiedTrip)
                         self.tripDidSave(classifiedTrip)
                         NotificationCenter.default.post(
@@ -690,14 +737,24 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
                             object: classifiedTrip.id
                         )
                         self.clearPersistedPendingTrip()
+                        self.pendingOwnerScopeIdentifier = nil
+                        self.isFinalizingTrip = false
                         await self.notificationService.scheduleTripCompletion(for: classifiedTrip)
                         TrackingDiagnostics.log("automatic trip persisted successfully with approved classification rule")
-                        self.reverseGeocodeStoredTrip(classifiedTrip)
+                        self.resetToIdle()
+                        self.reverseGeocodeStoredTrip(
+                            classifiedTrip,
+                            ownerScopeIdentifier: ownerScopeIdentifier
+                        )
                         return
                     } catch {
                         // Fall through to review so a persistence failure never loses the trip.
                     }
                 }
+            }
+            guard self.dataScopeProvider?.current?.identifier == ownerScopeIdentifier else {
+                self.quarantinePendingTripAfterScopeMismatch()
+                return
             }
             do {
                 try await self.repository.save(assignedTrip)
@@ -706,13 +763,21 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
                     object: assignedTrip.id
                 )
                 self.clearPersistedPendingTrip()
+                self.pendingOwnerScopeIdentifier = nil
+                self.isFinalizingTrip = false
                 self.completeAutomaticTrip(assignedTrip)
+                self.resetToIdle()
                 TrackingDiagnostics.log("automatic trip persisted successfully for review")
-                self.reverseGeocodeStoredTrip(assignedTrip)
+                self.reverseGeocodeStoredTrip(
+                    assignedTrip,
+                    ownerScopeIdentifier: ownerScopeIdentifier
+                )
             } catch {
                 TrackingDiagnostics.log("automatic trip could not be persisted")
                 self.pendingTrip = assignedTrip
-                self.persistPendingTrip(assignedTrip)
+                self.pendingOwnerScopeIdentifier = ownerScopeIdentifier
+                self.persistPendingTrip(assignedTrip, ownerScopeIdentifier: ownerScopeIdentifier)
+                self.isFinalizingTrip = false
                 self.state = .reviewing
             }
         }
@@ -744,7 +809,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         automotiveConfidence = nil
     }
 
-    private func resetToIdle() {
+    private func resetToIdle(preservingOwner: Bool = false) {
         clearPersistedActiveTrip()
         stopPreciseSession()
         clearPersistedActiveTrip()
@@ -755,6 +820,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         detectionStartedAt = nil
         pendingLowPowerSamples.removeAll()
         highestObservedSpeed = 0
+        if !preservingOwner { activeOwnerScopeIdentifier = nil }
         if AutomaticTrackingSettings.isEnabled {
             startMotionMonitoring()
             locationService.startLowPowerMonitoring()
@@ -780,7 +846,8 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             isTracking: state == .tracking,
             candidateStopStartedAt: candidateStopStartedAt,
             motionStopEvidence: motionStopEvidence,
-            lowSpeedStopEvidence: lowSpeedStopEvidence
+            lowSpeedStopEvidence: lowSpeedStopEvidence,
+            ownerScopeIdentifier: activeOwnerScopeIdentifier
         )
         if let data = try? JSONEncoder().encode(envelope) {
             UserDefaults.standard.set(data, forKey: Self.activeTripKey)
@@ -793,6 +860,12 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
               let envelope = try? JSONDecoder().decode(ActiveTripEnvelope.self, from: data) else {
             return
         }
+        guard let ownerScopeIdentifier = envelope.ownerScopeIdentifier,
+              ownerScopeIdentifier == dataScopeProvider?.current?.identifier else {
+            RecoverySnapshotQuarantine.preserve(data, from: Self.activeTripKey)
+            return
+        }
+        activeOwnerScopeIdentifier = ownerScopeIdentifier
         guard trackingReadiness == .ready else {
             state = .permissionRequired
             return
@@ -878,8 +951,10 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     }
 
     @discardableResult
-    private func persistPendingTrip(_ trip: Trip) -> Bool {
-        guard let data = try? JSONEncoder().encode(PendingTripEnvelope(trip: trip)) else {
+    private func persistPendingTrip(_ trip: Trip, ownerScopeIdentifier: String) -> Bool {
+        guard let data = try? JSONEncoder().encode(
+            PendingTripEnvelope(trip: trip, ownerScopeIdentifier: ownerScopeIdentifier)
+        ) else {
             return false
         }
         UserDefaults.standard.set(data, forKey: Self.pendingTripKey)
@@ -891,7 +966,13 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
               let envelope = try? JSONDecoder().decode(PendingTripEnvelope.self, from: data) else {
             return
         }
+        guard let ownerScopeIdentifier = envelope.ownerScopeIdentifier,
+              ownerScopeIdentifier == dataScopeProvider?.current?.identifier else {
+            RecoverySnapshotQuarantine.preserve(data, from: Self.pendingTripKey)
+            return
+        }
         pendingTrip = envelope.trip
+        pendingOwnerScopeIdentifier = ownerScopeIdentifier
         state = .reviewing
     }
 
@@ -899,10 +980,14 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         guard !legacyPendingMigrationStarted, let trip = pendingTrip else { return }
         legacyPendingMigrationStarted = true
         Task { [weak self, repository, notificationService] in
+            guard self?.dataScopeProvider?.current?.identifier == self?.pendingOwnerScopeIdentifier else {
+                return
+            }
             let existing = (try? await repository.fetchTrips()) ?? []
             if !existing.contains(where: { $0.id == trip.id }) {
                 try? await repository.save(trip)
             }
+            guard self?.dataScopeProvider?.current?.identifier == self?.pendingOwnerScopeIdentifier else { return }
             self?.clearPersistedPendingTrip()
             NotificationCenter.default.post(name: .mileageTripsDidChange, object: trip.id)
             await notificationService.reconcileReviewReminder()
@@ -911,6 +996,17 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
 
     private func clearPersistedPendingTrip() {
         UserDefaults.standard.removeObject(forKey: Self.pendingTripKey)
+    }
+
+    private func quarantinePendingTripAfterScopeMismatch() {
+        if let data = UserDefaults.standard.data(forKey: Self.pendingTripKey) {
+            RecoverySnapshotQuarantine.preserve(data, from: Self.pendingTripKey)
+        }
+        pendingTrip = nil
+        pendingOwnerScopeIdentifier = nil
+        activeOwnerScopeIdentifier = nil
+        isFinalizingTrip = false
+        state = AutomaticTrackingSettings.isEnabled ? .idle : .disabled
     }
 
     private func reverseGeocodePendingTrip() {
@@ -922,19 +1018,22 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             updated.originName = startName
             updated.destinationName = endName
             pendingTrip = updated
-            persistPendingTrip(updated)
+            guard let ownerScopeIdentifier = pendingOwnerScopeIdentifier,
+                  dataScopeProvider?.current?.identifier == ownerScopeIdentifier else { return }
+            persistPendingTrip(updated, ownerScopeIdentifier: ownerScopeIdentifier)
             try? await repository.update(updated)
         }
     }
 
-    private func reverseGeocodeStoredTrip(_ trip: Trip) {
-        Task { [repository] in
+    private func reverseGeocodeStoredTrip(_ trip: Trip, ownerScopeIdentifier: String) {
+        Task { [repository, dataScopeProvider] in
             async let startName = Self.locationName(for: trip.startCoordinate)
             async let endName = Self.locationName(for: trip.endCoordinate)
             var updated = trip
             updated.originName = await startName
             updated.destinationName = await endName
             updated.updatedAt = .now
+            guard dataScopeProvider?.current?.identifier == ownerScopeIdentifier else { return }
             try? await repository.update(updated)
             NotificationCenter.default.post(name: .mileageTripsDidChange, object: updated.id)
         }

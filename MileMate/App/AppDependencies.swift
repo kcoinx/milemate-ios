@@ -36,7 +36,8 @@ struct AppDependencies {
                 repository: repository,
                 notificationService: notificationService,
                 canStartNewTrip: { accountSession.requestTrackingAccess() },
-                tripDidSave: { trip in accountSession.recordSavedTrip(trip) }
+                tripDidSave: { trip in accountSession.recordSavedTrip(trip) },
+                dataScopeProvider: repository.scopeProvider
             )
             let automaticCoordinator = AutomaticTripCoordinator(
                 locationService: CoreAutomaticLocationService(),
@@ -45,6 +46,7 @@ struct AppDependencies {
                 notificationService: notificationService,
                 canStartNewTrip: { accountSession.requestTrackingAccess() },
                 tripDidSave: { trip in accountSession.recordSavedTrip(trip) },
+                dataScopeProvider: repository.scopeProvider,
                 isManualTrackingActive: {
                     switch manualCoordinator.state {
                     case .requestingPermission, .tracking, .reviewing:
@@ -54,6 +56,10 @@ struct AppDependencies {
                     }
                 }
             )
+            accountSession.configureSessionTransitionGuard {
+                !manualCoordinator.hasProtectedTripState &&
+                    !automaticCoordinator.hasProtectedTripState
+            }
             let appRouter = AppRouter(
                 repository: repository,
                 automaticTripCoordinator: automaticCoordinator

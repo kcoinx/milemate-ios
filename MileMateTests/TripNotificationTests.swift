@@ -50,6 +50,7 @@ final class TripNotificationTests: XCTestCase {
             motionService: motion,
             repository: FailingMileageRepository(),
             notificationService: notifications,
+            dataScopeProvider: LocalDataScopeProvider(scope: .guest(id: UUID())),
             stopInterval: 0.01,
             isManualTrackingActive: { false }
         )
@@ -60,6 +61,42 @@ final class TripNotificationTests: XCTestCase {
         XCTAssertNotNil(coordinator.pendingTrip)
         XCTAssertEqual(coordinator.state, .reviewing)
         XCTAssertNotNil(UserDefaults.standard.data(forKey: pendingTripKey))
+    }
+
+    func testAutomaticPersistenceCannotCrossAccountScopeTransition() async {
+        defer { clearState() }
+        UserDefaults.standard.set(true, forKey: enabledKey)
+        UserDefaults.standard.set(0.30, forKey: minimumDistanceKey)
+        let originalScope = LocalDataScope.authenticated(userID: "automatic-original")
+        let scopeProvider = LocalDataScopeProvider(scope: originalScope)
+        let repository = ScopeSwitchingMileageRepository(
+            scopeProvider: scopeProvider,
+            replacementScope: .authenticated(userID: "automatic-other")
+        )
+        let location = MockAutomaticLocationService()
+        let motion = MockMotionActivityService()
+        let coordinator = AutomaticTripCoordinator(
+            locationService: location,
+            motionService: motion,
+            repository: repository,
+            notificationService: MockTripNotificationService(),
+            dataScopeProvider: scopeProvider,
+            stopInterval: 0.01,
+            isManualTrackingActive: { false }
+        )
+
+        await completeQualifyingTrip(coordinator, location: location, motion: motion)
+
+        let saveCount = await repository.saveCount()
+        XCTAssertEqual(saveCount, 0)
+        XCTAssertNotEqual(coordinator.state, .reviewing)
+        XCTAssertNil(coordinator.pendingTrip)
+        XCTAssertNil(UserDefaults.standard.data(forKey: pendingTripKey))
+        XCTAssertTrue(
+            UserDefaults.standard.dictionaryRepresentation().keys.contains {
+                $0.hasPrefix(RecoverySnapshotQuarantine.keyPrefix + pendingTripKey + ".")
+            }
+        )
     }
 
     func testCompletedTripDoesNotBlockDetectionOfNextTrip() async {
@@ -76,7 +113,7 @@ final class TripNotificationTests: XCTestCase {
         XCTAssertEqual(Set(notifications.scheduledTripIDs).count, 2)
     }
 
-    func testLegacySinglePendingTripMigratesOnceWithoutChangingItsID() async throws {
+    func testLegacyOwnerlessPendingTripIsQuarantinedWithoutMigration() async throws {
         defer { clearState() }
         let trip = reviewTrip(classification: .unclassified)
         let data = try JSONEncoder().encode(LegacyPendingTripEnvelope(trip: trip))
@@ -89,6 +126,7 @@ final class TripNotificationTests: XCTestCase {
             motionService: MockMotionActivityService(),
             repository: repository,
             notificationService: notifications,
+            dataScopeProvider: LocalDataScopeProvider(scope: .guest(id: UUID())),
             isManualTrackingActive: { false }
         )
 
@@ -97,8 +135,13 @@ final class TripNotificationTests: XCTestCase {
         try? await Task.sleep(for: .milliseconds(50))
 
         let migrated = try await repository.fetchTrips()
-        XCTAssertEqual(migrated.map(\.id), [trip.id])
+        XCTAssertTrue(migrated.isEmpty)
         XCTAssertNil(UserDefaults.standard.data(forKey: pendingTripKey))
+        XCTAssertTrue(
+            UserDefaults.standard.dictionaryRepresentation().keys.contains {
+                $0.hasPrefix(RecoverySnapshotQuarantine.keyPrefix + pendingTripKey + ".")
+            }
+        )
     }
 
     func testReviewingTripCancelsReminder() async throws {
@@ -373,6 +416,7 @@ final class TripNotificationTests: XCTestCase {
             motionService: motion,
             repository: MockMileageRepository(),
             notificationService: notifications,
+            dataScopeProvider: LocalDataScopeProvider(scope: .guest(id: UUID())),
             stopInterval: 0.01,
             isManualTrackingActive: { false }
         )
@@ -383,6 +427,10 @@ final class TripNotificationTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: enabledKey)
         UserDefaults.standard.removeObject(forKey: minimumDistanceKey)
         UserDefaults.standard.removeObject(forKey: pendingTripKey)
+        for key in UserDefaults.standard.dictionaryRepresentation().keys
+            where key.hasPrefix(RecoverySnapshotQuarantine.keyPrefix) {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
     }
 
     private func completeQualifyingTrip(
@@ -458,6 +506,31 @@ private actor FailingMileageRepository: MileageRepository {
     func update(_ trip: Trip) async throws { throw SaveError.unavailable }
     func delete(_ trip: Trip) async throws {}
     func replaceAllTrips(with trips: [Trip]) async throws {}
+}
+
+private actor ScopeSwitchingMileageRepository: MileageRepository {
+    private let scopeProvider: LocalDataScopeProvider
+    private let replacementScope: LocalDataScope
+    private var savedTrips: [Trip] = []
+
+    init(scopeProvider: LocalDataScopeProvider, replacementScope: LocalDataScope) {
+        self.scopeProvider = scopeProvider
+        self.replacementScope = replacementScope
+    }
+
+    func fetchTrips() async throws -> [Trip] { savedTrips }
+    func fetchSummary() async throws -> MileageSummary {
+        MileageSummaryCalculator.summary(for: savedTrips)
+    }
+    func fetchProfile() async throws -> UserProfile { MockData.profile }
+    func fetchVehicles() async throws -> [Vehicle] {
+        scopeProvider.setCurrent(replacementScope)
+        return []
+    }
+    func save(_ trip: Trip) async throws { savedTrips.append(trip) }
+    func update(_ trip: Trip) async throws {}
+    func delete(_ trip: Trip) async throws {}
+    func saveCount() -> Int { savedTrips.count }
 }
 
 @MainActor

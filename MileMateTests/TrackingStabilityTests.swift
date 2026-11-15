@@ -9,9 +9,11 @@ final class TrackingStabilityTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "manualActiveTrip")
         defer { UserDefaults.standard.removeObject(forKey: "manualActiveTrip") }
         let location = StabilityLocationService()
+        let scopeProvider = testScopeProvider()
         let coordinator = ManualTripCoordinator(
             locationService: location,
-            repository: MockMileageRepository()
+            repository: MockMileageRepository(),
+            dataScopeProvider: scopeProvider
         )
         coordinator.startTrip()
         location.send(samples())
@@ -24,12 +26,82 @@ final class TrackingStabilityTests: XCTestCase {
         let restoredLocation = StabilityLocationService()
         let restored = ManualTripCoordinator(
             locationService: restoredLocation,
-            repository: MockMileageRepository()
+            repository: MockMileageRepository(),
+            dataScopeProvider: scopeProvider
         )
         XCTAssertEqual(restored.state, .tracking)
         XCTAssertTrue(restoredLocation.isUpdating)
         XCTAssertNil(restored.pendingTrip)
         XCTAssertGreaterThan(restored.distanceMeters, 0)
+    }
+
+    func testManualActiveTripIsQuarantinedForDifferentOwner() {
+        UserDefaults.standard.removeObject(forKey: "manualActiveTrip")
+        defer { clearRecoveryState() }
+        let originalScope = testScopeProvider(userID: "manual-original")
+        let location = StabilityLocationService()
+        let coordinator = ManualTripCoordinator(
+            locationService: location,
+            repository: MockMileageRepository(),
+            dataScopeProvider: originalScope
+        )
+        coordinator.startTrip()
+        location.send(samples())
+
+        let restored = ManualTripCoordinator(
+            locationService: StabilityLocationService(),
+            repository: MockMileageRepository(),
+            dataScopeProvider: testScopeProvider(userID: "manual-other")
+        )
+
+        XCTAssertNotEqual(restored.state, .tracking)
+        XCTAssertNil(UserDefaults.standard.data(forKey: "manualActiveTrip"))
+        XCTAssertTrue(hasQuarantinedSnapshot(for: "manualActiveTrip"))
+    }
+
+    func testLegacyOwnerlessManualActiveTripIsQuarantined() throws {
+        UserDefaults.standard.removeObject(forKey: "manualActiveTrip")
+        defer { clearRecoveryState() }
+        let scope = testScopeProvider()
+        let location = StabilityLocationService()
+        let coordinator = ManualTripCoordinator(
+            locationService: location,
+            repository: MockMileageRepository(),
+            dataScopeProvider: scope
+        )
+        coordinator.startTrip()
+        location.send(samples())
+        let data = try XCTUnwrap(UserDefaults.standard.data(forKey: "manualActiveTrip"))
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object.removeValue(forKey: "ownerScopeIdentifier")
+        UserDefaults.standard.set(try JSONSerialization.data(withJSONObject: object), forKey: "manualActiveTrip")
+
+        let restored = ManualTripCoordinator(
+            locationService: StabilityLocationService(),
+            repository: MockMileageRepository(),
+            dataScopeProvider: scope
+        )
+
+        XCTAssertNotEqual(restored.state, .tracking)
+        XCTAssertNil(UserDefaults.standard.data(forKey: "manualActiveTrip"))
+        XCTAssertTrue(hasQuarantinedSnapshot(for: "manualActiveTrip"))
+    }
+
+    func testPermissionErrorDoesNotHideProtectedManualTrip() {
+        UserDefaults.standard.removeObject(forKey: "manualActiveTrip")
+        defer { clearRecoveryState() }
+        let location = StabilityLocationService()
+        let coordinator = ManualTripCoordinator(
+            locationService: location,
+            repository: MockMileageRepository(),
+            dataScopeProvider: testScopeProvider()
+        )
+        coordinator.startTrip()
+
+        location.changeAuthorization(to: .denied)
+
+        XCTAssertEqual(coordinator.state, .permissionDenied)
+        XCTAssertTrue(coordinator.hasProtectedTripState)
     }
 
     func testRouteRegionUsesStoredEndpointsAndNoRouteRemainsEmpty() {
@@ -57,7 +129,8 @@ final class TrackingStabilityTests: XCTestCase {
         }
         let coordinator = ManualTripCoordinator(
             locationService: StabilityLocationService(),
-            repository: MockMileageRepository()
+            repository: MockMileageRepository(),
+            dataScopeProvider: testScopeProvider()
         )
 
         coordinator.startTrip()
@@ -72,7 +145,8 @@ final class TrackingStabilityTests: XCTestCase {
         location.backgroundCapabilityAvailable = false
         let coordinator = ManualTripCoordinator(
             locationService: location,
-            repository: MockMileageRepository()
+            repository: MockMileageRepository(),
+            dataScopeProvider: testScopeProvider()
         )
 
         coordinator.startTrip()
@@ -92,6 +166,7 @@ final class TrackingStabilityTests: XCTestCase {
             locationService: StabilityLocationService(),
             repository: MockMileageRepository(),
             notificationService: notifications,
+            dataScopeProvider: testScopeProvider(),
             reminderEligibilityDuration: 0,
             inactivityReminderDelay: 0.02,
             safeguardCheckInterval: 0.01
@@ -116,6 +191,24 @@ final class TrackingStabilityTests: XCTestCase {
                            timestamp: now, speed: 10)
         ]
     }
+
+    private func testScopeProvider(userID: String = UUID().uuidString) -> LocalDataScopeProvider {
+        LocalDataScopeProvider(scope: .authenticated(userID: userID))
+    }
+
+    private func hasQuarantinedSnapshot(for sourceKey: String) -> Bool {
+        UserDefaults.standard.dictionaryRepresentation().keys.contains {
+            $0.hasPrefix(RecoverySnapshotQuarantine.keyPrefix + sourceKey + ".")
+        }
+    }
+
+    private func clearRecoveryState() {
+        UserDefaults.standard.removeObject(forKey: "manualActiveTrip")
+        for key in UserDefaults.standard.dictionaryRepresentation().keys
+            where key.hasPrefix(RecoverySnapshotQuarantine.keyPrefix) {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
 }
 
 @MainActor
@@ -133,4 +226,8 @@ private final class StabilityLocationService: LocationService {
     }
     func stopUpdatingLocation() { isUpdating = false }
     func send(_ samples: [LocationSample]) { eventHandler?(.locations(samples)) }
+    func changeAuthorization(to status: CLAuthorizationStatus) {
+        authorizationStatus = status
+        eventHandler?(.authorizationChanged(status))
+    }
 }

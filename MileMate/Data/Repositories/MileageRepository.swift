@@ -29,6 +29,17 @@ final class LocalDataScopeProvider: @unchecked Sendable {
     }
 }
 
+enum RecoverySnapshotQuarantine {
+    static let keyPrefix = "MileMate.quarantinedRecovery."
+
+    static func preserve(_ data: Data, from sourceKey: String, defaults: UserDefaults = .standard) {
+        let quarantineKey = keyPrefix + sourceKey + "." + UUID().uuidString
+        defaults.set(data, forKey: quarantineKey)
+        guard defaults.data(forKey: quarantineKey) == data else { return }
+        defaults.removeObject(forKey: sourceKey)
+    }
+}
+
 enum LocalDataScopeError: LocalizedError {
     case noActiveAccount
 
