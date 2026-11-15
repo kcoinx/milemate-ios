@@ -202,7 +202,7 @@ private struct WelcomeMotionBackground: View {
             if reduceMotion {
                 staticFallback(size: proxy.size)
             } else {
-                TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: !isActive)) { timeline in
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isActive)) { timeline in
                     motionScene(date: timeline.date, size: proxy.size)
                 }
             }
@@ -232,24 +232,24 @@ private struct WelcomeMotionBackground: View {
                 .frame(height: size.height * 0.52)
                 .offset(y: size.height * 0.16)
 
-            SemiTruckView(wheelRotation: truckPhase * 1_440)
-                .frame(width: 176, height: 62)
+            PickupTruckView(wheelRotation: truckPhase * 1_440)
+                .frame(width: 142, height: 54)
                 .position(
-                    x: travelX(progress: truckPhase, width: size.width, vehicleWidth: 176),
+                    x: travelX(progress: truckPhase, width: size.width, vehicleWidth: 142),
                     y: size.height * 0.29
                 )
 
-            DeliveryVanView(wheelRotation: vanPhase * 1_800)
-                .frame(width: 119, height: 54)
+            SUVView(wheelRotation: vanPhase * 1_800)
+                .frame(width: 124, height: 50)
                 .position(
-                    x: travelX(progress: vanPhase, width: size.width, vehicleWidth: 119),
+                    x: travelX(progress: vanPhase, width: size.width, vehicleWidth: 124),
                     y: size.height * 0.39
                 )
 
             RideshareSedanView(wheelRotation: sedanPhase * 2_160)
-                .frame(width: 98, height: 40)
+                .frame(width: 108, height: 41)
                 .position(
-                    x: travelX(progress: sedanPhase, width: size.width, vehicleWidth: 98),
+                    x: travelX(progress: sedanPhase, width: size.width, vehicleWidth: 108),
                     y: size.height * 0.44
                 )
 
@@ -395,152 +395,194 @@ private struct VehicleWheel: View {
 
     var body: some View {
         ZStack {
-            Circle().fill(Color(red: 0.025, green: 0.03, blue: 0.035))
-            Circle().stroke(Color.white.opacity(0.22), lineWidth: 1)
-            ForEach(0..<4, id: \.self) { index in
+            Circle().fill(Color(red: 0.018, green: 0.022, blue: 0.026))
+            Circle().stroke(Color.white.opacity(0.16), lineWidth: 0.8)
+            Circle()
+                .fill(Color(red: 0.48, green: 0.52, blue: 0.54))
+                .padding(3)
+            ForEach(0..<5, id: \.self) { index in
                 Capsule()
-                    .fill(Color.gray.opacity(0.72))
-                    .frame(width: 1.2, height: 7)
-                    .rotationEffect(.degrees(Double(index) * 45))
+                    .fill(Color(red: 0.13, green: 0.15, blue: 0.17).opacity(0.9))
+                    .frame(width: 1, height: 6)
+                    .rotationEffect(.degrees(Double(index) * 72))
             }
-            Circle().fill(Color.gray.opacity(0.75)).frame(width: 3.5, height: 3.5)
+            Circle().fill(Color.gray.opacity(0.82)).frame(width: 2.8, height: 2.8)
         }
         .rotationEffect(.degrees(rotation))
     }
 }
 
-private struct SemiTruckView: View {
+private struct PickupTruckView: View {
     let wheelRotation: Double
 
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(Color(red: 0.55, green: 0.59, blue: 0.61))
-                    .frame(width: proxy.size.width * 0.66, height: proxy.size.height * 0.56)
-                    .offset(x: proxy.size.width * 0.04, y: proxy.size.height * 0.10)
-                    .overlay(alignment: .trailing) {
-                        Rectangle()
-                            .fill(Color.black.opacity(0.18))
-                            .frame(width: 1)
-                            .padding(.vertical, 4)
-                    }
+                PickupBodyShape()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(red: 0.28, green: 0.47, blue: 0.56), Color(red: 0.13, green: 0.29, blue: 0.37)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
 
-                TruckCabShape()
-                    .fill(Color(red: 0.21, green: 0.36, blue: 0.44))
-                    .frame(width: proxy.size.width * 0.30, height: proxy.size.height * 0.66)
-                    .offset(x: proxy.size.width * 0.68, y: proxy.size.height * 0.08)
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(Color(red: 0.035, green: 0.07, blue: 0.09))
+                    .frame(width: proxy.size.width * 0.31, height: proxy.size.height * 0.10)
+                    .offset(x: proxy.size.width * 0.065, y: proxy.size.height * 0.31)
 
-                TruckWindowShape()
-                    .fill(Color(red: 0.08, green: 0.14, blue: 0.18))
-                    .frame(width: proxy.size.width * 0.13, height: proxy.size.height * 0.24)
-                    .offset(x: proxy.size.width * 0.75, y: proxy.size.height * 0.17)
+                PickupWindowShape()
+                    .fill(Color(red: 0.045, green: 0.10, blue: 0.13))
+                    .frame(width: proxy.size.width * 0.34, height: proxy.size.height * 0.24)
+                    .offset(x: proxy.size.width * 0.47, y: proxy.size.height * 0.18)
 
-                Capsule()
-                    .fill(Color(red: 0.06, green: 0.08, blue: 0.09))
-                    .frame(width: proxy.size.width * 0.92, height: 4)
-                    .offset(x: proxy.size.width * 0.04, y: proxy.size.height * 0.64)
-
-                HStack(spacing: proxy.size.width * 0.25) {
-                    VehicleWheel(rotation: wheelRotation).frame(width: 15, height: 15)
-                    VehicleWheel(rotation: wheelRotation).frame(width: 15, height: 15)
-                    VehicleWheel(rotation: wheelRotation).frame(width: 15, height: 15)
-                }
-                .frame(height: proxy.size.height * 0.25)
-                .offset(x: proxy.size.width * 0.14, y: proxy.size.height * 0.60)
-
-                Capsule()
-                    .fill(Color(red: 0.86, green: 0.72, blue: 0.34))
-                    .frame(width: 5, height: 2)
-                    .offset(x: proxy.size.width * 0.94, y: proxy.size.height * 0.50)
-            }
-        }
-        .shadow(color: .black.opacity(0.28), radius: 3, y: 2)
-    }
-}
-
-private struct TruckCabShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: 0, y: rect.height * 0.18))
-        path.addLine(to: CGPoint(x: rect.width * 0.68, y: rect.minY))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.maxX, y: rect.height * 0.46),
-            control: CGPoint(x: rect.maxX, y: rect.height * 0.12)
-        )
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.height * 0.88))
-        path.addLine(to: CGPoint(x: 0, y: rect.height * 0.88))
-        path.closeSubpath()
-        return path
-    }
-}
-
-private struct TruckWindowShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: 0, y: rect.height * 0.18))
-        path.addLine(to: CGPoint(x: rect.width * 0.68, y: 0))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: 0, y: rect.maxY))
-        path.closeSubpath()
-        return path
-    }
-}
-
-private struct DeliveryVanView: View {
-    let wheelRotation: Double
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .topLeading) {
-                DeliveryVanBodyShape()
-                    .fill(Color(red: 0.78, green: 0.80, blue: 0.78))
-                DeliveryVanWindowShape()
-                    .fill(Color(red: 0.08, green: 0.15, blue: 0.19))
-                    .frame(width: proxy.size.width * 0.24, height: proxy.size.height * 0.30)
-                    .offset(x: proxy.size.width * 0.67, y: proxy.size.height * 0.18)
                 Rectangle()
-                    .fill(Color.black.opacity(0.12))
-                    .frame(width: 1, height: proxy.size.height * 0.42)
-                    .offset(x: proxy.size.width * 0.49, y: proxy.size.height * 0.17)
+                    .fill(Color.black.opacity(0.42))
+                    .frame(width: 1.2, height: proxy.size.height * 0.22)
+                    .offset(x: proxy.size.width * 0.62, y: proxy.size.height * 0.19)
+
+                Rectangle()
+                    .fill(Color.white.opacity(0.14))
+                    .frame(width: proxy.size.width * 0.82, height: 1)
+                    .offset(x: proxy.size.width * 0.10, y: proxy.size.height * 0.55)
+
+                Capsule()
+                    .fill(Color(red: 0.92, green: 0.82, blue: 0.56))
+                    .frame(width: 6, height: 3)
+                    .offset(x: proxy.size.width * 0.93, y: proxy.size.height * 0.49)
+
+                Capsule()
+                    .fill(Color(red: 0.74, green: 0.16, blue: 0.12))
+                    .frame(width: 4, height: 4)
+                    .offset(x: proxy.size.width * 0.025, y: proxy.size.height * 0.48)
+
                 HStack(spacing: proxy.size.width * 0.54) {
-                    VehicleWheel(rotation: wheelRotation).frame(width: 14, height: 14)
-                    VehicleWheel(rotation: wheelRotation).frame(width: 14, height: 14)
+                    VehicleWheel(rotation: wheelRotation).frame(width: 16, height: 16)
+                    VehicleWheel(rotation: wheelRotation).frame(width: 16, height: 16)
                 }
-                .frame(height: proxy.size.height * 0.29)
-                .offset(x: proxy.size.width * 0.14, y: proxy.size.height * 0.62)
+                .offset(x: proxy.size.width * 0.15, y: proxy.size.height * 0.64)
             }
         }
-        .shadow(color: .black.opacity(0.25), radius: 3, y: 2)
+        .shadow(color: .black.opacity(0.32), radius: 3, y: 2)
     }
 }
 
-private struct DeliveryVanBodyShape: Shape {
+private struct PickupBodyShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: rect.width * 0.04, y: rect.height * 0.20))
+        path.move(to: CGPoint(x: rect.width * 0.02, y: rect.height * 0.43))
+        path.addLine(to: CGPoint(x: rect.width * 0.39, y: rect.height * 0.43))
+        path.addLine(to: CGPoint(x: rect.width * 0.46, y: rect.height * 0.17))
         path.addQuadCurve(
             to: CGPoint(x: rect.width * 0.70, y: rect.height * 0.13),
-            control: CGPoint(x: rect.width * 0.12, y: rect.height * 0.08)
+            control: CGPoint(x: rect.width * 0.56, y: rect.height * 0.08)
         )
-        path.addLine(to: CGPoint(x: rect.width * 0.94, y: rect.height * 0.45))
+        path.addLine(to: CGPoint(x: rect.width * 0.80, y: rect.height * 0.40))
+        path.addLine(to: CGPoint(x: rect.width * 0.94, y: rect.height * 0.44))
         path.addQuadCurve(
-            to: CGPoint(x: rect.width * 0.98, y: rect.height * 0.75),
-            control: CGPoint(x: rect.maxX, y: rect.height * 0.56)
+            to: CGPoint(x: rect.width * 0.99, y: rect.height * 0.62),
+            control: CGPoint(x: rect.maxX, y: rect.height * 0.48)
         )
-        path.addLine(to: CGPoint(x: rect.width * 0.04, y: rect.height * 0.75))
+        path.addLine(to: CGPoint(x: rect.width * 0.96, y: rect.height * 0.76))
+        path.addLine(to: CGPoint(x: rect.width * 0.04, y: rect.height * 0.76))
+        path.addLine(to: CGPoint(x: rect.width * 0.01, y: rect.height * 0.63))
         path.closeSubpath()
         return path
     }
 }
 
-private struct DeliveryVanWindowShape: Shape {
+private struct PickupWindowShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: 0, y: 0))
-        path.addLine(to: CGPoint(x: rect.width * 0.64, y: rect.height * 0.08))
+        path.move(to: CGPoint(x: 0, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.width * 0.16, y: 0))
+        path.addLine(to: CGPoint(x: rect.width * 0.66, y: 0))
         path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: 0, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct SUVView: View {
+    let wheelRotation: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                SUVBodyShape()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(red: 0.74, green: 0.76, blue: 0.74), Color(red: 0.44, green: 0.48, blue: 0.48)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                SUVWindowShape()
+                    .fill(Color(red: 0.045, green: 0.095, blue: 0.12))
+                    .frame(width: proxy.size.width * 0.62, height: proxy.size.height * 0.29)
+                    .offset(x: proxy.size.width * 0.22, y: proxy.size.height * 0.17)
+                ForEach([CGFloat(0.43), CGFloat(0.62)], id: \.self) { x in
+                    Rectangle()
+                        .fill(Color.black.opacity(0.42))
+                        .frame(width: 1.2, height: proxy.size.height * 0.26)
+                        .offset(x: proxy.size.width * x, y: proxy.size.height * 0.18)
+                }
+                Rectangle()
+                    .fill(Color.white.opacity(0.15))
+                    .frame(width: proxy.size.width * 0.78, height: 1)
+                    .offset(x: proxy.size.width * 0.10, y: proxy.size.height * 0.55)
+                Capsule()
+                    .fill(Color(red: 0.95, green: 0.84, blue: 0.58))
+                    .frame(width: 5, height: 2.5)
+                    .offset(x: proxy.size.width * 0.94, y: proxy.size.height * 0.49)
+                Capsule()
+                    .fill(Color(red: 0.72, green: 0.14, blue: 0.11))
+                    .frame(width: 3.5, height: 4)
+                    .offset(x: proxy.size.width * 0.035, y: proxy.size.height * 0.47)
+                HStack(spacing: proxy.size.width * 0.55) {
+                    VehicleWheel(rotation: wheelRotation).frame(width: 15, height: 15)
+                    VehicleWheel(rotation: wheelRotation).frame(width: 15, height: 15)
+                }
+                .offset(x: proxy.size.width * 0.14, y: proxy.size.height * 0.65)
+            }
+        }
+        .shadow(color: .black.opacity(0.30), radius: 3, y: 2)
+    }
+}
+
+private struct SUVBodyShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.width * 0.03, y: rect.height * 0.57))
+        path.addLine(to: CGPoint(x: rect.width * 0.12, y: rect.height * 0.30))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.width * 0.72, y: rect.height * 0.15),
+            control: CGPoint(x: rect.width * 0.38, y: rect.height * 0.08)
+        )
+        path.addLine(to: CGPoint(x: rect.width * 0.84, y: rect.height * 0.39))
+        path.addLine(to: CGPoint(x: rect.width * 0.94, y: rect.height * 0.43))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.width * 0.98, y: rect.height * 0.62),
+            control: CGPoint(x: rect.maxX, y: rect.height * 0.48)
+        )
+        path.addLine(to: CGPoint(x: rect.width * 0.94, y: rect.height * 0.77))
+        path.addLine(to: CGPoint(x: rect.width * 0.05, y: rect.height * 0.77))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct SUVWindowShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: 0, y: rect.height * 0.18))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.width * 0.78, y: 0),
+            control: CGPoint(x: rect.width * 0.36, y: rect.height * -0.08)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.width * 0.04, y: rect.maxY))
         path.closeSubpath()
         return path
     }
@@ -553,25 +595,42 @@ private struct RideshareSedanView: View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
                 SedanBodyShape()
-                    .fill(Color(red: 0.11, green: 0.32, blue: 0.42))
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(red: 0.16, green: 0.42, blue: 0.52), Color(red: 0.07, green: 0.23, blue: 0.31)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
                 SedanWindowShape()
                     .fill(Color(red: 0.055, green: 0.10, blue: 0.13))
-                    .frame(width: proxy.size.width * 0.43, height: proxy.size.height * 0.27)
-                    .offset(x: proxy.size.width * 0.34, y: proxy.size.height * 0.17)
+                    .frame(width: proxy.size.width * 0.48, height: proxy.size.height * 0.29)
+                    .offset(x: proxy.size.width * 0.31, y: proxy.size.height * 0.15)
+                Rectangle()
+                    .fill(Color.black.opacity(0.42))
+                    .frame(width: 1.1, height: proxy.size.height * 0.25)
+                    .offset(x: proxy.size.width * 0.56, y: proxy.size.height * 0.17)
+                Rectangle()
+                    .fill(Color.white.opacity(0.15))
+                    .frame(width: proxy.size.width * 0.76, height: 1)
+                    .offset(x: proxy.size.width * 0.12, y: proxy.size.height * 0.57)
                 Capsule()
                     .fill(Color(red: 0.16, green: 0.54, blue: 0.40))
-                    .frame(width: 9, height: 2)
-                    .offset(x: proxy.size.width * 0.85, y: proxy.size.height * 0.59)
+                    .frame(width: 8, height: 2)
+                    .offset(x: proxy.size.width * 0.82, y: proxy.size.height * 0.54)
                 Capsule()
-                    .fill(Color.white.opacity(0.58))
-                    .frame(width: 5, height: 1.5)
-                    .offset(x: proxy.size.width * 0.91, y: proxy.size.height * 0.55)
-                HStack(spacing: proxy.size.width * 0.52) {
-                    VehicleWheel(rotation: wheelRotation).frame(width: 13, height: 13)
-                    VehicleWheel(rotation: wheelRotation).frame(width: 13, height: 13)
+                    .fill(Color(red: 0.95, green: 0.86, blue: 0.63))
+                    .frame(width: 5, height: 2.5)
+                    .offset(x: proxy.size.width * 0.93, y: proxy.size.height * 0.53)
+                Capsule()
+                    .fill(Color(red: 0.72, green: 0.14, blue: 0.11))
+                    .frame(width: 3.5, height: 3)
+                    .offset(x: proxy.size.width * 0.035, y: proxy.size.height * 0.54)
+                HStack(spacing: proxy.size.width * 0.53) {
+                    VehicleWheel(rotation: wheelRotation).frame(width: 14, height: 14)
+                    VehicleWheel(rotation: wheelRotation).frame(width: 14, height: 14)
                 }
-                .frame(height: proxy.size.height * 0.33)
-                .offset(x: proxy.size.width * 0.14, y: proxy.size.height * 0.61)
+                .offset(x: proxy.size.width * 0.15, y: proxy.size.height * 0.64)
             }
         }
         .shadow(color: .black.opacity(0.28), radius: 3, y: 2)
@@ -581,23 +640,24 @@ private struct RideshareSedanView: View {
 private struct SedanBodyShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: rect.width * 0.03, y: rect.height * 0.67))
+        path.move(to: CGPoint(x: rect.width * 0.02, y: rect.height * 0.64))
         path.addQuadCurve(
-            to: CGPoint(x: rect.width * 0.22, y: rect.height * 0.45),
-            control: CGPoint(x: rect.width * 0.07, y: rect.height * 0.48)
+            to: CGPoint(x: rect.width * 0.23, y: rect.height * 0.43),
+            control: CGPoint(x: rect.width * 0.08, y: rect.height * 0.47)
         )
-        path.addLine(to: CGPoint(x: rect.width * 0.38, y: rect.height * 0.15))
+        path.addLine(to: CGPoint(x: rect.width * 0.39, y: rect.height * 0.14))
         path.addQuadCurve(
-            to: CGPoint(x: rect.width * 0.72, y: rect.height * 0.18),
-            control: CGPoint(x: rect.width * 0.55, y: rect.height * 0.05)
+            to: CGPoint(x: rect.width * 0.70, y: rect.height * 0.17),
+            control: CGPoint(x: rect.width * 0.54, y: rect.height * 0.04)
         )
-        path.addLine(to: CGPoint(x: rect.width * 0.84, y: rect.height * 0.43))
+        path.addLine(to: CGPoint(x: rect.width * 0.81, y: rect.height * 0.41))
+        path.addLine(to: CGPoint(x: rect.width * 0.92, y: rect.height * 0.46))
         path.addQuadCurve(
-            to: CGPoint(x: rect.width * 0.98, y: rect.height * 0.64),
-            control: CGPoint(x: rect.width * 0.96, y: rect.height * 0.47)
+            to: CGPoint(x: rect.width * 0.98, y: rect.height * 0.63),
+            control: CGPoint(x: rect.maxX, y: rect.height * 0.50)
         )
-        path.addLine(to: CGPoint(x: rect.width * 0.94, y: rect.height * 0.78))
-        path.addLine(to: CGPoint(x: rect.width * 0.06, y: rect.height * 0.78))
+        path.addLine(to: CGPoint(x: rect.width * 0.94, y: rect.height * 0.77))
+        path.addLine(to: CGPoint(x: rect.width * 0.06, y: rect.height * 0.77))
         path.closeSubpath()
         return path
     }
@@ -607,8 +667,11 @@ private struct SedanWindowShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
         path.move(to: CGPoint(x: 0, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.width * 0.24, y: 0))
-        path.addLine(to: CGPoint(x: rect.width * 0.69, y: rect.height * 0.06))
+        path.addLine(to: CGPoint(x: rect.width * 0.25, y: 0))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.width * 0.70, y: rect.height * 0.07),
+            control: CGPoint(x: rect.width * 0.48, y: rect.height * -0.08)
+        )
         path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
         path.closeSubpath()
         return path
