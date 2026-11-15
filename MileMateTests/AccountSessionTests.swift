@@ -286,18 +286,118 @@ final class AccountSessionTests: XCTestCase {
         XCTAssertFalse(controller.requestTrackingAccess())
     }
 
-    func testExpiredProEntitlementRestoresFreeTripGateWithoutDeletingProgress() {
+    func testExpiredProEntitlementRestoresFreeTripGateWithoutDeletingProgress() async {
+        let trips = (0..<10).map { _ in testTrip() }
         let entitlement = AccountTestProEntitlement(hasProAccess: true)
-        let controller = makeController(proEntitlement: entitlement)
+        let controller = makeController(
+            repository: AccountTestRepository(trips: trips),
+            proEntitlement: entitlement
+        )
         controller.continueAsGuest()
-        for _ in 0..<10 { controller.recordSavedTrip(testTrip()) }
+        for trip in trips { controller.recordSavedTrip(trip) }
         XCTAssertTrue(controller.requestTrackingAccess())
 
         entitlement.hasProAccess = false
 
         XCTAssertEqual(controller.remainingGuestTrips, 0)
         XCTAssertFalse(controller.requestTrackingAccess())
+        await waitForGuestReconciliation(controller)
         XCTAssertTrue(controller.presentsUpgrade)
+    }
+
+    func testTrackingRequestDuringReconciliationPresentsUpgradeOnceWhenTrialIsExhausted() async {
+        let trips = (0..<10).map { _ in testTrip() }
+        let entitlement = AccountTestProEntitlement(hasProAccess: true)
+        let controller = makeController(
+            repository: AccountTestRepository(trips: trips),
+            proEntitlement: entitlement
+        )
+        controller.continueAsGuest()
+        for trip in trips { controller.recordSavedTrip(trip) }
+        entitlement.hasProAccess = false
+
+        XCTAssertTrue(controller.isReconcilingGuestTrial)
+        XCTAssertFalse(controller.requestTrackingAccess())
+        XCTAssertFalse(controller.presentsUpgrade)
+
+        await waitForGuestReconciliation(controller)
+
+        XCTAssertTrue(controller.presentsUpgrade)
+        controller.presentsUpgrade = false
+        await controller.reconcileGuestTrial()
+        XCTAssertFalse(controller.presentsUpgrade)
+    }
+
+    func testTrackingRequestDuringReconciliationDoesNotPresentUpgradeWhenTripsAreRestored() async {
+        let tripIDs = (0..<10).map { _ in UUID() }
+        let repository = AccountTestRepository(
+            trips: tripIDs.map { id in
+                testTrip(id: id, classification: .unclassified)
+            }
+        )
+        let entitlement = AccountTestProEntitlement(hasProAccess: true)
+        let controller = makeController(repository: repository, proEntitlement: entitlement)
+        controller.continueAsGuest()
+        for id in tripIDs {
+            controller.recordSavedTrip(testTrip(id: id))
+        }
+        entitlement.hasProAccess = false
+
+        XCTAssertFalse(controller.requestTrackingAccess())
+        await waitForGuestReconciliation(controller)
+
+        XCTAssertEqual(controller.remainingGuestTrips, 10)
+        XCTAssertFalse(controller.presentsUpgrade)
+        XCTAssertTrue(controller.requestTrackingAccess())
+    }
+
+    func testTrackingRequestDuringReconciliationDoesNotPresentUpgradeForActivePro() async {
+        let entitlement = AccountTestProEntitlement(hasProAccess: true)
+        let controller = makeController(proEntitlement: entitlement)
+        controller.continueAsGuest()
+
+        XCTAssertFalse(controller.requestTrackingAccess())
+        await waitForGuestReconciliation(controller)
+
+        XCTAssertFalse(controller.presentsUpgrade)
+        XCTAssertTrue(controller.requestTrackingAccess())
+    }
+
+    func testAccountSessionChangeClearsPendingTrackingRequest() async {
+        let entitlement = AccountTestProEntitlement(hasProAccess: true)
+        let controller = makeController(proEntitlement: entitlement)
+        controller.continueAsGuest()
+        for _ in 0..<10 { controller.recordSavedTrip(testTrip()) }
+        entitlement.hasProAccess = false
+
+        XCTAssertFalse(controller.requestTrackingAccess())
+        controller.logOut()
+        await Task.yield()
+
+        XCTAssertTrue(controller.requiresWelcome)
+        XCTAssertFalse(controller.presentsUpgrade)
+
+        controller.continueAsGuest()
+        await waitForGuestReconciliation(controller)
+        XCTAssertFalse(controller.presentsUpgrade)
+    }
+
+    func testReconciliationFailureClearsPendingTrackingRequest() async {
+        let entitlement = AccountTestProEntitlement(hasProAccess: true)
+        let controller = makeController(
+            repository: AccountTestRepository(fetchShouldFail: true),
+            proEntitlement: entitlement
+        )
+        controller.continueAsGuest()
+        for _ in 0..<10 { controller.recordSavedTrip(testTrip()) }
+        entitlement.hasProAccess = false
+
+        XCTAssertFalse(controller.requestTrackingAccess())
+        await waitForGuestReconciliation(controller)
+
+        XCTAssertFalse(controller.presentsUpgrade)
+        await controller.reconcileGuestTrial()
+        XCTAssertFalse(controller.presentsUpgrade)
     }
 
     func testMissingStoreKitProductConfigurationRemainsSafelyFree() async {
@@ -621,6 +721,13 @@ final class AccountSessionTests: XCTestCase {
         )
     }
 
+    private func waitForGuestReconciliation(_ controller: AccountSessionController) async {
+        for _ in 0..<100 where controller.isReconcilingGuestTrial {
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        XCTAssertFalse(controller.isReconcilingGuestTrial)
+    }
+
     private func testTrip(
         id: UUID = UUID(),
         minutesAgo: Int = 0,
@@ -694,17 +801,25 @@ private actor AccountTestRepository: MileageRepository {
     private var trips: [Trip]
     private let deleteAllShouldFail: Bool
     private let updateShouldFail: Bool
+    private let fetchShouldFail: Bool
 
     init(
         trips: [Trip] = [],
         deleteAllShouldFail: Bool = false,
-        updateShouldFail: Bool = false
+        updateShouldFail: Bool = false,
+        fetchShouldFail: Bool = false
     ) {
         self.trips = trips
         self.deleteAllShouldFail = deleteAllShouldFail
         self.updateShouldFail = updateShouldFail
+        self.fetchShouldFail = fetchShouldFail
     }
-    func fetchTrips() async throws -> [Trip] { trips }
+    func fetchTrips() async throws -> [Trip] {
+        if fetchShouldFail {
+            throw AuthenticationError.provider("Fetch failed")
+        }
+        return trips
+    }
     func fetchSummary() async throws -> MileageSummary {
         MileageSummaryCalculator.summary(for: trips)
     }

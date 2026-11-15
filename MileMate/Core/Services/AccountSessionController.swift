@@ -22,6 +22,10 @@ final class AccountSessionController {
     private let decoder = JSONDecoder()
     private var currentAppleNonce: String?
     private var trialRecord: GuestTrialRecord
+    private var pendingTrackingAccessRequest = false
+    private var sessionGeneration = 0
+    private var activeReconciliations: Set<UUID> = []
+    private var successfulReconciliations: Set<UUID> = []
 
     private(set) var state: AccountAccessState
     private(set) var isAuthenticating = false
@@ -96,20 +100,20 @@ final class AccountSessionController {
 
     @discardableResult
     func requestTrackingAccess() -> Bool {
-        guard proEntitlementProvider.isEntitlementReady else { return false }
-        if proEntitlementProvider.hasProAccess { return !requiresWelcome }
-        switch state {
-        case .authenticated, .guest:
-            if isReconcilingGuestTrial { return false }
-            if trialRecord.canRecordAnotherTrip { return true }
-            presentsUpgrade = true
-            return false
-        case .firstLaunch:
+        guard !requiresWelcome else { return false }
+        if isReconcilingGuestTrial {
+            pendingTrackingAccessRequest = true
             return false
         }
+        guard proEntitlementProvider.isEntitlementReady else { return false }
+        if proEntitlementProvider.hasProAccess { return true }
+        if trialRecord.canRecordAnotherTrip { return true }
+        presentsUpgrade = true
+        return false
     }
 
     func continueAsGuest() {
+        invalidatePendingAccessAndReconciliation()
         try? secureStore.remove(Key.loggedOut)
         state = .guest(trialRecord)
         dataScopeProvider.setCurrent(.guest(id: trialRecord.guestID))
@@ -130,11 +134,35 @@ final class AccountSessionController {
     }
 
     func reconcileGuestTrial() async {
+        let reconciliationID = UUID()
+        let generationAtStart = sessionGeneration
+        activeReconciliations.insert(reconciliationID)
         isReconcilingGuestTrial = true
-        defer { isReconcilingGuestTrial = false }
-        guard let scopeAtStart = dataScopeProvider.current else { return }
+        await reconcileGuestTrial(
+            reconciliationID: reconciliationID,
+            generationAtStart: generationAtStart
+        )
+    }
+
+    private func reconcileGuestTrial(
+        reconciliationID: UUID,
+        generationAtStart: Int
+    ) async {
+        let scopeAtStart = dataScopeProvider.current
+        var completedSuccessfully = false
+        defer {
+            finishGuestReconciliation(
+                reconciliationID: reconciliationID,
+                generationAtStart: generationAtStart,
+                scopeAtStart: scopeAtStart,
+                completedSuccessfully: completedSuccessfully
+            )
+        }
+        guard let scopeAtStart else { return }
         guard let trips = try? await repository.fetchTrips() else { return }
-        guard dataScopeProvider.current == scopeAtStart else { return }
+        guard sessionGeneration == generationAtStart,
+              dataScopeProvider.current == scopeAtStart else { return }
+        completedSuccessfully = true
         let savedIDs = Set(trips.map { trip in trip.id })
         let qualifyingIDs = Set(
             trips.compactMap { trip in
@@ -202,6 +230,7 @@ final class AccountSessionController {
     }
 
     private func clearAuthenticatedSession() {
+        invalidatePendingAccessAndReconciliation()
         try? secureStore.remove(Key.authenticated)
         try? secureStore.set(Data([1]), for: Key.loggedOut)
         presentsUpgrade = false
@@ -243,6 +272,7 @@ final class AccountSessionController {
         operation: () async throws -> AuthenticatedAccount
     ) async {
         guard !isAuthenticating else { return }
+        pendingTrackingAccessRequest = false
         isAuthenticating = true
         authenticationError = nil
         defer { isAuthenticating = false }
@@ -257,6 +287,7 @@ final class AccountSessionController {
                     to: accountScope
                 )
             }
+            invalidatePendingAccessAndReconciliation()
             try secureStore.set(try encoder.encode(account), for: Key.authenticated)
             try? secureStore.remove(Key.loggedOut)
             state = .authenticated(account)
@@ -285,8 +316,62 @@ final class AccountSessionController {
     }
 
     private func scheduleGuestReconciliation() {
+        let reconciliationID = UUID()
+        let generationAtStart = sessionGeneration
+        activeReconciliations.insert(reconciliationID)
         isReconcilingGuestTrial = true
-        Task { await reconcileGuestTrial() }
+        Task {
+            await reconcileGuestTrial(
+                reconciliationID: reconciliationID,
+                generationAtStart: generationAtStart
+            )
+        }
+    }
+
+    private func finishGuestReconciliation(
+        reconciliationID: UUID,
+        generationAtStart: Int,
+        scopeAtStart: LocalDataScope?,
+        completedSuccessfully: Bool
+    ) {
+        let belongsToCurrentSession = sessionGeneration == generationAtStart &&
+            dataScopeProvider.current == scopeAtStart
+        if belongsToCurrentSession, completedSuccessfully {
+            successfulReconciliations.insert(reconciliationID)
+        }
+        activeReconciliations.remove(reconciliationID)
+        isReconcilingGuestTrial = !activeReconciliations.isEmpty
+        guard activeReconciliations.isEmpty,
+              belongsToCurrentSession else {
+            return
+        }
+        let completedAtLeastOnce = !successfulReconciliations.isEmpty
+        successfulReconciliations.removeAll()
+        if completedAtLeastOnce {
+            resolvePendingTrackingAccessRequest()
+        } else {
+            pendingTrackingAccessRequest = false
+        }
+    }
+
+    private func resolvePendingTrackingAccessRequest() {
+        guard pendingTrackingAccessRequest else { return }
+        pendingTrackingAccessRequest = false
+        guard !requiresWelcome,
+              proEntitlementProvider.isEntitlementReady,
+              !proEntitlementProvider.hasProAccess,
+              !trialRecord.canRecordAnotherTrip else {
+            return
+        }
+        presentsUpgrade = true
+    }
+
+    private func invalidatePendingAccessAndReconciliation() {
+        sessionGeneration += 1
+        pendingTrackingAccessRequest = false
+        activeReconciliations.removeAll()
+        successfulReconciliations.removeAll()
+        isReconcilingGuestTrial = false
     }
 
     private static func localDataScope(for state: AccountAccessState) -> LocalDataScope? {
