@@ -229,9 +229,9 @@ struct SubscriptionBillingView: View {
     private var planName: String {
         guard purchaseManager.isEntitlementReady else { return "Checking…" }
         switch purchaseManager.plan {
-        case .free: "Free"
-        case .monthly: "MileMate Pro Monthly"
-        case .lifetime: "MileMate Pro Lifetime"
+        case .free: return "Free"
+        case .monthly: return "MileMate Pro Monthly"
+        case .lifetime: return "MileMate Pro Lifetime"
         }
     }
 

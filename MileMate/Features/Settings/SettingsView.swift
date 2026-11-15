@@ -542,9 +542,9 @@ struct SettingsView: View {
     private var subscriptionPlanName: String {
         guard purchaseManager.isEntitlementReady else { return "Checking…" }
         switch purchaseManager.plan {
-        case .free: "Free"
-        case .monthly: "Pro Monthly"
-        case .lifetime: "Pro Lifetime"
+        case .free: return "Free"
+        case .monthly: return "Pro Monthly"
+        case .lifetime: return "Pro Lifetime"
         }
     }
 

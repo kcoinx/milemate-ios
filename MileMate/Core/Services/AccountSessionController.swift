@@ -57,7 +57,7 @@ final class AccountSessionController {
         } else if (try? secureStore.data(for: Key.loggedOut)) != nil {
             state = .firstLaunch
         } else if storedTrial != nil {
-            state = .guest(trialRecord)
+            state = .guest(storedTrial ?? GuestTrialRecord(guestID: UUID(), countedTripIDs: []))
         } else {
             state = .firstLaunch
         }
