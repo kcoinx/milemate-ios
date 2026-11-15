@@ -442,7 +442,7 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         processor.reset()
         distanceMeters = 0
         elapsedTime = 0
-        startedAt = nil
+        self.startedAt = nil
         activeOwnerScopeIdentifier = nil
         activeTripID = nil
         notificationService?.cancelLongRunningTripReminder()
