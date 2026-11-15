@@ -108,8 +108,9 @@ struct DashboardView: View {
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.headline.weight(.semibold))
                     .foregroundStyle(AppTheme.Color.brand)
+                    .frame(width: 24, height: 24, alignment: .center)
             }
             .padding(.horizontal, AppTheme.Spacing.large)
             .padding(.vertical, AppTheme.Spacing.medium)
@@ -124,9 +125,9 @@ struct DashboardView: View {
                 RoundedRectangle(cornerRadius: AppTheme.Radius.medium)
                     .stroke(
                         colorScheme == .dark
-                            ? Color.white.opacity(0.07)
-                            : AppTheme.Color.divider.opacity(0.16),
-                        lineWidth: 0.5
+                            ? AppTheme.Color.brand.opacity(0.24)
+                            : AppTheme.Color.brand.opacity(0.18),
+                        lineWidth: 0.8
                     )
             }
             .shadow(
