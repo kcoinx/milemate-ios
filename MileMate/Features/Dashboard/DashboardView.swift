@@ -144,7 +144,8 @@ struct DashboardView: View {
         NavigationLink {
             ReviewQueueView(
                 repository: repository,
-                notificationService: notificationService
+                notificationService: notificationService,
+                tripDidSave: { accountSession.recordSavedTrip($0) }
             )
         } label: {
             AppCard {

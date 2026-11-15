@@ -6,6 +6,7 @@ import SwiftUI
 final class ReviewQueueViewModel {
     private let repository: any MileageRepository
     private let notificationService: any TripNotificationScheduling
+    private let tripDidSave: @MainActor (Trip) -> Void
 
     private(set) var trips: [Trip] = []
     private(set) var vehicles: [Vehicle] = []
@@ -18,10 +19,12 @@ final class ReviewQueueViewModel {
 
     init(
         repository: any MileageRepository,
-        notificationService: any TripNotificationScheduling
+        notificationService: any TripNotificationScheduling,
+        tripDidSave: @escaping @MainActor (Trip) -> Void = { _ in }
     ) {
         self.repository = repository
         self.notificationService = notificationService
+        self.tripDidSave = tripDidSave
     }
 
     var currentTrip: Trip? { trips.first }
@@ -50,6 +53,7 @@ final class ReviewQueueViewModel {
         trip = SmartClassificationService.overriding(trip, with: classification)
         do {
             try await repository.update(trip)
+            tripDidSave(trip)
             notificationService.cancelNotifications(for: trip.id)
             await notificationService.reconcileReviewReminder()
             history.removeAll { $0.id == trip.id }
@@ -135,18 +139,22 @@ final class ReviewQueueViewModel {
 struct ReviewQueueView: View {
     private let repository: any MileageRepository
     private let notificationService: any TripNotificationScheduling
+    private let tripDidSave: @MainActor (Trip) -> Void
     @State private var viewModel: ReviewQueueViewModel
 
     init(
         repository: any MileageRepository,
-        notificationService: any TripNotificationScheduling
+        notificationService: any TripNotificationScheduling,
+        tripDidSave: @escaping @MainActor (Trip) -> Void = { _ in }
     ) {
         self.repository = repository
         self.notificationService = notificationService
+        self.tripDidSave = tripDidSave
         _viewModel = State(
             initialValue: ReviewQueueViewModel(
                 repository: repository,
-                notificationService: notificationService
+                notificationService: notificationService,
+                tripDidSave: tripDidSave
             )
         )
     }
@@ -298,7 +306,8 @@ struct ReviewQueueView: View {
                         TripDetailView(
                             trip: trip,
                             repository: repository,
-                            notificationService: notificationService
+                            notificationService: notificationService,
+                            tripDidSave: tripDidSave
                         )
                     } label: {
                         Label("Edit details", systemImage: "pencil")

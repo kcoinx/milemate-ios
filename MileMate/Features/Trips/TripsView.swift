@@ -4,6 +4,7 @@ struct TripsView: View {
     @AppStorage(DistanceUnitSettings.key) private var distanceUnitRaw = DistanceUnitSettings.defaultUnit().rawValue
     private let repository: any MileageRepository
     private let notificationService: any TripNotificationScheduling
+    private let tripDidSave: @MainActor (Trip) -> Void
     @Binding private var requestedTrip: Trip?
     @Binding private var requestedFilter: TripsFilterRequest?
     @Binding private var requestedReviewQueue: Bool
@@ -17,17 +18,20 @@ struct TripsView: View {
         requestedTrip: Binding<Trip?> = .constant(nil),
         requestedFilter: Binding<TripsFilterRequest?> = .constant(nil),
         requestedReviewQueue: Binding<Bool> = .constant(false),
-        notificationService: any TripNotificationScheduling
+        notificationService: any TripNotificationScheduling,
+        tripDidSave: @escaping @MainActor (Trip) -> Void = { _ in }
     ) {
         self.repository = repository
         self.notificationService = notificationService
+        self.tripDidSave = tripDidSave
         _requestedTrip = requestedTrip
         _requestedFilter = requestedFilter
         _requestedReviewQueue = requestedReviewQueue
         _viewModel = State(
             initialValue: TripsViewModel(
                 repository: repository,
-                notificationService: notificationService
+                notificationService: notificationService,
+                tripDidSave: tripDidSave
             )
         )
     }
@@ -41,7 +45,8 @@ struct TripsView: View {
             NavigationLink {
                 ReviewQueueView(
                     repository: repository,
-                    notificationService: notificationService
+                    notificationService: notificationService,
+                    tripDidSave: tripDidSave
                 )
             } label: {
                 Label(
@@ -103,18 +108,24 @@ struct TripsView: View {
             TripDetailView(
                 trip: $0,
                 repository: repository,
-                notificationService: notificationService
+                notificationService: notificationService,
+                tripDidSave: tripDidSave
             )
         }
         .navigationDestination(item: $requestedTrip) {
             TripDetailView(
                 trip: $0,
                 repository: repository,
-                notificationService: notificationService
+                notificationService: notificationService,
+                tripDidSave: tripDidSave
             )
         }
         .navigationDestination(isPresented: $requestedReviewQueue) {
-            ReviewQueueView(repository: repository, notificationService: notificationService)
+            ReviewQueueView(
+                repository: repository,
+                notificationService: notificationService,
+                tripDidSave: tripDidSave
+            )
         }
         .confirmationDialog(
             "Delete this trip?",

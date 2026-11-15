@@ -12,6 +12,7 @@ final class TripsViewModel {
 
     private let repository: any MileageRepository
     private let notificationService: (any TripNotificationScheduling)?
+    private let tripDidSave: @MainActor (Trip) -> Void
     var selection: Trip.Classification?
     var searchText = ""
     var vehicleFilter = VehicleFilter.all
@@ -22,10 +23,12 @@ final class TripsViewModel {
 
     init(
         repository: any MileageRepository,
-        notificationService: (any TripNotificationScheduling)? = nil
+        notificationService: (any TripNotificationScheduling)? = nil,
+        tripDidSave: @escaping @MainActor (Trip) -> Void = { _ in }
     ) {
         self.repository = repository
         self.notificationService = notificationService
+        self.tripDidSave = tripDidSave
     }
 
     var filteredTrips: [Trip] {
@@ -81,6 +84,7 @@ final class TripsViewModel {
 
         do {
             try await repository.update(updated)
+            tripDidSave(updated)
             errorMessage = nil
             NotificationCenter.default.post(name: .mileageTripsDidChange, object: updated.id)
         } catch {

@@ -3,6 +3,7 @@ import SwiftUI
 struct TripDetailView: View {
     private let repository: any MileageRepository
     private let notificationService: (any TripNotificationScheduling)?
+    private let tripDidSave: @MainActor (Trip) -> Void
     private let originalClassification: Trip.Classification
     private let originalRuleID: UUID?
     @State private var trip: Trip
@@ -19,10 +20,12 @@ struct TripDetailView: View {
     init(
         trip: Trip,
         repository: any MileageRepository,
-        notificationService: (any TripNotificationScheduling)? = nil
+        notificationService: (any TripNotificationScheduling)? = nil,
+        tripDidSave: @escaping @MainActor (Trip) -> Void = { _ in }
     ) {
         self.repository = repository
         self.notificationService = notificationService
+        self.tripDidSave = tripDidSave
         self.originalClassification = trip.classification
         self.originalRuleID = trip.appliedRuleID
         _trip = State(initialValue: trip)
@@ -285,6 +288,7 @@ struct TripDetailView: View {
         Task {
             do {
                 try await repository.update(trip)
+                tripDidSave(trip)
                 saveError = nil
                 NotificationCenter.default.post(name: .mileageTripsDidChange, object: trip.id)
                 await offerRuleUpdateIfNeeded()

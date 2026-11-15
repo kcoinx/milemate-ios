@@ -91,6 +91,87 @@ final class AccountSessionTests: XCTestCase {
         XCTAssertTrue(controller.requestTrackingAccess())
     }
 
+    func testReviewQueueClassificationImmediatelyConsumesOneFreeTrip() async {
+        let pending = testTrip(classification: .unclassified)
+        let repository = AccountTestRepository(trips: [pending])
+        let controller = makeController(repository: repository)
+        controller.continueAsGuest()
+        let viewModel = ReviewQueueViewModel(
+            repository: repository,
+            notificationService: AccountTestNotificationService(),
+            tripDidSave: { controller.recordSavedTrip($0) }
+        )
+        await viewModel.load()
+
+        await viewModel.classify(.business)
+
+        XCTAssertEqual(controller.remainingGuestTrips, 9)
+        XCTAssertEqual(controller.guest?.completedTripCount, 1)
+    }
+
+    func testRepeatedClassificationEditsCountTripOnlyOnce() async {
+        let pending = testTrip(classification: .unclassified)
+        let repository = AccountTestRepository(trips: [pending])
+        let controller = makeController(repository: repository)
+        controller.continueAsGuest()
+        let viewModel = TripsViewModel(
+            repository: repository,
+            tripDidSave: { controller.recordSavedTrip($0) }
+        )
+        await viewModel.load()
+
+        await viewModel.classify(pending, as: .business)
+        let businessTrip = viewModel.trips[0]
+        await viewModel.classify(businessTrip, as: .personal)
+        let personalTrip = viewModel.trips[0]
+        await viewModel.classify(personalTrip, as: .unclassified)
+        let unclassifiedTrip = viewModel.trips[0]
+        await viewModel.classify(unclassifiedTrip, as: .business)
+
+        XCTAssertEqual(controller.guest?.completedTripCount, 1)
+        XCTAssertEqual(controller.remainingGuestTrips, 9)
+    }
+
+    func testFailedClassificationSaveDoesNotConsumeFreeTrip() async throws {
+        let pending = testTrip(classification: .unclassified)
+        let repository = AccountTestRepository(trips: [pending], updateShouldFail: true)
+        let controller = makeController(repository: repository)
+        controller.continueAsGuest()
+        let viewModel = ReviewQueueViewModel(
+            repository: repository,
+            notificationService: AccountTestNotificationService(),
+            tripDidSave: { controller.recordSavedTrip($0) }
+        )
+        await viewModel.load()
+
+        await viewModel.classify(.business)
+
+        XCTAssertEqual(controller.guest?.completedTripCount, 0)
+        XCTAssertEqual(controller.remainingGuestTrips, 10)
+        let persistedTrips = try await repository.fetchTrips()
+        XCTAssertEqual(persistedTrips.first?.classification, .unclassified)
+    }
+
+    func testReviewingTenthTripImmediatelyBlocksTripEleven() async {
+        let pending = testTrip(classification: .unclassified)
+        let repository = AccountTestRepository(trips: [pending])
+        let controller = makeController(repository: repository)
+        controller.continueAsGuest()
+        for _ in 0..<9 { controller.recordSavedTrip(testTrip()) }
+        let viewModel = ReviewQueueViewModel(
+            repository: repository,
+            notificationService: AccountTestNotificationService(),
+            tripDidSave: { controller.recordSavedTrip($0) }
+        )
+        await viewModel.load()
+
+        await viewModel.classify(.personal)
+
+        XCTAssertEqual(controller.remainingGuestTrips, 0)
+        XCTAssertFalse(controller.requestTrackingAccess())
+        XCTAssertTrue(controller.presentsUpgrade)
+    }
+
     func testReconciliationRepairsPreviouslyCountedUnreviewedTrips() async {
         let store = InMemoryAccountStore()
         let tripIDs = (0..<10).map { _ in UUID() }
@@ -612,10 +693,16 @@ private struct AccountTestAuthenticationService: AuthenticationServicing {
 private actor AccountTestRepository: MileageRepository {
     private var trips: [Trip]
     private let deleteAllShouldFail: Bool
+    private let updateShouldFail: Bool
 
-    init(trips: [Trip] = [], deleteAllShouldFail: Bool = false) {
+    init(
+        trips: [Trip] = [],
+        deleteAllShouldFail: Bool = false,
+        updateShouldFail: Bool = false
+    ) {
         self.trips = trips
         self.deleteAllShouldFail = deleteAllShouldFail
+        self.updateShouldFail = updateShouldFail
     }
     func fetchTrips() async throws -> [Trip] { trips }
     func fetchSummary() async throws -> MileageSummary {
@@ -626,6 +713,9 @@ private actor AccountTestRepository: MileageRepository {
         if !trips.contains(where: { $0.id == trip.id }) { trips.append(trip) }
     }
     func update(_ trip: Trip) async throws {
+        if updateShouldFail {
+            throw AuthenticationError.provider("Update failed")
+        }
         guard let index = trips.firstIndex(where: { $0.id == trip.id }) else { return }
         trips[index] = trip
     }

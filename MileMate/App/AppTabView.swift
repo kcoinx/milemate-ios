@@ -31,7 +31,8 @@ struct AppTabView: View {
                     requestedTrip: $router.requestedTrip,
                     requestedFilter: $router.requestedTripsFilter,
                     requestedReviewQueue: $router.requestedReviewQueue,
-                    notificationService: dependencies.notificationService
+                    notificationService: dependencies.notificationService,
+                    tripDidSave: { dependencies.accountSession.recordSavedTrip($0) }
                 )
             }
             tab(.reports) {
