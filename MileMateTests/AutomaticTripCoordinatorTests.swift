@@ -356,8 +356,60 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         location.authorizationStatus = .denied
         location.eventHandler?(.authorizationChanged(.denied))
 
-        XCTAssertEqual(coordinator.state, .permissionRequired)
+        XCTAssertEqual(coordinator.state, .reviewing)
+        XCTAssertNotNil(coordinator.pendingTrip)
         XCTAssertTrue(coordinator.hasProtectedTripState)
+    }
+
+    func testAutomaticTripInterruptedWhenAlwaysChangesToWhileUsing() {
+        assertAutomaticTripInterruption(for: .authorizedWhenInUse)
+    }
+
+    func testAutomaticTripInterruptedWhenLocationIsDenied() {
+        assertAutomaticTripInterruption(for: .denied)
+    }
+
+    func testAutomaticTripInterruptedWhenLocationIsRestricted() {
+        assertAutomaticTripInterruption(for: .restricted)
+    }
+
+    func testPermissionRestorationDoesNotResumeOrDuplicateInterruptedAutomaticTrip() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let scope = testScopeProvider()
+        let (coordinator, location, motion) = makeCoordinator(scopeProvider: scope)
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .high))
+        location.send(drivingSamples(latitudeDelta: 0.005))
+        location.authorizationStatus = .denied
+        location.eventHandler?(.authorizationChanged(.denied))
+        let pendingID = coordinator.pendingTrip?.id
+
+        location.authorizationStatus = .authorizedAlways
+        location.eventHandler?(.authorizationChanged(.authorizedAlways))
+        coordinator.startIfEnabled()
+
+        XCTAssertEqual(coordinator.state, .reviewing)
+        XCTAssertEqual(coordinator.pendingTrip?.id, pendingID)
+        XCTAssertFalse(location.isPreciseTracking)
+        XCTAssertTrue(coordinator.hasProtectedTripState)
+    }
+
+    func testDetectionOnlyPermissionLossDoesNotCreateTrip() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, location, motion) = makeCoordinator()
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .high))
+        XCTAssertEqual(coordinator.state, .detecting)
+
+        location.authorizationStatus = .denied
+        location.eventHandler?(.authorizationChanged(.denied))
+
+        XCTAssertEqual(coordinator.state, .permissionRequired)
+        XCTAssertNil(coordinator.pendingTrip)
+        XCTAssertNil(UserDefaults.standard.data(forKey: "automaticActiveTrip"))
+        XCTAssertFalse(coordinator.hasProtectedTripState)
     }
 
     func testDoesNotDetectWhileManualTrackingIsActive() {
@@ -746,6 +798,38 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
             try? await Task.sleep(for: .milliseconds(5))
         }
         return condition()
+    }
+
+    private func assertAutomaticTripInterruption(
+        for status: CLAuthorizationStatus,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let scope = testScopeProvider()
+        let (coordinator, location, motion) = makeCoordinator(scopeProvider: scope)
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .high))
+        location.send(drivingSamples(latitudeDelta: 0.005))
+        let route = coordinator.currentRoute
+        let distance = coordinator.distanceMiles
+
+        location.authorizationStatus = status
+        location.eventHandler?(.authorizationChanged(status))
+
+        let pending = coordinator.pendingTrip
+        XCTAssertEqual(coordinator.state, .reviewing, file: file, line: line)
+        XCTAssertEqual(pending?.route.count, route.count, file: file, line: line)
+        XCTAssertEqual(pending?.distanceMiles ?? -1, distance, accuracy: 0.000_001, file: file, line: line)
+        XCTAssertEqual(pending?.startedAt, route.first?.timestamp, file: file, line: line)
+        XCTAssertFalse(location.isPreciseTracking, file: file, line: line)
+        XCTAssertTrue(coordinator.hasProtectedTripState, file: file, line: line)
+
+        let restored = makeCoordinator(scopeProvider: scope).0
+        XCTAssertEqual(restored.state, .reviewing, file: file, line: line)
+        XCTAssertEqual(restored.pendingTrip?.id, pending?.id, file: file, line: line)
+        XCTAssertEqual(restored.pendingTrip?.route.count, route.count, file: file, line: line)
     }
 
     private func activity(

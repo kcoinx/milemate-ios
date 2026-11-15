@@ -20,11 +20,16 @@ protocol TripReviewCoordinating: AnyObject, Observable {
 @Observable
 final class ManualTripCoordinator: TripReviewCoordinating {
     private struct ActiveSession: Codable {
+        let tripID: UUID?
         let startedAt: Date
         let samples: [LocationSample]
         let distanceMeters: Double
         let lastMeaningfulMovementAt: Date?
         let reminderScheduled: Bool?
+        let ownerScopeIdentifier: String?
+    }
+    private struct PendingReview: Codable {
+        let trip: Trip
         let ownerScopeIdentifier: String?
     }
     enum State: Equatable {
@@ -54,7 +59,9 @@ final class ManualTripCoordinator: TripReviewCoordinating {
     private var reminderScheduled = false
     private var activeOwnerScopeIdentifier: String?
     private var pendingOwnerScopeIdentifier: String?
+    private var activeTripID: UUID?
     private static let activeSessionKey = "manualActiveTrip"
+    private static let pendingReviewKey = "manualPendingTrip"
     private let reminderEligibilityDuration: TimeInterval
     private let inactivityReminderDelay: TimeInterval
     private let safeguardCheckInterval: TimeInterval
@@ -88,7 +95,10 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         self.locationService.eventHandler = { [weak self] event in
             self?.handle(event)
         }
-        restoreActiveSession()
+        restorePendingReview()
+        if pendingTrip == nil {
+            restoreActiveSession()
+        }
     }
 
     var distanceMiles: Double {
@@ -119,6 +129,10 @@ final class ManualTripCoordinator: TripReviewCoordinating {
 
     func startTrip() {
         guard state != .tracking else { return }
+        guard pendingTrip == nil else {
+            state = .reviewing
+            return
+        }
         guard canStartNewTrip() else { return }
         switch locationService.authorizationStatus {
         case .authorizedAlways:
@@ -148,8 +162,8 @@ final class ManualTripCoordinator: TripReviewCoordinating {
             TripCoordinate(latitude: $0.latitude, longitude: $0.longitude, timestamp: $0.timestamp)
         }
 
-        pendingTrip = Trip(
-            id: UUID(),
+        let trip = Trip(
+            id: activeTripID ?? UUID(),
             startedAt: startedAt,
             endedAt: endedAt,
             originName: "Unknown location",
@@ -161,6 +175,11 @@ final class ManualTripCoordinator: TripReviewCoordinating {
             endCoordinate: route.last,
             route: route
         )
+        guard persistPendingReview(trip, ownerScopeIdentifier: ownerScopeIdentifier) else {
+            state = .failed("Your trip could not be prepared for review. It remains saved for recovery.")
+            return
+        }
+        pendingTrip = trip
         pendingOwnerScopeIdentifier = ownerScopeIdentifier
         state = .reviewing
         notificationService?.cancelLongRunningTripReminder()
@@ -191,18 +210,25 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         trip.classificationSource = classificationSource
         trip.appliedRuleID = appliedRuleID
         trip.updatedAt = .now
-        try await repository.save(trip)
+        let existing = try await repository.fetchTrips()
+        if existing.contains(where: { $0.id == trip.id }) {
+            try await repository.update(trip)
+        } else {
+            try await repository.save(trip)
+        }
         tripDidSave(trip)
         await notificationService?.reconcileReviewReminder()
         NotificationCenter.default.post(name: .mileageTripsDidChange, object: trip.id)
         pendingTrip = nil
         pendingOwnerScopeIdentifier = nil
+        clearPersistedPendingReview()
         resetSession()
     }
 
     func discardPendingTrip() {
         pendingTrip = nil
         pendingOwnerScopeIdentifier = nil
+        clearPersistedPendingReview()
         stopLocationUpdates()
         resetSession()
     }
@@ -217,8 +243,10 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         pendingTrip = nil
         pendingOwnerScopeIdentifier = nil
         activeOwnerScopeIdentifier = nil
+        activeTripID = nil
         stopLocationUpdates()
         clearPersistedSession()
+        clearPersistedPendingReview()
         notificationService?.cancelLongRunningTripReminder()
         resetSession()
     }
@@ -235,6 +263,7 @@ final class ManualTripCoordinator: TripReviewCoordinating {
             return
         }
         activeOwnerScopeIdentifier = ownerScopeIdentifier
+        activeTripID = UUID()
         processor.reset()
         distanceMeters = 0
         elapsedTime = 0
@@ -261,7 +290,11 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         switch event {
         case .authorizationChanged(let status):
             TrackingDiagnostics.log("location authorization changed: \(status.rawValue)")
-            if pendingStart && status == .authorizedAlways {
+            if state == .tracking, status != .authorizedAlways {
+                interruptActiveTripForPermissionLoss()
+            } else if pendingTrip != nil {
+                state = .reviewing
+            } else if pendingStart && status == .authorizedAlways {
                 pendingStart = false
                 beginTracking()
             } else if pendingStart && status == .authorizedWhenInUse &&
@@ -271,6 +304,8 @@ final class ManualTripCoordinator: TripReviewCoordinating {
             } else if pendingStart && status == .authorizedWhenInUse {
                 pendingStart = false
                 beginTracking()
+            } else if status == .authorizedAlways {
+                state = .ready
             } else if status == .denied || status == .restricted {
                 pendingStart = false
                 state = .permissionDenied
@@ -321,6 +356,7 @@ final class ManualTripCoordinator: TripReviewCoordinating {
         lastMeaningfulMovementAt = nil
         reminderScheduled = false
         activeOwnerScopeIdentifier = nil
+        activeTripID = nil
         clearPersistedSession()
         notificationService?.cancelLongRunningTripReminder()
         state = .ready
@@ -329,6 +365,7 @@ final class ManualTripCoordinator: TripReviewCoordinating {
     private func persistActiveSession() {
         guard state == .tracking, let startedAt else { return }
         let session = ActiveSession(
+            tripID: activeTripID,
             startedAt: startedAt,
             samples: processor.acceptedSamples,
             distanceMeters: distanceMeters,
@@ -352,6 +389,7 @@ final class ManualTripCoordinator: TripReviewCoordinating {
             return
         }
         activeOwnerScopeIdentifier = ownerScopeIdentifier
+        activeTripID = session.tripID ?? UUID()
         startedAt = session.startedAt
         processor.restore(samples: session.samples, distanceMeters: session.distanceMeters)
         distanceMeters = session.distanceMeters
@@ -370,6 +408,77 @@ final class ManualTripCoordinator: TripReviewCoordinating {
 
     private func clearPersistedSession() {
         UserDefaults.standard.removeObject(forKey: Self.activeSessionKey)
+    }
+
+    private func interruptActiveTripForPermissionLoss() {
+        guard state == .tracking,
+              let startedAt,
+              let ownerScopeIdentifier = activeOwnerScopeIdentifier else {
+            return
+        }
+        let route = currentRoute
+        let trip = Trip(
+            id: activeTripID ?? UUID(),
+            startedAt: startedAt,
+            endedAt: .now,
+            originName: "Unknown location",
+            destinationName: "Unknown location",
+            distanceMiles: distanceMiles,
+            classification: .unclassified,
+            purpose: "",
+            startCoordinate: route.first,
+            endCoordinate: route.last,
+            route: route
+        )
+        guard persistPendingReview(trip, ownerScopeIdentifier: ownerScopeIdentifier) else {
+            stopLocationUpdates()
+            state = .failed("Location permission changed. Your active trip remains saved for recovery.")
+            return
+        }
+        pendingTrip = trip
+        pendingOwnerScopeIdentifier = ownerScopeIdentifier
+        stopLocationUpdates()
+        clearPersistedSession()
+        processor.reset()
+        distanceMeters = 0
+        elapsedTime = 0
+        startedAt = nil
+        activeOwnerScopeIdentifier = nil
+        activeTripID = nil
+        notificationService?.cancelLongRunningTripReminder()
+        reminderScheduled = false
+        state = .reviewing
+        TrackingDiagnostics.log("manual trip interrupted by location permission change and preserved for review")
+        assignDefaultVehicleToPendingTrip()
+        reverseGeocodePendingTrip()
+    }
+
+    @discardableResult
+    private func persistPendingReview(_ trip: Trip, ownerScopeIdentifier: String) -> Bool {
+        guard let data = try? JSONEncoder().encode(
+            PendingReview(trip: trip, ownerScopeIdentifier: ownerScopeIdentifier)
+        ) else { return false }
+        UserDefaults.standard.set(data, forKey: Self.pendingReviewKey)
+        return UserDefaults.standard.data(forKey: Self.pendingReviewKey) == data
+    }
+
+    private func restorePendingReview() {
+        guard let data = UserDefaults.standard.data(forKey: Self.pendingReviewKey),
+              let envelope = try? JSONDecoder().decode(PendingReview.self, from: data) else {
+            return
+        }
+        guard let ownerScopeIdentifier = envelope.ownerScopeIdentifier,
+              ownerScopeIdentifier == dataScopeProvider?.current?.identifier else {
+            RecoverySnapshotQuarantine.preserve(data, from: Self.pendingReviewKey)
+            return
+        }
+        pendingTrip = envelope.trip
+        pendingOwnerScopeIdentifier = ownerScopeIdentifier
+        state = .reviewing
+    }
+
+    private func clearPersistedPendingReview() {
+        UserDefaults.standard.removeObject(forKey: Self.pendingReviewKey)
     }
 
     private func startElapsedTimer() {

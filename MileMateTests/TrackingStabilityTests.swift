@@ -100,8 +100,87 @@ final class TrackingStabilityTests: XCTestCase {
 
         location.changeAuthorization(to: .denied)
 
-        XCTAssertEqual(coordinator.state, .permissionDenied)
+        XCTAssertEqual(coordinator.state, .reviewing)
         XCTAssertTrue(coordinator.hasProtectedTripState)
+    }
+
+    func testManualTripInterruptedWhenAlwaysChangesToWhileUsing() {
+        assertManualTripInterruption(for: .authorizedWhenInUse)
+    }
+
+    func testManualTripInterruptedWhenLocationIsDenied() {
+        assertManualTripInterruption(for: .denied)
+    }
+
+    func testManualTripInterruptedWhenLocationIsRestricted() {
+        assertManualTripInterruption(for: .restricted)
+    }
+
+    func testPermissionRestorationDoesNotResumeInterruptedManualTrip() {
+        clearRecoveryState()
+        defer { clearRecoveryState() }
+        let location = StabilityLocationService()
+        let coordinator = ManualTripCoordinator(
+            locationService: location,
+            repository: MockMileageRepository(),
+            dataScopeProvider: testScopeProvider()
+        )
+        coordinator.startTrip()
+        location.send(samples())
+        location.changeAuthorization(to: .denied)
+        let pendingID = coordinator.pendingTrip?.id
+
+        location.changeAuthorization(to: .authorizedAlways)
+        coordinator.startTrip()
+
+        XCTAssertEqual(coordinator.state, .reviewing)
+        XCTAssertEqual(coordinator.pendingTrip?.id, pendingID)
+        XCTAssertFalse(location.isUpdating)
+        XCTAssertTrue(coordinator.hasProtectedTripState)
+    }
+
+    func testManualPermissionRestorationReturnsToReadyWithoutStartingTrip() {
+        clearRecoveryState()
+        defer { clearRecoveryState() }
+        let location = StabilityLocationService()
+        location.authorizationStatus = .denied
+        let coordinator = ManualTripCoordinator(
+            locationService: location,
+            repository: MockMileageRepository(),
+            dataScopeProvider: testScopeProvider()
+        )
+        coordinator.startTrip()
+        XCTAssertEqual(coordinator.state, .permissionDenied)
+
+        location.changeAuthorization(to: .authorizedAlways)
+
+        XCTAssertEqual(coordinator.state, .ready)
+        XCTAssertFalse(location.isUpdating)
+        XCTAssertNil(coordinator.pendingTrip)
+    }
+
+    func testManualPendingReviewIsQuarantinedForDifferentOwner() {
+        clearRecoveryState()
+        defer { clearRecoveryState() }
+        let location = StabilityLocationService()
+        let coordinator = ManualTripCoordinator(
+            locationService: location,
+            repository: MockMileageRepository(),
+            dataScopeProvider: testScopeProvider(userID: "manual-pending-original")
+        )
+        coordinator.startTrip()
+        location.send(samples())
+        location.changeAuthorization(to: .denied)
+        XCTAssertNotNil(coordinator.pendingTrip)
+
+        let restored = ManualTripCoordinator(
+            locationService: StabilityLocationService(),
+            repository: MockMileageRepository(),
+            dataScopeProvider: testScopeProvider(userID: "manual-pending-other")
+        )
+
+        XCTAssertNil(restored.pendingTrip)
+        XCTAssertTrue(hasQuarantinedSnapshot(for: "manualPendingTrip"))
     }
 
     func testRouteRegionUsesStoredEndpointsAndNoRouteRemainsEmpty() {
@@ -159,8 +238,8 @@ final class TrackingStabilityTests: XCTestCase {
     }
 
     func testLongRunningReminderHasSessionCooldownAndCancelsAtTripEnd() async {
-        UserDefaults.standard.removeObject(forKey: "manualActiveTrip")
-        defer { UserDefaults.standard.removeObject(forKey: "manualActiveTrip") }
+        clearRecoveryState()
+        defer { clearRecoveryState() }
         let notifications = MockTripNotificationService()
         let coordinator = ManualTripCoordinator(
             locationService: StabilityLocationService(),
@@ -204,10 +283,57 @@ final class TrackingStabilityTests: XCTestCase {
 
     private func clearRecoveryState() {
         UserDefaults.standard.removeObject(forKey: "manualActiveTrip")
+        UserDefaults.standard.removeObject(forKey: "manualPendingTrip")
         for key in UserDefaults.standard.dictionaryRepresentation().keys
             where key.hasPrefix(RecoverySnapshotQuarantine.keyPrefix) {
             UserDefaults.standard.removeObject(forKey: key)
         }
+    }
+
+    private func assertManualTripInterruption(
+        for status: CLAuthorizationStatus,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        clearRecoveryState()
+        defer { clearRecoveryState() }
+        let scope = testScopeProvider()
+        let location = StabilityLocationService()
+        let coordinator = ManualTripCoordinator(
+            locationService: location,
+            repository: MockMileageRepository(),
+            dataScopeProvider: scope
+        )
+        let earliestStart = Date()
+        coordinator.startTrip()
+        let latestStart = Date()
+        location.send(samples())
+        let route = coordinator.currentRoute
+        let distance = coordinator.distanceMiles
+
+        location.changeAuthorization(to: status)
+
+        let pending = coordinator.pendingTrip
+        XCTAssertEqual(coordinator.state, .reviewing, file: file, line: line)
+        XCTAssertEqual(pending?.route.count, route.count, file: file, line: line)
+        XCTAssertEqual(pending?.distanceMiles ?? -1, distance, accuracy: 0.000_001, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(pending?.startedAt ?? .distantPast, earliestStart, file: file, line: line)
+        XCTAssertLessThanOrEqual(pending?.startedAt ?? .distantFuture, latestStart, file: file, line: line)
+        XCTAssertFalse(location.isUpdating, file: file, line: line)
+        XCTAssertTrue(coordinator.hasProtectedTripState, file: file, line: line)
+
+        let restoredLocation = StabilityLocationService()
+        restoredLocation.authorizationStatus = status
+        let restored = ManualTripCoordinator(
+            locationService: restoredLocation,
+            repository: MockMileageRepository(),
+            dataScopeProvider: scope
+        )
+        XCTAssertEqual(restored.state, .reviewing, file: file, line: line)
+        XCTAssertEqual(restored.pendingTrip?.id, pending?.id, file: file, line: line)
+        XCTAssertEqual(restored.pendingTrip?.startedAt, pending?.startedAt, file: file, line: line)
+        XCTAssertEqual(restored.pendingTrip?.route.count, route.count, file: file, line: line)
+        XCTAssertFalse(restoredLocation.isUpdating, file: file, line: line)
     }
 }
 

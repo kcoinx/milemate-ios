@@ -61,6 +61,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     }
 
     private struct ActiveTripEnvelope: Codable {
+        let tripID: UUID?
         let startedAt: Date
         let tripStartedAt: Date?
         let samples: [LocationSample]
@@ -102,6 +103,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     private var pendingLowPowerSamples: [LocationSample] = []
     private var activeOwnerScopeIdentifier: String?
     private var pendingOwnerScopeIdentifier: String?
+    private var activeTripID: UUID?
     private(set) var isFinalizingTrip = false
 
     private(set) var state: State = .disabled
@@ -222,6 +224,10 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             return
         }
         if state == .tracking || isFinalizingTrip { return }
+        if pendingTrip != nil {
+            state = .reviewing
+            return
+        }
         guard canStartNewTrip() else {
             if state == .detecting { resetToIdle() }
             state = .idle
@@ -313,6 +319,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         pendingTrip = nil
         pendingOwnerScopeIdentifier = nil
         activeOwnerScopeIdentifier = nil
+        activeTripID = nil
         isFinalizingTrip = false
         clearPersistedPendingTrip()
         clearPersistedActiveTrip()
@@ -352,6 +359,20 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         switch event {
         case .authorizationChanged(let status):
             TrackingDiagnostics.log("location authorization changed: \(status.rawValue)")
+            if status != CLAuthorizationStatus.authorizedAlways,
+               state == .tracking {
+                interruptActiveTripForPermissionLoss()
+                return
+            }
+            if status != CLAuthorizationStatus.authorizedAlways,
+               state == .detecting {
+                cancelDetectionForPermissionLoss()
+                return
+            }
+            if pendingTrip != nil {
+                state = .reviewing
+                return
+            }
             switch status {
             case CLAuthorizationStatus.authorizedAlways:
                 locationService.startLowPowerMonitoring()
@@ -503,6 +524,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             return
         }
         activeOwnerScopeIdentifier = ownerScopeIdentifier
+        activeTripID = UUID()
         processor.reset()
         distanceMeters = 0
         elapsedTime = 0
@@ -671,7 +693,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         }
 
         let trip = Trip(
-            id: UUID(),
+            id: activeTripID ?? UUID(),
             startedAt: startedAt,
             endedAt: max(stoppedAt, startedAt),
             originName: "Unknown location",
@@ -820,7 +842,10 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         detectionStartedAt = nil
         pendingLowPowerSamples.removeAll()
         highestObservedSpeed = 0
-        if !preservingOwner { activeOwnerScopeIdentifier = nil }
+        if !preservingOwner {
+            activeOwnerScopeIdentifier = nil
+            activeTripID = nil
+        }
         if AutomaticTrackingSettings.isEnabled {
             startMotionMonitoring()
             locationService.startLowPowerMonitoring()
@@ -836,6 +861,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             return
         }
         let envelope = ActiveTripEnvelope(
+            tripID: activeTripID,
             startedAt: startedAt,
             tripStartedAt: candidateStartedAt,
             samples: processor.acceptedSamples,
@@ -866,6 +892,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             return
         }
         activeOwnerScopeIdentifier = ownerScopeIdentifier
+        activeTripID = envelope.tripID ?? UUID()
         guard trackingReadiness == .ready else {
             state = .permissionRequired
             return
@@ -998,6 +1025,62 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         UserDefaults.standard.removeObject(forKey: Self.pendingTripKey)
     }
 
+    private func interruptActiveTripForPermissionLoss() {
+        guard state == .tracking,
+              let startedAt = candidateStartedAt,
+              let ownerScopeIdentifier = activeOwnerScopeIdentifier else {
+            return
+        }
+        let route = currentRoute
+        let trip = Trip(
+            id: activeTripID ?? UUID(),
+            startedAt: startedAt,
+            endedAt: .now,
+            originName: "Unknown location",
+            destinationName: "Unknown location",
+            distanceMiles: distanceMiles,
+            classification: .unclassified,
+            purpose: "",
+            startCoordinate: route.first,
+            endCoordinate: route.last,
+            route: route
+        )
+        guard persistPendingTrip(trip, ownerScopeIdentifier: ownerScopeIdentifier) else {
+            stopDetection()
+            state = .failed("Location permission changed. Your active trip remains saved for recovery.")
+            return
+        }
+        pendingTrip = trip
+        pendingOwnerScopeIdentifier = ownerScopeIdentifier
+        stopDetection()
+        clearPersistedActiveTrip()
+        processor.reset()
+        distanceMeters = 0
+        elapsedTime = 0
+        candidateStartedAt = nil
+        detectionStartedAt = nil
+        activeOwnerScopeIdentifier = nil
+        activeTripID = nil
+        state = .reviewing
+        TrackingDiagnostics.log("automatic trip interrupted by location permission change and preserved for review")
+        reverseGeocodePendingTrip()
+    }
+
+    private func cancelDetectionForPermissionLoss() {
+        stopDetection()
+        clearPersistedActiveTrip()
+        processor.reset()
+        distanceMeters = 0
+        elapsedTime = 0
+        candidateStartedAt = nil
+        detectionStartedAt = nil
+        activeOwnerScopeIdentifier = nil
+        activeTripID = nil
+        pendingLowPowerSamples.removeAll()
+        state = .permissionRequired
+        TrackingDiagnostics.log("unconfirmed automatic detection canceled after location permission change")
+    }
+
     private func quarantinePendingTripAfterScopeMismatch() {
         if let data = UserDefaults.standard.data(forKey: Self.pendingTripKey) {
             RecoverySnapshotQuarantine.preserve(data, from: Self.pendingTripKey)
@@ -1005,6 +1088,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         pendingTrip = nil
         pendingOwnerScopeIdentifier = nil
         activeOwnerScopeIdentifier = nil
+        activeTripID = nil
         isFinalizingTrip = false
         state = AutomaticTrackingSettings.isEnabled ? .idle : .disabled
     }
