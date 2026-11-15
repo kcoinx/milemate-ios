@@ -105,6 +105,17 @@ final class AccountSessionController {
         return !trialRecord.canRecordAnotherTrip
     }
 
+    var canStartAutomaticTracking: Bool {
+        guard !requiresWelcome,
+              !isAuthenticating,
+              proEntitlementProvider.isEntitlementReady else {
+            return false
+        }
+        if proEntitlementProvider.hasProAccess { return true }
+        guard !isReconcilingGuestTrial else { return false }
+        return trialRecord.canRecordAnotherTrip
+    }
+
     @discardableResult
     func requestTrackingAccess() -> Bool {
         guard !requiresWelcome, !isAuthenticating else { return false }

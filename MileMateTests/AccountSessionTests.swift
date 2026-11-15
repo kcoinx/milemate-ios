@@ -616,6 +616,8 @@ final class AccountSessionTests: XCTestCase {
         manual.startTrip()
         XCTAssertEqual(manual.state, .ready)
         XCTAssertFalse(manualLocation.isUpdating)
+        XCTAssertTrue(controller.presentsUpgrade)
+        controller.presentsUpgrade = false
 
         let enabledKey = AutomaticTrackingSettings.enabledKey
         let originalEnabled = UserDefaults.standard.object(forKey: enabledKey)
@@ -633,13 +635,127 @@ final class AccountSessionTests: XCTestCase {
             motionService: MockMotionActivityService(),
             repository: repository,
             notificationService: AccountTestNotificationService(),
-            canStartNewTrip: { controller.requestTrackingAccess() },
+            canStartNewTrip: { controller.canStartAutomaticTracking },
             isManualTrackingActive: { false }
         )
         automatic.startIfEnabled()
         XCTAssertEqual(automatic.state, .idle)
         XCTAssertFalse(automaticLocation.isPreciseTracking)
         XCTAssertFalse(automaticLocation.isLowPowerMonitoring)
+        XCTAssertFalse(controller.presentsUpgrade)
+    }
+
+    func testDismissedPaywallStaysDismissedAcrossAutomaticStartupAndCallbacks() async {
+        let controller = makeController()
+        controller.continueAsGuest()
+        await controller.reconcileGuestTrial()
+        let enabledKey = AutomaticTrackingSettings.enabledKey
+        let originalEnabled = UserDefaults.standard.object(forKey: enabledKey)
+        defer {
+            if let originalEnabled {
+                UserDefaults.standard.set(originalEnabled, forKey: enabledKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: enabledKey)
+            }
+        }
+        UserDefaults.standard.set(true, forKey: enabledKey)
+        let location = MockAutomaticLocationService()
+        let motion = MockMotionActivityService()
+        let automatic = AutomaticTripCoordinator(
+            locationService: location,
+            motionService: motion,
+            repository: AccountTestRepository(),
+            notificationService: AccountTestNotificationService(),
+            canStartNewTrip: { controller.canStartAutomaticTracking },
+            isManualTrackingActive: { false }
+        )
+        automatic.startIfEnabled()
+        XCTAssertTrue(location.isLowPowerMonitoring)
+
+        for _ in 0..<10 { controller.recordSavedTrip(testTrip()) }
+        XCTAssertTrue(controller.presentsUpgrade)
+        controller.presentsUpgrade = false
+
+        automatic.startIfEnabled()
+        location.send([])
+        motion.send(
+            MotionActivitySample(
+                kind: .automotive,
+                confidence: .high,
+                timestamp: .now
+            )
+        )
+
+        XCTAssertFalse(controller.presentsUpgrade)
+        XCTAssertEqual(automatic.state, .idle)
+        XCTAssertFalse(location.isPreciseTracking)
+    }
+
+    func testReconciliationAndLifecycleAutomaticStartupRemainSilentWhenExhausted() async {
+        let trips = (0..<10).map { _ in testTrip() }
+        let controller = makeController(repository: AccountTestRepository(trips: trips))
+        let enabledKey = AutomaticTrackingSettings.enabledKey
+        let originalEnabled = UserDefaults.standard.object(forKey: enabledKey)
+        defer {
+            if let originalEnabled {
+                UserDefaults.standard.set(originalEnabled, forKey: enabledKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: enabledKey)
+            }
+        }
+        UserDefaults.standard.set(true, forKey: enabledKey)
+        let automatic = AutomaticTripCoordinator(
+            locationService: MockAutomaticLocationService(),
+            motionService: MockMotionActivityService(),
+            repository: AccountTestRepository(),
+            notificationService: AccountTestNotificationService(),
+            canStartNewTrip: { controller.canStartAutomaticTracking },
+            isManualTrackingActive: { false }
+        )
+        controller.continueAsGuest()
+        automatic.startIfEnabled()
+
+        await controller.reconcileGuestTrial()
+        automatic.startIfEnabled()
+        XCTAssertEqual(controller.remainingGuestTrips, 0)
+        XCTAssertFalse(controller.presentsUpgrade)
+
+        XCTAssertFalse(controller.canStartAutomaticTracking)
+        XCTAssertFalse(controller.presentsUpgrade)
+    }
+
+    func testAutomaticEligibilityAllowsFreeTripsAndVerifiedProWithoutPresentation() async {
+        let freeController = makeController()
+        freeController.continueAsGuest()
+        await freeController.reconcileGuestTrial()
+        XCTAssertTrue(freeController.canStartAutomaticTracking)
+        XCTAssertFalse(freeController.presentsUpgrade)
+
+        let entitlement = AccountTestProEntitlement(hasProAccess: true)
+        let proController = makeController(proEntitlement: entitlement)
+        proController.continueAsGuest()
+        for _ in 0..<10 { proController.recordSavedTrip(testTrip()) }
+        XCTAssertTrue(proController.canStartAutomaticTracking)
+        XCTAssertFalse(proController.presentsUpgrade)
+    }
+
+    func testUnavailableStoreKitProductsDoNotCauseAutomaticPaywallLoop() async {
+        let purchaseManager = PurchaseManager(configuration: nil)
+        await purchaseManager.prepare()
+        let controller = AccountSessionController(
+            repository: AccountTestRepository(),
+            secureStore: InMemoryAccountStore(),
+            authenticationService: AccountTestAuthenticationService(),
+            proEntitlementProvider: purchaseManager
+        )
+        controller.continueAsGuest()
+        await controller.reconcileGuestTrial()
+        for _ in 0..<10 { controller.recordSavedTrip(testTrip()) }
+        XCTAssertTrue(controller.presentsUpgrade)
+        controller.presentsUpgrade = false
+
+        XCTAssertFalse(controller.canStartAutomaticTracking)
+        XCTAssertFalse(controller.presentsUpgrade)
     }
 
     func testDifferentAuthenticatedAccountsSeeOnlyTheirOwnTrips() async throws {

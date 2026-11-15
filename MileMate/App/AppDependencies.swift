@@ -44,7 +44,7 @@ struct AppDependencies {
                 motionService: CoreMotionActivityService(),
                 repository: repository,
                 notificationService: notificationService,
-                canStartNewTrip: { accountSession.requestTrackingAccess() },
+                canStartNewTrip: { accountSession.canStartAutomaticTracking },
                 tripDidSave: { trip in accountSession.recordSavedTrip(trip) },
                 dataScopeProvider: repository.scopeProvider,
                 isManualTrackingActive: {
