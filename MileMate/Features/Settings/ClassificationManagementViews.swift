@@ -309,6 +309,9 @@ struct FrequentPlacesManagementView: View {
     @State private var viewModel: ClassificationDataViewModel
     @State private var editingPlace: FrequentPlace?
     @State private var showingAdd = false
+    @State private var pendingRulePlace: FrequentPlace?
+    @State private var showingRuleOffer = false
+    @State private var showingRuleSetup = false
 
     init(repository: any MileageRepository) {
         _viewModel = State(initialValue: ClassificationDataViewModel(repository: repository))
@@ -318,14 +321,19 @@ struct FrequentPlacesManagementView: View {
         List {
             if viewModel.places.isEmpty {
                 ContentUnavailableView {
-                    Label("No Frequent Places Yet", systemImage: "mappin.slash")
+                    Label("No Saved Places Yet", systemImage: "mappin.slash")
                 } description: {
-                    Text("Save meaningful locations such as Home, Office, or Client so they can be used in Classification Rules.")
+                    Text("Add your home, workplace, or client locations to get started.")
                 } actions: {
-                    Button("Add Frequent Place") { showingAdd = true }
+                    Button("Add a Place") { showingAdd = true }
                         .emptyStatePrimaryButton()
                 }
             } else {
+                Section {
+                    Text("Save places you visit often to make organizing your trips easier.")
+                        .font(.subheadline)
+                        .foregroundStyle(AppTheme.Color.textSecondary)
+                }
                 ForEach(viewModel.places) { place in
                     Button {
                         editingPlace = place
@@ -338,6 +346,11 @@ struct FrequentPlacesManagementView: View {
                                     .font(.subheadline)
                                     .foregroundStyle(AppTheme.Color.textSecondary)
                                     .lineLimit(2)
+                            }
+                            if let placeType = place.placeType {
+                                Text(placeType.rawValue)
+                                    .font(.caption)
+                                    .foregroundStyle(AppTheme.Color.textSecondary)
                             }
                             Text("Nearby radius: \(Int(place.radiusMeters)) meters")
                                 .font(.caption)
@@ -356,12 +369,12 @@ struct FrequentPlacesManagementView: View {
         }
         .settingsDetailScrollBehavior()
         .scrollIndicators(.hidden)
-        .navigationTitle("Frequent Places")
+        .navigationTitle("Saved Places")
         .toolbar {
             Button {
                 showingAdd = true
             } label: {
-                Label("Add Frequent Place", systemImage: "plus")
+                Label("Add a Place", systemImage: "plus")
             }
         }
         .task { await viewModel.load() }
@@ -370,12 +383,34 @@ struct FrequentPlacesManagementView: View {
                 place: nil,
                 suggestedCoordinate: suggestedCoordinate
             ) { place in
-                Task { await viewModel.save(place: place) }
+                let canOfferRule = !viewModel.places.isEmpty
+                Task {
+                    await viewModel.save(place: place)
+                    guard canOfferRule else { return }
+                    pendingRulePlace = place
+                    showingRuleOffer = true
+                }
             }
         }
         .sheet(item: $editingPlace) { place in
             PlaceEditorView(place: place, suggestedCoordinate: nil) { editedPlace in
                 Task { await viewModel.save(place: editedPlace) }
+            }
+        }
+        .confirmationDialog(
+            "Place saved. Want to automatically categorize trips involving this location?",
+            isPresented: $showingRuleOffer,
+            titleVisibility: .visible
+        ) {
+            Button("Set Up Rule") { showingRuleSetup = true }
+            Button("Not Now", role: .cancel) { pendingRulePlace = nil }
+        }
+        .sheet(isPresented: $showingRuleSetup, onDismiss: { pendingRulePlace = nil }) {
+            RuleEditorView(
+                places: viewModel.places,
+                initialStartID: pendingRulePlace?.id
+            ) { rule in
+                Task { await viewModel.save(rule: rule) }
             }
         }
     }
@@ -392,6 +427,7 @@ private struct PlaceEditorView: View {
     let onSave: (FrequentPlace) -> Void
     private let locationProvider: any PlaceLocationProviding
     @State private var label: String
+    @State private var placeType: SavedPlaceType
     @State private var searchQuery = ""
     @State private var searchResults: [PlaceLocationSelection] = []
     @State private var selectedLocation: PlaceLocationSelection?
@@ -410,6 +446,7 @@ private struct PlaceEditorView: View {
         self.locationProvider = locationProvider
         self.onSave = onSave
         _label = State(initialValue: place?.label ?? "")
+        _placeType = State(initialValue: place?.placeType ?? .other)
         if let place, let address = place.address {
             _selectedLocation = State(
                 initialValue: PlaceLocationSelection(
@@ -438,6 +475,15 @@ private struct PlaceEditorView: View {
                     TextField("Home, Office, or Client", text: $label)
                         .textInputAutocapitalization(.words)
                         .submitLabel(.next)
+                }
+
+                Section("Place Type") {
+                    Picker("Type", selection: $placeType) {
+                        ForEach(SavedPlaceType.allCases) { type in
+                            Text(type.rawValue).tag(type)
+                        }
+                    }
+                    .pickerStyle(.segmented)
                 }
 
                 Section("Location") {
@@ -526,16 +572,18 @@ private struct PlaceEditorView: View {
                     }
                 }
 
-                Section("Nearby Radius") {
-                    Stepper(
-                        "Within \(Int(radius)) meters",
-                        value: $radius,
-                        in: 50...500,
-                        step: 25
-                    )
-                    Text("Trips starting or ending within this distance can match the place.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                Section {
+                    DisclosureGroup("Advanced") {
+                        Stepper(
+                            "Matching radius: \(Int(radius)) meters",
+                            value: $radius,
+                            in: 50...500,
+                            step: 25
+                        )
+                        Text("Trips starting or ending within this distance can match the place. The default works well for most locations.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section {
@@ -546,7 +594,7 @@ private struct PlaceEditorView: View {
             }
             .settingsDetailScrollBehavior()
             .scrollIndicators(.hidden)
-            .navigationTitle(original == nil ? "Add Frequent Place" : "Edit Frequent Place")
+            .navigationTitle(original == nil ? "Add a Place" : "Edit Saved Place")
             .navigationBarTitleDisplayMode(.inline)
             .task { await resolveInitialCoordinateIfNeeded() }
             .toolbar {
@@ -563,6 +611,7 @@ private struct PlaceEditorView: View {
                                 latitude: selectedLocation.latitude,
                                 longitude: selectedLocation.longitude,
                                 address: selectedLocation.address,
+                                placeType: placeType,
                                 radiusMeters: radius,
                                 createdAt: original?.createdAt ?? .now,
                                 updatedAt: .now
@@ -642,17 +691,28 @@ struct ClassificationRulesView: View {
 
     var body: some View {
         List {
+            Section {
+                Text("Choose how MileMate categorizes trips to or from your saved places.")
+                    .font(.subheadline)
+                    .foregroundStyle(AppTheme.Color.textSecondary)
+            }
             if viewModel.rules.isEmpty {
                 ContentUnavailableView {
-                    Label("No Classification Rules Yet", systemImage: "list.bullet.rectangle")
+                    Label("Organize Trips Automatically", systemImage: "list.bullet.rectangle")
                 } description: {
-                    Text("Create rules to automatically classify trips based on where they start or end.")
+                    if viewModel.places.isEmpty {
+                        Text("Save a place first, then create a rule to categorize trips based on where they start or end.")
+                    } else if viewModel.places.count == 1 {
+                        Text("Save one more place to create a rule for trips between two locations.")
+                    } else {
+                        Text("Create a rule to categorize trips based on where they start or end.")
+                    }
                 } actions: {
                     if viewModel.places.count >= 2 {
-                        Button("Add Rule") { showingAdd = true }
+                        Button("Create a Rule") { showingAdd = true }
                             .emptyStatePrimaryButton()
                     } else {
-                        Button("Add Frequent Place") {
+                        Button("Add a Place") {
                             showingAddPlace = true
                         }
                         .emptyStatePrimaryButton()
@@ -694,7 +754,7 @@ struct ClassificationRulesView: View {
         }
         .settingsDetailScrollBehavior()
         .scrollIndicators(.hidden)
-        .navigationTitle("Classification Rules")
+        .navigationTitle("Auto-Categorize Trips")
         .toolbar {
             Button {
                 switch ClassificationRulesAddAction(placeCount: viewModel.places.count) {
@@ -705,7 +765,7 @@ struct ClassificationRulesView: View {
                 }
             } label: {
                 Label(
-                    viewModel.places.count >= 2 ? "Add Rule" : "Add Frequent Place",
+                    viewModel.places.count >= 2 ? "Create a Rule" : "Add a Place",
                     systemImage: "plus"
                 )
             }
@@ -747,28 +807,40 @@ private struct RuleEditorView: View {
     let onSave: (ClassificationRule) -> Void
     @State private var startID: UUID?
     @State private var endID: UUID?
-    @State private var classification = Trip.Classification.business
+    @State private var classification = Trip.Classification.personal
+
+    init(
+        places: [FrequentPlace],
+        initialStartID: UUID? = nil,
+        onSave: @escaping (ClassificationRule) -> Void
+    ) {
+        self.places = places
+        self.onSave = onSave
+        let start = initialStartID ?? places.first?.id
+        _startID = State(initialValue: start)
+        _endID = State(initialValue: places.first(where: { $0.id != start })?.id)
+    }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("If This Trip Matches") {
-                    Picker("From", selection: $startID) {
-                        Text("Select a Frequent Place").tag(UUID?.none)
+                Section("Trip Route") {
+                    Picker("Starts at", selection: $startID) {
+                        Text("Choose a saved place").tag(UUID?.none)
                         ForEach(places) { place in
                             Text(place.label).tag(Optional(place.id))
                         }
                     }
-                    Picker("To", selection: $endID) {
-                        Text("Select a Frequent Place").tag(UUID?.none)
+                    Picker("Ends at", selection: $endID) {
+                        Text("Choose a saved place").tag(UUID?.none)
                         ForEach(places) { place in
                             Text(place.label).tag(Optional(place.id))
                         }
                     }
                 }
 
-                Section("Then") {
-                    Picker("Classify As", selection: $classification) {
+                Section("Categorize As") {
+                    Picker("Category", selection: $classification) {
                         Text("Business").tag(Trip.Classification.business)
                         Text("Personal").tag(Trip.Classification.personal)
                     }
@@ -776,14 +848,14 @@ private struct RuleEditorView: View {
                 }
 
                 Section {
-                    Text("When a future trip matches both Frequent Places, MileMate applies the classification you choose. Trips without a matching enabled rule remain Unclassified for review.")
+                    Text("MileMate will use this rule only for trips between both saved places. Trips without an enabled rule remain Unclassified for your review.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
             }
             .settingsDetailScrollBehavior()
             .scrollIndicators(.hidden)
-            .navigationTitle("Add Rule")
+            .navigationTitle("Create a Rule")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

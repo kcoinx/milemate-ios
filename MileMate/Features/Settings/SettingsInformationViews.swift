@@ -221,7 +221,7 @@ struct PrivacyInformationView: View {
             informationSection(
                 "Data Stored on This iPhone",
                 icon: "iphone",
-                text: "The current local architecture stores trips, route coordinates, classifications, notes, vehicles, frequent places, and classification rules on this device."
+                text: "The current local architecture stores trips, route coordinates, classifications, notes, vehicles, saved places, and auto-categorization rules on this device."
             )
             informationSection(
                 "Notifications",
@@ -262,7 +262,7 @@ struct PrivacyPolicyView: View {
     private let sections = [
         LegalDocumentSection(
             title: "Data MileMate Stores",
-            body: "MileMate stores mileage records on this iPhone, including trip times, distance, route coordinates, start and end descriptions, classification, purpose, notes, vehicle information, Frequent Places, Classification Rules, and app preferences."
+            body: "MileMate stores mileage records on this iPhone, including trip times, distance, route coordinates, start and end descriptions, classification, purpose, notes, vehicle information, Saved Places, auto-categorization rules, and app preferences."
         ),
         LegalDocumentSection(
             title: "Location and Route Data",
@@ -388,7 +388,7 @@ struct HelpSupportView: View {
         Topic(title: "How Manual Tracking Works", detail: "Turn off Automatic Tracking, then use Start Trip on Dashboard. Stop the trip when finished and review it before saving."),
         Topic(title: "Location & Motion Permissions", detail: "Automatic tracking needs Always Location and Motion & Fitness. If a status is insufficient, tap its permission row in Settings to open iPhone Settings."),
         Topic(title: "Reviewing and Classifying Trips", detail: "Open Trips, then Trips to Review. Classify each trip as Business or Personal and add a purpose, vehicle, or notes when useful."),
-        Topic(title: "Frequent Places & Classification Rules", detail: "Frequent Places are locations you name. Approved rules use those places to classify matching routes; Automatic Classification only applies enabled rules."),
+        Topic(title: "Saved Places & Auto-Categorize Trips", detail: "Saved Places are locations you name. Rules you approve can categorize matching routes; automatic categorization only applies enabled rules."),
         Topic(title: "Notifications", detail: "Completion alerts confirm qualifying automatic trips. Review reminders combine outstanding trips into a next-day reminder. Each notification type can be controlled separately."),
         Topic(title: "Reports & Exports", detail: "Reports use qualifying Business trips. Select a period and vehicle, then preview or share PDF, CSV, or IRS mileage reports."),
         Topic(title: "Battery Usage", detail: "MileMate uses low-power monitoring while idle and requests precise background location only when detecting or recording a drive."),

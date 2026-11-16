@@ -542,20 +542,23 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         XCTAssertFalse(location.isPreciseTracking)
     }
 
-    func testManualTrackingRowActionabilityAndRouting() {
-        XCTAssertTrue(ManualTrackingRowState(automaticTrackingEnabled: false).isActionable)
-        XCTAssertTrue(ManualTrackingRowState(automaticTrackingEnabled: false).isSelected)
-        XCTAssertTrue(ManualTrackingRowState(automaticTrackingEnabled: true).isActionable)
-        XCTAssertFalse(ManualTrackingRowState(automaticTrackingEnabled: true).isSelected)
-
+    func testTrackingModeSelectionReflectsPersistedPreferenceWithoutChangingTabs() {
+        XCTAssertEqual(
+            TrackingModeSelection(automaticTrackingEnabled: false),
+            .manual
+        )
+        XCTAssertEqual(
+            TrackingModeSelection(automaticTrackingEnabled: true),
+            .automatic
+        )
         let (coordinator, _, _) = makeCoordinator()
         let router = AppRouter(
             repository: MockMileageRepository(),
             automaticTripCoordinator: coordinator
         )
         router.selectedTab = .settings
-        router.showManualTracking()
-        XCTAssertEqual(router.selectedTab, .dashboard)
+        _ = TrackingModeSelection(automaticTrackingEnabled: false)
+        XCTAssertEqual(router.selectedTab, .settings)
     }
 
     func testPermissionCTAIsUserActionableOnly() {

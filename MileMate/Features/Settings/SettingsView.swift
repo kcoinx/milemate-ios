@@ -3,16 +3,15 @@ import CoreLocation
 import SwiftUI
 import UIKit
 
-enum ManualTrackingRowState: Equatable {
-    case selected
-    case availableToSelect
+enum TrackingModeSelection: String, CaseIterable, Equatable, Identifiable {
+    case automatic = "Automatic"
+    case manual = "Manual"
 
     init(automaticTrackingEnabled: Bool) {
-        self = automaticTrackingEnabled ? .availableToSelect : .selected
+        self = automaticTrackingEnabled ? .automatic : .manual
     }
 
-    var isActionable: Bool { true }
-    var isSelected: Bool { self == .selected }
+    var id: String { rawValue }
 }
 
 enum DataDeletionConfirmationState: Equatable {
@@ -91,44 +90,22 @@ struct SettingsView: View {
             }
 
             settingsSection("Tracking") {
-                Toggle(isOn: automaticTrackingBinding) {
-                    settingLabel(
-                        "Automatic Tracking (Recommended)",
-                        icon: "location.fill",
-                        tint: AppTheme.Color.brand
-                    )
-                }
-                .disabled(
-                    trackingModeSwitchDisabled
-                )
-
-                Button {
-                    selectManualTracking()
-                } label: {
-                    HStack {
-                        settingLabel("Manual Tracking", icon: "play.circle.fill", tint: AppTheme.Color.brand)
-                        Spacer()
-                        Text(manualTrackingRowState.isSelected ? "Selected" : "Switch")
-                            .font(.subheadline)
-                            .foregroundStyle(AppTheme.Color.textSecondary)
-                        Image(systemName: manualTrackingRowState.isSelected ? "checkmark" : "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(
-                                automaticTrackingEnabled
-                                    ? AppTheme.Color.textSecondary
-                                    : AppTheme.Color.brand
-                            )
+                Picker("Tracking Mode", selection: trackingModeBinding) {
+                    ForEach(TrackingModeSelection.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
                     }
                 }
-                .buttonStyle(.plain)
+                .pickerStyle(.segmented)
                 .disabled(trackingModeSwitchDisabled)
-                .accessibilityLabel("Manual Tracking")
-                .accessibilityValue(automaticTrackingEnabled ? "Not selected" : "Selected")
-                .accessibilityHint(
+                .accessibilityHint("Choose whether MileMate detects drives automatically or waits for you to start a trip")
+
+                Text(
                     automaticTrackingEnabled
-                        ? "Switches to Manual Tracking and opens the Dashboard"
-                        : "Opens the Dashboard manual Start Trip flow"
+                        ? "MileMate detects qualifying drives automatically. Recommended for hands-free mileage tracking."
+                        : "Start and stop each trip yourself from the Dashboard."
                 )
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.Color.textSecondary)
 
                 Toggle(isOn: $tripFeedbackEnabled) {
                     settingLabel(
@@ -190,7 +167,7 @@ struct SettingsView: View {
 
                 Toggle(isOn: $automaticClassificationEnabled) {
                     settingLabel(
-                        "Automatic Classification",
+                        "Use Auto-Categorization Rules",
                         icon: "arrow.triangle.branch",
                         tint: AppTheme.Color.brand
                     )
@@ -207,10 +184,10 @@ struct SettingsView: View {
                 destination("Vehicles", icon: "car.side.fill", tint: AppTheme.Color.brand) {
                     VehicleManagementView(repository: viewModel.repository)
                 }
-                destination("Frequent Places", icon: "mappin.and.ellipse", tint: AppTheme.Color.brand) {
+                destination("Saved Places", icon: "mappin.and.ellipse", tint: AppTheme.Color.brand) {
                     FrequentPlacesManagementView(repository: viewModel.repository)
                 }
-                destination("Classification Rules", icon: "list.bullet.rectangle", tint: .indigo) {
+                destination("Auto-Categorize Trips", icon: "list.bullet.rectangle", tint: .indigo) {
                     ClassificationRulesView(repository: viewModel.repository)
                 }
             }
@@ -420,7 +397,7 @@ struct SettingsView: View {
                 deletionConfirmation = .final
             }
         } message: {
-            Text("This permanently removes trips and routes, review data, vehicles, frequent places, classification rules, app preferences, and saved active-trip state. Active tracking will be stopped and discarded.")
+            Text("This permanently removes trips and routes, review data, vehicles, saved places, auto-categorization rules, app preferences, and saved active-trip state. Active tracking will be stopped and discarded.")
         }
         .alert(
             "This Cannot Be Undone",
@@ -592,13 +569,16 @@ struct SettingsView: View {
         }
     }
 
-    private var automaticTrackingBinding: Binding<Bool> {
+    private var trackingModeBinding: Binding<TrackingModeSelection> {
         Binding(
-            get: { automaticTrackingEnabled },
-            set: { enabled in
-                if enabled {
+            get: {
+                TrackingModeSelection(automaticTrackingEnabled: automaticTrackingEnabled)
+            },
+            set: { mode in
+                guard !trackingModeSwitchDisabled else { return }
+                if mode == .automatic, !automaticTrackingEnabled {
                     showingAutomaticTrackingExplanation = true
-                } else {
+                } else if mode == .manual, automaticTrackingEnabled {
                     automaticTrackingEnabled = false
                     automaticTripCoordinator.setEnabled(false)
                 }
@@ -606,22 +586,9 @@ struct SettingsView: View {
         )
     }
 
-    private var manualTrackingRowState: ManualTrackingRowState {
-        ManualTrackingRowState(automaticTrackingEnabled: automaticTrackingEnabled)
-    }
-
     private var trackingModeSwitchDisabled: Bool {
         manualTripCoordinator.hasProtectedTripState ||
             automaticTripCoordinator.hasProtectedTripState
-    }
-
-    private func selectManualTracking() {
-        guard !trackingModeSwitchDisabled else { return }
-        if automaticTrackingEnabled {
-            automaticTrackingEnabled = false
-            automaticTripCoordinator.setEnabled(false)
-        }
-        router.showManualTracking()
     }
 
     private var locationPermissionText: String {

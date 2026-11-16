@@ -9,6 +9,7 @@ final class StoredFrequentPlace {
     var latitude: Double
     var longitude: Double
     var address: String?
+    var placeTypeRawValue: String?
     var radiusMeters: Double
     var createdAt: Date
     var updatedAt: Date
@@ -20,6 +21,7 @@ final class StoredFrequentPlace {
         latitude = place.latitude
         longitude = place.longitude
         address = place.address
+        placeTypeRawValue = place.placeType?.rawValue
         radiusMeters = place.radiusMeters
         createdAt = place.createdAt
         updatedAt = place.updatedAt
@@ -32,6 +34,7 @@ final class StoredFrequentPlace {
             latitude: latitude,
             longitude: longitude,
             address: address,
+            placeType: placeTypeRawValue.flatMap(SavedPlaceType.init(rawValue:)),
             radiusMeters: radiusMeters,
             createdAt: createdAt,
             updatedAt: updatedAt
@@ -43,6 +46,7 @@ final class StoredFrequentPlace {
         latitude = place.latitude
         longitude = place.longitude
         address = place.address
+        placeTypeRawValue = place.placeType?.rawValue
         radiusMeters = place.radiusMeters
         updatedAt = .now
     }

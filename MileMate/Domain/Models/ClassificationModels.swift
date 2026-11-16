@@ -1,12 +1,22 @@
 import CoreLocation
 import Foundation
 
+enum SavedPlaceType: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
+    case home = "Home"
+    case work = "Work"
+    case client = "Client"
+    case other = "Other"
+
+    var id: String { rawValue }
+}
+
 struct FrequentPlace: Identifiable, Hashable, Codable, Sendable {
     let id: UUID
     var label: String
     var latitude: Double
     var longitude: Double
     var address: String?
+    var placeType: SavedPlaceType?
     var radiusMeters: Double
     var createdAt: Date
     var updatedAt: Date
@@ -17,6 +27,7 @@ struct FrequentPlace: Identifiable, Hashable, Codable, Sendable {
         latitude: Double,
         longitude: Double,
         address: String? = nil,
+        placeType: SavedPlaceType? = nil,
         radiusMeters: Double = 150,
         createdAt: Date = .now,
         updatedAt: Date = .now
@@ -26,6 +37,7 @@ struct FrequentPlace: Identifiable, Hashable, Codable, Sendable {
         self.latitude = latitude
         self.longitude = longitude
         self.address = address
+        self.placeType = placeType
         self.radiusMeters = radiusMeters
         self.createdAt = createdAt
         self.updatedAt = updatedAt

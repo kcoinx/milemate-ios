@@ -15,15 +15,31 @@ final class ClassificationVehicleTests: XCTestCase {
             label: "Office",
             latitude: 37.3349,
             longitude: -122.0090,
-            address: "1 Apple Park Way\nCupertino, CA 95014"
+            address: "1 Apple Park Way\nCupertino, CA 95014",
+            placeType: .work
         )
 
         let restored = StoredFrequentPlace(place: place).domainModel
 
         XCTAssertEqual(restored.label, "Office")
         XCTAssertEqual(restored.address, "1 Apple Park Way\nCupertino, CA 95014")
+        XCTAssertEqual(restored.placeType, .work)
         XCTAssertEqual(restored.latitude, 37.3349, accuracy: 0.000_001)
         XCTAssertEqual(restored.longitude, -122.0090, accuracy: 0.000_001)
+    }
+
+    func testLegacySavedPlaceWithoutTypeRemainsCompatible() {
+        let place = FrequentPlace(
+            label: "Existing Client",
+            latitude: 37.3349,
+            longitude: -122.0090
+        )
+
+        let restored = StoredFrequentPlace(place: place).domainModel
+
+        XCTAssertNil(restored.placeType)
+        XCTAssertEqual(restored.label, "Existing Client")
+        XCTAssertEqual(restored.radiusMeters, 150)
     }
 
     func testPlaceLocationProviderReturnsHumanReadableCurrentLocation() async throws {
