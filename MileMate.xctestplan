@@ -1,0 +1,30 @@
+{
+  "configurations" : [
+    {
+      "id" : "3FDAC6FC-49A6-4CF0-B5A8-4E93B558FB53",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "performanceAntipatternCheckerEnabled" : true,
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:MileMate.xcodeproj",
+      "identifier" : "AA0000000000000000000006",
+      "name" : "MileMate"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:MileMate.xcodeproj",
+        "identifier" : "BB0000000000000000000006",
+        "name" : "MileMateTests"
+      }
+    }
+  ],
+  "version" : 1
+}
