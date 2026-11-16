@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import OSLog
 import StoreKit
 
 enum ProPlan: Equatable, Sendable {
@@ -72,6 +73,11 @@ enum PurchaseManagerError: LocalizedError {
 @MainActor
 @Observable
 final class PurchaseManager: ProEntitlementProviding {
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "MileMate",
+        category: "StoreKit"
+    )
+
     private let configuration: StoreKitProductConfiguration?
     private var updatesTask: Task<Void, Never>?
 
@@ -114,11 +120,31 @@ final class PurchaseManager: ProEntitlementProviding {
         }
         isLoadingProducts = true
         defer { isLoadingProducts = false }
+        let requestedProductIDs = [
+            configuration.monthlyProductID,
+            configuration.lifetimeProductID
+        ]
+        Self.logger.info(
+            "Requesting StoreKit products: \(requestedProductIDs.joined(separator: ", "), privacy: .public)"
+        )
         do {
-            let products = try await Product.products(for: [
-                configuration.monthlyProductID,
-                configuration.lifetimeProductID
-            ])
+            let products = try await Product.products(for: requestedProductIDs)
+            Self.logger.info("StoreKit returned \(products.count) product(s)")
+            for product in products {
+                let productType = String(describing: product.type)
+                Self.logger.info(
+                    "StoreKit product returned: id=\(product.id, privacy: .public), type=\(productType, privacy: .public)"
+                )
+                let isValidMonthly = product.id == configuration.monthlyProductID &&
+                    product.type == .autoRenewable
+                let isValidLifetime = product.id == configuration.lifetimeProductID &&
+                    product.type == .nonConsumable
+                if !isValidMonthly && !isValidLifetime {
+                    Self.logger.error(
+                        "Rejecting StoreKit product during validation: id=\(product.id, privacy: .public), type=\(productType, privacy: .public)"
+                    )
+                }
+            }
             monthlyProduct = products.first {
                 $0.id == configuration.monthlyProductID && $0.type == .autoRenewable
             }
@@ -126,9 +152,22 @@ final class PurchaseManager: ProEntitlementProviding {
                 $0.id == configuration.lifetimeProductID && $0.type == .nonConsumable
             }
             if monthlyProduct == nil || lifetimeProduct == nil {
+                if monthlyProduct == nil {
+                    Self.logger.error(
+                        "No valid monthly StoreKit product was returned for id=\(configuration.monthlyProductID, privacy: .public); expected type=autoRenewable"
+                    )
+                }
+                if lifetimeProduct == nil {
+                    Self.logger.error(
+                        "No valid lifetime StoreKit product was returned for id=\(configuration.lifetimeProductID, privacy: .public); expected type=nonConsumable"
+                    )
+                }
                 errorMessage = PurchaseManagerError.productUnavailable.localizedDescription
             }
         } catch {
+            Self.logger.error(
+                "StoreKit product request failed: \(String(describing: error), privacy: .public)"
+            )
             errorMessage = error.localizedDescription
         }
     }
