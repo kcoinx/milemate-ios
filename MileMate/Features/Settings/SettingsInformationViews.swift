@@ -3,10 +3,12 @@ import SwiftUI
 import UIKit
 
 enum MileMateReleaseConfiguration {
-    // Supply hosted HTTPS destinations and a real support contact before App Store submission.
-    static let privacyPolicyURL: URL? = nil
-    static let termsOfUseURL: URL? = nil
-    static let supportEmail: String? = nil
+    static let privacyPolicyURL = URL(string: "https://milemate-1df6d.web.app/privacy")
+    static let termsOfUseURL = URL(
+        string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"
+    )
+    static let supportURL = URL(string: "https://milemate-1df6d.web.app/support")
+    static let supportEmail: String? = "kcoinx@gmail.com"
     static let legalEntityName: String? = nil
 }
 
@@ -235,7 +237,9 @@ struct PrivacyInformationView: View {
             )
             Section("External Policies") {
                 NavigationLink("Privacy Policy") { PrivacyPolicyView() }
-                NavigationLink("Terms of Use") { TermsOfUseView() }
+                NavigationLink("License & Important Information") {
+                    LicenseInformationView()
+                }
             }
         }
         .settingsDetailScrollBehavior()
@@ -286,11 +290,11 @@ struct PrivacyPolicyView: View {
         ),
         LegalDocumentSection(
             title: "Apple Services and Sharing",
-            body: "Map displays, route presentation, address lookup, and place search may be processed by Apple's MapKit and geocoding services under Apple's applicable terms and privacy practices. MileMate does not use mileage records for advertising."
+            body: "Map displays, route presentation, address lookup, and place search may be processed by Apple's MapKit and geocoding services under Apple's applicable terms and privacy practices. MileMate does not include third-party advertising trackers and does not sell mileage records."
         ),
         LegalDocumentSection(
             title: "Retention and Deletion",
-            body: "Mileage records remain on this device until you delete individual records, use Delete All MileMate Data, delete the owning account, or remove the app and its data through iOS. Delete All MileMate Data stops active tracking, removes MileMate-owned local records and restoration state, resets MileMate preferences, and cancels MileMate local notifications. Account deletion removes the authentication account and only that account's locally owned data. No automatic deletion period is currently configured for feedback and support submissions; they remain in Firestore until manually removed. Use Contact Support to request help with a submission."
+            body: "Mileage records remain on this device until you delete individual records, use Delete All MileMate Data, delete the owning account, or remove the app and its data through iOS. Delete All MileMate Data stops active tracking, removes MileMate-owned local records and restoration state, resets MileMate preferences, and cancels MileMate local notifications. Account deletion removes the authentication account and only that account's locally owned data. Feedback and support submissions are assigned a 365-day retention period, after which they become eligible for Firestore TTL deletion. TTL removal may occur after the expiration date and is not immediate. Account deletion does not automatically delete feedback or support submissions; contact support to request earlier removal."
         ),
         LegalDocumentSection(
             title: "Your Permissions and Controls",
@@ -298,14 +302,14 @@ struct PrivacyPolicyView: View {
         ),
         LegalDocumentSection(
             title: "Contact",
-            body: "Use Contact Support in MileMate for privacy questions, requests, or help with account deletion. A public support contact and hosted policy URL must be supplied by the product owner before this draft is published."
+            body: "Use Contact Support in MileMate, visit the public Support page, or email kcoinx@gmail.com for privacy questions, requests, or help with account deletion."
         )
     ]
 
     var body: some View {
         List {
             Section {
-                Text("Draft privacy notice for MileMate. Final owner details and a hosted policy URL are required before publication.")
+                Text("Effective November 16, 2026")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 if let url = MileMateReleaseConfiguration.privacyPolicyURL {
@@ -325,58 +329,37 @@ struct PrivacyPolicyView: View {
     }
 }
 
-struct TermsOfUseView: View {
+struct LicenseInformationView: View {
     private let sections = [
         LegalDocumentSection(
-            title: "Purpose of MileMate",
-            body: "MileMate is a mileage-recording and reporting tool. You are responsible for reviewing recorded trips and deciding whether each trip is Business, Personal, or Unclassified."
+            title: "Mileage and Tax Information",
+            body: "MileMate is a mileage-recording and reporting tool. You are responsible for reviewing recorded trips and classifications. Mileage deductions and Estimated Tax Savings are informational estimates, not tax, accounting, or legal advice, and do not guarantee eligibility or acceptance by a tax authority."
         ),
         LegalDocumentSection(
-            title: "Estimates and Tax Information",
-            body: "Mileage deductions and Estimated Tax Savings are informational estimates based on the app's configured rates and your classifications. They are not tax, accounting, or legal advice and do not guarantee eligibility, savings, or acceptance by a tax authority."
+            title: "Tracking Accuracy",
+            body: "GPS, motion recognition, permissions, background execution, environmental conditions, and iOS behavior can delay, interrupt, or miss mileage recording. Review records promptly and retain any documentation required for tax or business purposes."
         ),
         LegalDocumentSection(
-            title: "Record Accuracy",
-            body: "GPS, motion recognition, background execution, device settings, environmental conditions, and operating-system behavior can delay, interrupt, or miss mileage recording. MileMate does not guarantee that every trip, route, distance, address, or classification will be complete or exact."
-        ),
-        LegalDocumentSection(
-            title: "Your Responsibilities",
-            body: "You are responsible for maintaining required device permissions, keeping the app available for background operation, reviewing records promptly, correcting classifications and trip details, and retaining any documentation required for tax or business purposes."
-        ),
-        LegalDocumentSection(
-            title: "Automatic Classification",
-            body: "Automatic Classification applies only rules you enable. A matching rule uses the Business or Personal classification you selected. Trips without a matching enabled rule remain Unclassified for review."
-        ),
-        LegalDocumentSection(
-            title: "Accounts and Local Mileage Data",
-            body: "MileMate supports guest use and Apple or Google sign-in through Firebase Authentication. Mileage records remain local to this device and are separated by account; signing in does not provide cloud mileage backup. Deleting app data or removing the app may permanently remove records that you have not exported or otherwise retained."
-        ),
-        LegalDocumentSection(
-            title: "Free Trips and MileMate Pro",
+            title: "Purchases",
             body: "Eligible users can complete up to 10 free trips before new trip recording is restricted. MileMate Pro Monthly is an auto-renewable subscription and MileMate Pro Lifetime is a non-consumable purchase. Prices and availability are provided by the App Store. A subscription renews unless canceled through Apple at least 24 hours before the end of the current period. Cancellation leaves access active through the paid period. Deleting MileMate or deleting an account does not cancel an App Store subscription; manage or cancel it in Apple's subscription settings."
         ),
         LegalDocumentSection(
-            title: "Feedback and Support",
-            body: "Feedback and support messages you choose to submit are stored using Firebase services. An optional reply email may be supplied for support requests. Do not send passwords, payment details, or sensitive trip information."
-        ),
-        LegalDocumentSection(
-            title: "Product Changes and Availability",
-            body: "Features may change as MileMate evolves. Availability can also depend on compatible Apple hardware, iOS capabilities, permissions, and services."
-        ),
-        LegalDocumentSection(
-            title: "Provider and Contact",
-            body: "The product owner's legal name, public support contact, governing-law terms, and hosted Terms URL must be supplied and reviewed before this draft is published as the final agreement."
+            title: "Support",
+            body: "For help, use Contact Support in MileMate, visit the public Support page, or email kcoinx@gmail.com. Do not include passwords, payment details, or sensitive trip information."
         )
     ]
 
     var body: some View {
         List {
             Section {
-                Text("Draft terms for MileMate. Final owner, contact, governing-law, and hosted URL details are required before publication.")
+                Text("MileMate is licensed under Apple's Standard End User License Agreement.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 if let url = MileMateReleaseConfiguration.termsOfUseURL {
-                    Link("Open Hosted Terms of Use", destination: url)
+                    Link("Open Apple's Standard EULA", destination: url)
+                }
+                if let url = MileMateReleaseConfiguration.supportURL {
+                    Link("Open MileMate Support", destination: url)
                 }
             }
             ForEach(sections) { section in
@@ -387,7 +370,7 @@ struct TermsOfUseView: View {
             }
         }
         .settingsDetailScrollBehavior()
-        .navigationTitle("Terms of Use")
+        .navigationTitle("License & Important Information")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -426,6 +409,13 @@ struct HelpSupportView: View {
                 NavigationLink("Contact Support") {
                     ContactSupportView()
                 }
+                if let url = MileMateReleaseConfiguration.supportURL {
+                    Link("Open Support Website", destination: url)
+                }
+                if let email = MileMateReleaseConfiguration.supportEmail,
+                   let url = URL(string: "mailto:\(email)") {
+                    Link("Email Support", destination: url)
+                }
                 Text("Use Contact Support for questions or help requests. Do not include passwords, payment details, or sensitive trip information.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -454,6 +444,11 @@ struct ContactSupportView: View {
 }
 
 private struct SupportSubmissionForm: View {
+    private enum FocusedField: Hashable {
+        case replyEmail
+        case message
+    }
+
     private enum SubmissionState: Equatable {
         case idle
         case submitting
@@ -466,6 +461,9 @@ private struct SupportSubmissionForm: View {
     @State private var requestID = UUID()
     @State private var category: SupportSubmissionCategory
     @State private var submissionState = SubmissionState.idle
+    @State private var showingSuccessConfirmation = false
+    @FocusState private var focusedField: FocusedField?
+    @Environment(\.dismiss) private var dismiss
     private let service = FeedbackSubmissionService()
     private let submissionType: SupportSubmissionType
 
@@ -501,6 +499,7 @@ private struct SupportSubmissionForm: View {
                 }
                 if submissionType == .support {
                     TextField("Reply email (optional)", text: $replyEmail)
+                        .focused($focusedField, equals: .replyEmail)
                         .textContentType(.emailAddress)
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
@@ -508,6 +507,7 @@ private struct SupportSubmissionForm: View {
                         .accessibilityHint("Used only if you want MileMate support to reply")
                 }
                 TextEditor(text: $feedback)
+                    .focused($focusedField, equals: .message)
                     .frame(minHeight: 150)
                     .accessibilityLabel("Feedback message")
                     .onChange(of: feedback) { _, value in
@@ -562,9 +562,22 @@ private struct SupportSubmissionForm: View {
             }
         }
         .settingsDetailScrollBehavior()
+        .alert(
+            submissionType == .feedback ? "Feedback Sent" : "Support Request Sent",
+            isPresented: $showingSuccessConfirmation
+        ) {
+            Button("Done") { dismiss() }
+        } message: {
+            Text(
+                submissionType == .feedback
+                    ? "Thank you. Your feedback was submitted successfully."
+                    : "Your support request was submitted successfully."
+            )
+        }
     }
 
     private func submitFeedback() {
+        guard submissionState != .submitting else { return }
         submissionState = .submitting
         Task {
             do {
@@ -579,6 +592,8 @@ private struct SupportSubmissionForm: View {
                 replyEmail = ""
                 requestID = UUID()
                 submissionState = .success
+                focusedField = nil
+                showingSuccessConfirmation = true
             } catch {
                 submissionState = .failure(
                     (error as? LocalizedError)?.errorDescription ??
@@ -616,7 +631,9 @@ struct AboutMileMateView: View {
                 NavigationLink("Privacy") { PrivacyInformationView() }
                 NavigationLink("Help & Support") { HelpSupportView() }
                 NavigationLink("Privacy Policy") { PrivacyPolicyView() }
-                NavigationLink("Terms of Use") { TermsOfUseView() }
+                NavigationLink("License & Important Information") {
+                    LicenseInformationView()
+                }
             }
         }
         .settingsDetailScrollBehavior()

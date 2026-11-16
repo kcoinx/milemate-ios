@@ -244,10 +244,20 @@ final class SettingsCompletionTests: XCTestCase {
         }
     }
 
-    func testReleaseLegalConfigurationDoesNotInventExternalDestinations() {
-        XCTAssertNil(MileMateReleaseConfiguration.privacyPolicyURL)
-        XCTAssertNil(MileMateReleaseConfiguration.termsOfUseURL)
-        XCTAssertNil(MileMateReleaseConfiguration.supportEmail)
+    func testReleaseLegalConfigurationUsesApprovedDestinations() {
+        XCTAssertEqual(
+            MileMateReleaseConfiguration.privacyPolicyURL?.absoluteString,
+            "https://milemate-1df6d.web.app/privacy"
+        )
+        XCTAssertEqual(
+            MileMateReleaseConfiguration.termsOfUseURL?.absoluteString,
+            "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"
+        )
+        XCTAssertEqual(
+            MileMateReleaseConfiguration.supportURL?.absoluteString,
+            "https://milemate-1df6d.web.app/support"
+        )
+        XCTAssertEqual(MileMateReleaseConfiguration.supportEmail, "kcoinx@gmail.com")
         XCTAssertNil(MileMateReleaseConfiguration.legalEntityName)
     }
 

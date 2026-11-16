@@ -78,12 +78,10 @@ struct ProPaywallView: View {
                         .multilineTextAlignment(.center)
 
                     HStack(spacing: AppTheme.Spacing.large) {
-                        NavigationLink("Privacy Policy") {
-                            PrivacyInformationView()
+                        if let privacyURL = MileMateReleaseConfiguration.privacyPolicyURL {
+                            Link("Privacy Policy", destination: privacyURL)
                         }
-                        if let termsURL = URL(
-                            string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"
-                        ) {
+                        if let termsURL = MileMateReleaseConfiguration.termsOfUseURL {
                             Link("Terms of Use", destination: termsURL)
                         }
                     }
