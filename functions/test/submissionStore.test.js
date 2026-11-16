@@ -2,7 +2,10 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { persistSubmission } = require("../src/submissionStore");
+const {
+  SUPPORT_RETENTION_MS,
+  persistSubmission,
+} = require("../src/submissionStore");
 
 test("persists a guest feedback submission without identity data", async () => {
   const firestore = new FakeFirestore();
@@ -20,6 +23,7 @@ test("persists a guest feedback submission without identity data", async () => {
   assert.equal(stored.category, "bug_report");
   assert.equal(stored.replyEmail, null);
   assert.equal(stored.createdAt, "SERVER_TIMESTAMP");
+  assert.deepEqual(stored.expiresAt, new Date(1_000 + SUPPORT_RETENTION_MS));
   assert.equal("ipAddress" in stored, false);
   assert.equal("userID" in stored, false);
 });
@@ -42,6 +46,25 @@ test("persists support questions and optional reply email", async () => {
   const stored = firestore.value("supportSubmissions/support-1");
   assert.equal(stored.type, "support");
   assert.equal(stored.replyEmail, "person@example.com");
+  assert.deepEqual(stored.expiresAt, new Date(1_000 + SUPPORT_RETENTION_MS));
+});
+
+test("sets support retention to exactly 365 days from receipt", async () => {
+  const firestore = new FakeFirestore();
+  const receivedAt = Date.UTC(2026, 10, 16, 12, 0, 0);
+  await persistSubmission({
+    firestore,
+    rateKey: "hashed-network-key",
+    submission: submission(),
+    nowMilliseconds: receivedAt,
+    serverTimestamp: "SERVER_TIMESTAMP",
+  });
+
+  const stored = firestore.value("supportSubmissions/request-1");
+  assert.equal(
+    stored.expiresAt.getTime() - receivedAt,
+    365 * 24 * 60 * 60 * 1_000,
+  );
 });
 
 test("duplicate request IDs return success without overwriting or consuming rate limit", async () => {

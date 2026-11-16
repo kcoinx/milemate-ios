@@ -15,6 +15,7 @@ functions/node_modules/
 functions/.env
 functions/.env.*
 firebase-debug.log
+.firebase/
 
 # Swift Package Manager
 .build/

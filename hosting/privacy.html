@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Privacy Policy for the MileMate iOS application.">
+  <title>Privacy Policy — MileMate</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/">MileMate</a>
+      <nav class="site-nav" aria-label="Legal and support">
+        <a href="/privacy" aria-current="page">Privacy</a>
+        <a href="/support">Support</a>
+        <a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/">Standard EULA</a>
+      </nav>
+    </div>
+  </header>
+  <main class="page">
+    <article class="document">
+      <p class="eyebrow">MileMate</p>
+      <h1>Privacy Policy</h1>
+      <p class="updated"><strong>Effective date:</strong> November 16, 2026</p>
+      <p class="lede">This Privacy Policy explains how MileMate, published by an individual Apple Developer, handles information when you use the MileMate iOS app.</p>
+
+      <h2>1. Mileage and app data stored on your iPhone</h2>
+      <p>MileMate stores mileage records locally on your iPhone. These records may include trip times, distance, route coordinates, start and end descriptions, Business or Personal classifications, purposes, notes, vehicles, Saved Places, auto-categorization rules, and app preferences.</p>
+      <p>Signing in does not automatically upload or back up your mileage history to Firebase. Mileage records remain separated by the active guest or authenticated account on that device.</p>
+
+      <h2>2. Location and motion information</h2>
+      <p>MileMate uses location information to detect eligible driving, measure mileage, and create route records. Always Location supports automatic trip detection and recording while the app is in the background. Precise location is used while MileMate is detecting or recording a trip.</p>
+      <p>Motion &amp; Fitness activity helps distinguish automotive movement from walking, running, cycling, and stationary activity. Motion information is not used to decide whether a trip is Business or Personal.</p>
+
+      <h2>3. Accounts and authentication</h2>
+      <p>You may use MileMate as a guest or sign in with Apple or Google. Apple or Google and Firebase Authentication process the identifiers, authentication tokens, and any name or email address made available through sign-in. MileMate uses the authenticated identifier to keep local mileage records separated between accounts on the device.</p>
+      <p>MileMate stores session credentials securely on the device to keep you signed in. Apple, Google, and Firebase handle information under their respective privacy terms.</p>
+
+      <h2>4. Feedback and support submissions</h2>
+      <p>If you use Send Feedback or Contact Support, MileMate sends the following information to a Firebase Cloud Function:</p>
+      <ul>
+        <li>the submission type and selected category;</li>
+        <li>the message you enter;</li>
+        <li>an optional reply email address for support requests;</li>
+        <li>a request identifier; and</li>
+        <li>the app version, build number, and platform.</li>
+      </ul>
+      <p>Submissions are stored in Cloud Firestore for review. To limit abuse, a one-way keyed value derived from the request's network address is stored temporarily. MileMate does not store the raw network address in the feedback database and does not include mileage records, route coordinates, trip notes, or authentication credentials in a submission.</p>
+
+      <h2>5. Maps, notifications, and App Store purchases</h2>
+      <p>Map displays, route presentation, address lookup, and place search may be processed by Apple's MapKit and geocoding services. If you allow notifications, MileMate uses local notifications for automatic-trip completion, trips awaiting review, and long-running manual-trip reminders.</p>
+      <p>Purchases and subscriptions are processed by Apple through the App Store. MileMate receives StoreKit product and verified entitlement information needed to unlock Pro features, but does not receive your full payment-card details.</p>
+
+      <h2>6. Advertising and tracking</h2>
+      <p>MileMate does not use mileage records for advertising and does not use third-party advertising trackers. MileMate does not sell mileage records.</p>
+
+      <h2>7. Retention and deletion</h2>
+      <p>Local mileage records remain on your iPhone until you delete individual records, use Delete All MileMate Data, delete the owning account, or remove the app and its data through iOS. Delete All MileMate Data stops active tracking, removes MileMate-owned local records and recovery state, resets MileMate preferences, and cancels MileMate local notifications.</p>
+      <p>Account deletion removes the Firebase Authentication account and only that account's locally owned MileMate data. For Sign in with Apple accounts, MileMate also uses Apple's server-side process to revoke the app's Apple authorization.</p>
+      <div class="callout"><strong>Important:</strong> Deleting an account does not cancel an App Store subscription and does not automatically delete feedback or support submissions. Manage subscriptions through Apple. Contact support to request earlier removal of a feedback or support submission.</div>
+      <p>Feedback and support submissions are assigned a 365-day retention period from receipt. After that period, the submission becomes eligible for automated deletion through Firestore's time-to-live process. TTL deletion is not immediate and may occur after the expiration date. Temporary rate-limit records expire separately.</p>
+      <p>To request earlier removal, email <a href="mailto:kcoinx@gmail.com">kcoinx@gmail.com</a> with the approximate submission date, submission type or category, any reply email you included, and a short non-sensitive phrase from the message. This information is used only to locate the correct record. If the submission cannot be matched reliably, MileMate will not delete a different record.</p>
+
+      <h2>8. Your choices</h2>
+      <p>You can revoke Location, Motion &amp; Fitness, or Notification permission in iPhone Settings. Revoking permissions may prevent automatic tracking or related alerts from working. System permission choices are not reset by Delete All MileMate Data.</p>
+      <p>You can classify, edit, export, and delete mileage records within MileMate. For account deletion, use Settings → Account → Delete Account. If you cannot access the app, contact support.</p>
+
+      <h2>9. Security</h2>
+      <p>MileMate uses platform security controls and Firebase security features intended to protect information. No method of electronic storage or transmission can be guaranteed to be completely secure.</p>
+
+      <h2>10. Changes to this policy</h2>
+      <p>This policy may be updated when MileMate's functionality or data practices change. The effective date at the top of this page will be updated when material revisions are published.</p>
+
+      <h2>11. Contact</h2>
+      <p>For privacy questions, support, or data-deletion assistance, email <a href="mailto:kcoinx@gmail.com">kcoinx@gmail.com</a> or visit the <a href="/support">MileMate Support page</a>.</p>
+    </article>
+  </main>
+  <footer class="site-footer">MileMate is published by an individual Apple Developer.</footer>
+</body>
+</html>

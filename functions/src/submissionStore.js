@@ -2,6 +2,8 @@
 
 const { nextRateLimitState } = require("./feedback");
 
+const SUPPORT_RETENTION_MS = 365 * 24 * 60 * 60 * 1_000;
+
 async function persistSubmission({
   firestore,
   rateKey,
@@ -57,10 +59,11 @@ async function persistSubmission({
       },
       status: "new",
       createdAt: serverTimestamp,
+      expiresAt: new Date(nowMilliseconds + SUPPORT_RETENTION_MS),
     });
 
     return { stored: true, duplicate: false, retryAfterSeconds: 0 };
   });
 }
 
-module.exports = { persistSubmission };
+module.exports = { SUPPORT_RETENTION_MS, persistSubmission };

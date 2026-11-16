@@ -24,7 +24,47 @@ The repository's `firestore.rules` file denies every direct client read and writ
 firebase deploy --only firestore:rules --project milemate-1df6d
 ```
 
-Configure a Firestore TTL policy for collection group `_feedbackRateLimits` using the `expiresAt` field. This removes expired rate-limit records automatically.
+Configure Firestore TTL policies using the `expiresAt` field for both collection groups:
+
+- `_feedbackRateLimits`: removes expired abuse-prevention records.
+- `supportSubmissions`: makes each feedback or support submission eligible for deletion 365 days after it was received.
+
+In Google Cloud Console, open Firestore → Time-to-live, create one policy for each collection group above, and select `expiresAt` as the timestamp field. Do not add an expiration offset because the function already writes the complete expiration timestamp.
+
+Alternatively, after confirming the active gcloud project is `milemate-1df6d`, prepare each policy with:
+
+```powershell
+gcloud firestore fields ttls update expiresAt --collection-group=_feedbackRateLimits --database="(default)" --enable-ttl --project=milemate-1df6d
+gcloud firestore fields ttls update expiresAt --collection-group=supportSubmissions --database="(default)" --enable-ttl --project=milemate-1df6d
+gcloud firestore fields ttls list --database="(default)" --project=milemate-1df6d
+```
+
+TTL enablement can take time, and Firestore typically deletes expired documents within 24 hours after their expiration time. TTL deletion is not immediate.
+
+### Existing submission backfill
+
+Existing `supportSubmissions` documents without `expiresAt` are not affected by the TTL policy. Before relying on the 365-day policy:
+
+1. Export or otherwise back up the collection according to the project's normal recovery procedure.
+2. Count documents missing `expiresAt` and review a sample of their `createdAt` values.
+3. Using a reviewed one-time Firebase Admin migration, set `expiresAt` to `createdAt + 365 days` only when `expiresAt` is absent. Process writes in bounded batches and do not change messages, reply addresses, status, or document IDs.
+4. If a legacy document has no valid `createdAt`, decide and document a conservative expiration date before updating it; do not guess silently.
+5. Run the migration in a dry-run/count-only mode first, then execute it only after approval.
+6. Verify the updated count and inspect a sample before removing the migration tooling.
+
+Documents whose backfilled expiration is already in the past become eligible for TTL deletion after the policy is active. Do not promise immediate removal.
+
+### Early deletion requests
+
+Early removal remains a manual, operator-only process; the iOS app receives no Firestore credentials:
+
+1. Accept the request through `kcoinx@gmail.com` or the in-app Contact Support form.
+2. Ask only for the approximate submission date, submission type/category, optional reply email used, and a short non-sensitive phrase from the message. Never request passwords, authentication tokens, payment details, or trip coordinates.
+3. From an authorized Firebase administrator account, locate candidate documents in `supportSubmissions` using the supplied details. Verify a single match before deleting anything. If ownership or the matching record cannot be established, explain that safely rather than deleting a different submission.
+4. Delete only the confirmed submission document. Do not delete rate-limit records, authentication accounts, mileage data, or unrelated support records.
+5. Confirm completion to the requester without copying the original message into email or logs. Keep only the minimum operational record required to document that the request was handled.
+
+Account deletion does not automatically delete support submissions, and deleting a support submission does not delete an account or cancel an App Store subscription.
 
 ## 3. Configure the one required secret
 
@@ -75,6 +115,7 @@ Each document is stored at `supportSubmissions/{requestID}` with:
 - `app`: app version, build, and platform
 - `status`: initially `new`
 - `createdAt`: Firestore server timestamp
+- `expiresAt`: receipt time plus 365 days; used by the `supportSubmissions` TTL policy
 
 The request ID is used as the document ID, so retries cannot create duplicates or overwrite an existing submission.
 
