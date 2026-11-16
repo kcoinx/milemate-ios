@@ -41,6 +41,10 @@
 	<string>com.googleusercontent.apps.953592579176-pkujhl6q57dpkdgf2kiv9tk0epebuehn</string>
 	<key>MileMateGoogleClientID</key>
 	<string>953592579176-pkujhl6q57dpkdgf2kiv9tk0epebuehn.apps.googleusercontent.com</string>
+	<key>MileMateProLifetimeProductID</key>
+	<string>com.fikrutibebe.milemate.pro.lifetime</string>
+	<key>MileMateProMonthlyProductID</key>
+	<string>com.fikrutibebe.milemate.pro.monthly</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>MileMate uses your location in the background to automatically detect and track work-related drives, even when the app is not open.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
