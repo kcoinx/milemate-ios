@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import UIKit
 
@@ -24,6 +25,164 @@ enum AppBuildInformation {
 
     static var displayValue: String {
         "Version \(version()) (\(build()))"
+    }
+}
+
+struct FeedbackSubmissionConfiguration: Sendable {
+    static let endpointBundleKey = "MileMateFeedbackEndpoint"
+    let endpoint: URL
+
+    static func fromBundle(_ bundle: Bundle = .main) -> FeedbackSubmissionConfiguration? {
+        guard let value = bundle.object(forInfoDictionaryKey: endpointBundleKey) as? String,
+              let endpoint = URL(string: value),
+              endpoint.scheme == "https",
+              endpoint.host != nil else {
+            return nil
+        }
+        return FeedbackSubmissionConfiguration(endpoint: endpoint)
+    }
+}
+
+enum FeedbackSubmissionError: LocalizedError, Equatable {
+    case configurationRequired
+    case messageTooShort
+    case messageTooLong
+    case invalidReplyEmail
+    case rateLimited
+    case rejected
+
+    var errorDescription: String? {
+        switch self {
+        case .configurationRequired:
+            "Feedback and support are not configured yet. Please try again in a future update."
+        case .messageTooShort:
+            "Please enter at least 10 characters."
+        case .messageTooLong:
+            "Your message must be 2,000 characters or fewer."
+        case .invalidReplyEmail:
+            "Enter a valid reply email address or leave it blank."
+        case .rateLimited:
+            "Too many messages were submitted. Please wait and try again later."
+        case .rejected:
+            "Your message could not be submitted. Please wait a moment and try again."
+        }
+    }
+}
+
+struct FeedbackSubmissionService: Sendable {
+    static let maximumLength = 2_000
+    private let configuration: FeedbackSubmissionConfiguration?
+    private let session: URLSession
+
+    init(
+        configuration: FeedbackSubmissionConfiguration? = .fromBundle(),
+        session: URLSession = .shared
+    ) {
+        self.configuration = configuration
+        self.session = session
+    }
+
+    static func validatedMessage(_ message: String) throws -> String {
+        let value = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard value.count >= 10 else { throw FeedbackSubmissionError.messageTooShort }
+        guard value.count <= maximumLength else { throw FeedbackSubmissionError.messageTooLong }
+        return value
+    }
+
+    func submit(
+        _ message: String,
+        submissionType: SupportSubmissionType = .feedback,
+        category: SupportSubmissionCategory = .generalFeedback,
+        replyEmail: String? = nil,
+        requestID: UUID = UUID()
+    ) async throws {
+        guard let configuration else {
+            throw FeedbackSubmissionError.configurationRequired
+        }
+        let normalizedEmail = try Self.validatedReplyEmail(replyEmail)
+        let payload = Payload(
+            message: try Self.validatedMessage(message),
+            submissionType: submissionType.rawValue,
+            category: category.rawValue,
+            replyEmail: normalizedEmail,
+            requestID: requestID.uuidString,
+            appVersion: AppBuildInformation.version(),
+            build: AppBuildInformation.build(),
+            platform: "iOS"
+        )
+        var request = URLRequest(url: configuration.endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(payload)
+        request.timeoutInterval = 15
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw FeedbackSubmissionError.rejected
+        }
+        if httpResponse.statusCode == 429 {
+            throw FeedbackSubmissionError.rateLimited
+        }
+        guard httpResponse.statusCode == 200,
+              let result = try? JSONDecoder().decode(SubmissionResponse.self, from: data),
+              result.stored else {
+            throw FeedbackSubmissionError.rejected
+        }
+    }
+
+    static func validatedReplyEmail(_ email: String?) throws -> String? {
+        guard let email else { return nil }
+        let value = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !value.isEmpty else { return nil }
+        let parts = value.split(separator: "@", omittingEmptySubsequences: false)
+        guard value.count <= 254,
+              parts.count == 2,
+              !parts[0].isEmpty,
+              parts[1].contains("."),
+              !parts[1].hasPrefix("."),
+              !parts[1].hasSuffix(".") else {
+            throw FeedbackSubmissionError.invalidReplyEmail
+        }
+        return value
+    }
+
+    private struct Payload: Encodable {
+        let message: String
+        let submissionType: String
+        let category: String
+        let replyEmail: String?
+        let requestID: String
+        let appVersion: String
+        let build: String
+        let platform: String
+    }
+
+    private struct SubmissionResponse: Decodable {
+        let stored: Bool
+    }
+}
+
+enum SupportSubmissionType: String, Sendable {
+    case feedback
+    case support
+}
+
+enum SupportSubmissionCategory: String, CaseIterable, Identifiable, Sendable {
+    case bugReport = "bug_report"
+    case featureSuggestion = "feature_suggestion"
+    case generalFeedback = "general_feedback"
+    case question
+    case helpRequest = "help_request"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .bugReport: "Bug Report"
+        case .featureSuggestion: "Feature Suggestion"
+        case .generalFeedback: "General Feedback"
+        case .question: "Question"
+        case .helpRequest: "Help Request"
+        }
     }
 }
 
@@ -131,7 +290,7 @@ struct PrivacyPolicyView: View {
         ),
         LegalDocumentSection(
             title: "Contact",
-            body: "A public support contact has not yet been configured in this build. Until one is supplied, the in-app Send Feedback action can create a non-sensitive message for an app you choose."
+            body: "When the secure feedback service is configured, the in-app Send Feedback form sends only the message you type and basic app diagnostics."
         )
     ]
 
@@ -248,7 +407,10 @@ struct HelpSupportView: View {
                 }
             }
             Section("Contact") {
-                Text("A public support email or support URL has not yet been configured. Use Send Feedback to share a non-sensitive feedback template through an app of your choice.")
+                NavigationLink("Contact Support") {
+                    ContactSupportView()
+                }
+                Text("Use Contact Support for questions or help requests. Do not include passwords, payment details, or sensitive trip information.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -260,32 +422,154 @@ struct HelpSupportView: View {
 }
 
 struct SendFeedbackView: View {
-    private var feedback: String { FeedbackContent.message() }
+    var body: some View {
+        SupportSubmissionForm(submissionType: .feedback)
+            .navigationTitle("Send Feedback")
+            .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct ContactSupportView: View {
+    var body: some View {
+        SupportSubmissionForm(submissionType: .support)
+            .navigationTitle("Contact Support")
+            .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct SupportSubmissionForm: View {
+    private enum SubmissionState: Equatable {
+        case idle
+        case submitting
+        case success
+        case failure(String)
+    }
+
+    @State private var feedback = ""
+    @State private var replyEmail = ""
+    @State private var requestID = UUID()
+    @State private var category: SupportSubmissionCategory
+    @State private var submissionState = SubmissionState.idle
+    private let service = FeedbackSubmissionService()
+    private let submissionType: SupportSubmissionType
+
+    init(submissionType: SupportSubmissionType) {
+        self.submissionType = submissionType
+        _category = State(
+            initialValue: submissionType == .feedback ? .generalFeedback : .question
+        )
+    }
+
+    private var availableCategories: [SupportSubmissionCategory] {
+        switch submissionType {
+        case .feedback:
+            [.bugReport, .featureSuggestion, .generalFeedback]
+        case .support:
+            [.question, .helpRequest]
+        }
+    }
 
     var body: some View {
         List {
-            Section {
-                Text("Share feedback using Mail, Messages, Notes, or another app. The template includes only app/build and iOS version information.")
-                ShareLink(item: feedback, subject: Text("MileMate Feedback")) {
-                    Label("Share Feedback", systemImage: "square.and.arrow.up")
-                        .frame(maxWidth: .infinity, minHeight: 44)
+            Section(submissionType == .feedback ? "Your Feedback" : "Your Question") {
+                Text(
+                    submissionType == .feedback
+                        ? "Tell us what worked well or what could be improved."
+                        : "Tell us what you need help with."
+                )
+                    .foregroundStyle(.secondary)
+                Picker("Category", selection: $category) {
+                    ForEach(availableCategories) { item in
+                        Text(item.title).tag(item)
+                    }
+                }
+                if submissionType == .support {
+                    TextField("Reply email (optional)", text: $replyEmail)
+                        .textContentType(.emailAddress)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityHint("Used only if you want MileMate support to reply")
+                }
+                TextEditor(text: $feedback)
+                    .frame(minHeight: 150)
+                    .accessibilityLabel("Feedback message")
+                    .onChange(of: feedback) { _, value in
+                        if value.count > FeedbackSubmissionService.maximumLength {
+                            feedback = String(value.prefix(FeedbackSubmissionService.maximumLength))
+                        }
+                        if submissionState != .submitting {
+                            submissionState = .idle
+                        }
+                    }
+                Text("\(feedback.count) / \(FeedbackSubmissionService.maximumLength)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+
+                Button {
+                    submitFeedback()
+                } label: {
+                    Group {
+                        if submissionState == .submitting {
+                            ProgressView()
+                        } else {
+                            Text(submissionType == .feedback ? "Submit Feedback" : "Contact Support")
+                                .fontWeight(.semibold)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .center)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(submissionState == .submitting || feedback.trimmingCharacters(in: .whitespacesAndNewlines).count < 10)
+
+                switch submissionState {
+                case .success:
+                    Label(
+                        submissionType == .feedback
+                            ? "Thank you. Your feedback was saved securely."
+                            : "Your support request was saved securely.",
+                        systemImage: "checkmark.circle.fill"
+                    )
+                        .foregroundStyle(AppTheme.Color.positive)
+                case .failure(let message):
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                case .idle, .submitting:
+                    EmptyView()
+                }
             }
             Section("Privacy") {
-                Text("Trip coordinates, addresses, routes, notes, and mileage records are never inserted into the feedback template automatically.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            Section("Support Destination") {
-                Text("No official MileMate support email or feedback URL is currently configured. The product owner must provide one before App Store submission.")
+                Text("MileMate stores only the message you type, your selected category, an optional reply email, and basic app metadata. Trip coordinates, routes, notes, mileage records, and account details are not included.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
         .settingsDetailScrollBehavior()
-        .navigationTitle("Send Feedback")
-        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func submitFeedback() {
+        submissionState = .submitting
+        Task {
+            do {
+                try await service.submit(
+                    feedback,
+                    submissionType: submissionType,
+                    category: category,
+                    replyEmail: submissionType == .support ? replyEmail : nil,
+                    requestID: requestID
+                )
+                feedback = ""
+                replyEmail = ""
+                requestID = UUID()
+                submissionState = .success
+            } catch {
+                submissionState = .failure(
+                    (error as? LocalizedError)?.errorDescription ??
+                        "Your message could not be submitted. Please try again."
+                )
+            }
+        }
     }
 }
 

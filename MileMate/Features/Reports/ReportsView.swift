@@ -204,8 +204,7 @@ struct ReportsView: View {
                     GridRow {
                         reportMetric(
                             "IRS RATE",
-                            value: MileageSettings.mileageRate.formatted(.currency(code: "USD"))
-                                + " / mile",
+                            value: viewModel.mileageRateDescription,
                             isReference: true
                         )
                         Color.clear
@@ -472,7 +471,7 @@ struct ReportsView: View {
                 Divider()
                 summaryRow("Business Trips", value: "\(viewModel.summary.tripCount)")
                 Divider()
-                summaryRow("Deduction Rate", value: MileageSettings.mileageRate.formatted(.currency(code: "USD")) + " / mile")
+                summaryRow("Deduction Rate", value: viewModel.mileageRateDescription)
                 Divider()
                 summaryRow("Estimated Deduction", value: viewModel.summary.estimatedDeduction.currencyFormatted, emphasized: true)
             }

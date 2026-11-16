@@ -4,14 +4,15 @@ import SwiftUI
 import UIKit
 
 enum ManualTrackingRowState: Equatable {
-    case actionable
-    case automaticModeActive
+    case selected
+    case availableToSelect
 
     init(automaticTrackingEnabled: Bool) {
-        self = automaticTrackingEnabled ? .automaticModeActive : .actionable
+        self = automaticTrackingEnabled ? .availableToSelect : .selected
     }
 
-    var isActionable: Bool { self == .actionable }
+    var isActionable: Bool { true }
+    var isSelected: Bool { self == .selected }
 }
 
 enum DataDeletionConfirmationState: Equatable {
@@ -98,38 +99,36 @@ struct SettingsView: View {
                     )
                 }
                 .disabled(
-                    automaticTripCoordinator.state == .tracking ||
-                    automaticTripCoordinator.state == .reviewing
+                    trackingModeSwitchDisabled
                 )
 
-                if manualTrackingRowState == .automaticModeActive {
-                    LabeledContent {
-                        Text("Switch modes to use")
-                            .foregroundStyle(AppTheme.Color.textSecondary)
-                    } label: {
+                Button {
+                    selectManualTracking()
+                } label: {
+                    HStack {
                         settingLabel("Manual Tracking", icon: "play.circle.fill", tint: AppTheme.Color.brand)
+                        Spacer()
+                        Text(manualTrackingRowState.isSelected ? "Selected" : "Switch")
+                            .font(.subheadline)
+                            .foregroundStyle(AppTheme.Color.textSecondary)
+                        Image(systemName: manualTrackingRowState.isSelected ? "checkmark" : "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(
+                                automaticTrackingEnabled
+                                    ? AppTheme.Color.textSecondary
+                                    : AppTheme.Color.brand
+                            )
                     }
-                    .accessibilityElement(children: .combine)
-                } else {
-                    Button {
-                        router.showManualTracking()
-                    } label: {
-                        HStack {
-                            settingLabel("Manual Tracking", icon: "play.circle.fill", tint: AppTheme.Color.brand)
-                            Spacer()
-                            Text("Start from Dashboard")
-                                .font(.subheadline)
-                                .foregroundStyle(AppTheme.Color.textSecondary)
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Manual Tracking")
-                    .accessibilityValue("Start from Dashboard")
-                    .accessibilityHint("Opens the Dashboard manual Start Trip flow")
                 }
+                .buttonStyle(.plain)
+                .disabled(trackingModeSwitchDisabled)
+                .accessibilityLabel("Manual Tracking")
+                .accessibilityValue(automaticTrackingEnabled ? "Not selected" : "Selected")
+                .accessibilityHint(
+                    automaticTrackingEnabled
+                        ? "Switches to Manual Tracking and opens the Dashboard"
+                        : "Opens the Dashboard manual Start Trip flow"
+                )
 
                 Toggle(isOn: $tripFeedbackEnabled) {
                     settingLabel(
@@ -323,6 +322,9 @@ struct SettingsView: View {
                 }
                 destination("Send feedback", icon: "bubble.left.and.bubble.right.fill", tint: .purple) {
                     SendFeedbackView()
+                }
+                destination("Contact Support", icon: "questionmark.bubble.fill", tint: .orange) {
+                    ContactSupportView()
                 }
                 destination("About MileMate", icon: "info.circle.fill", tint: AppTheme.Color.textSecondary) {
                     AboutMileMateView()
@@ -608,6 +610,20 @@ struct SettingsView: View {
         ManualTrackingRowState(automaticTrackingEnabled: automaticTrackingEnabled)
     }
 
+    private var trackingModeSwitchDisabled: Bool {
+        manualTripCoordinator.hasProtectedTripState ||
+            automaticTripCoordinator.hasProtectedTripState
+    }
+
+    private func selectManualTracking() {
+        guard !trackingModeSwitchDisabled else { return }
+        if automaticTrackingEnabled {
+            automaticTrackingEnabled = false
+            automaticTripCoordinator.setEnabled(false)
+        }
+        router.showManualTracking()
+    }
+
     private var locationPermissionText: String {
         switch automaticTripCoordinator.locationAuthorizationStatus {
         case CLAuthorizationStatus.authorizedAlways:
@@ -736,13 +752,38 @@ struct SettingsView: View {
 }
 
 private struct TaxSettingsView: View {
-    @AppStorage(MileageSettings.rateKey) private var deductionRate = MileageSettings.defaultMileageRate
     @AppStorage(MileageSettings.taxRateKey) private var taxRate = MileageSettings.defaultTaxRate
+    @State private var selectedYear = Calendar.current.component(.year, from: .now)
+    @State private var customRate = MileageSettings.mileageRate
+
+    private var availableYears: [Int] {
+        let currentYear = Calendar.current.component(.year, from: .now)
+        return Array((2024...max(currentYear, 2026)).reversed())
+    }
 
     var body: some View {
         Form {
             Section("Mileage Rate") {
-                LabeledContent("IRS mileage rate", value: deductionRate.formatted(.currency(code: "USD")) + " / mi")
+                Picker("Tax year", selection: $selectedYear) {
+                    ForEach(availableYears, id: \.self) { year in
+                        Text(verbatim: String(year)).tag(year)
+                    }
+                }
+                Stepper(value: customRateBinding, in: 0.01...2.00, step: 0.005) {
+                    LabeledContent(
+                        "Configured rate",
+                        value: customRate.formatted(
+                            .currency(code: "USD").precision(.fractionLength(3))
+                        ) + " / mi"
+                    )
+                }
+                Button("Restore Official Default") {
+                    MileageSettings.restoreOfficialMileageRate(for: selectedYear)
+                    loadRate()
+                }
+                Text("Official default: \(MileageSettings.officialRateDescription(for: selectedYear)). Custom rates apply only to the selected tax year.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
             Section("Estimated Tax Rate") {
                 Stepper(value: $taxRate, in: 0...60) {
@@ -759,5 +800,28 @@ private struct TaxSettingsView: View {
         .settingsDetailScrollBehavior()
         .scrollIndicators(.hidden)
         .navigationTitle("IRS Rate")
+        .onAppear { loadRate() }
+        .onChange(of: selectedYear) { _, _ in loadRate() }
+    }
+
+    private func loadRate() {
+        if let override = MileageSettings.mileageRateOverride(for: selectedYear) {
+            customRate = override
+            return
+        }
+        let date = Calendar.current.date(
+            from: DateComponents(year: selectedYear, month: 12, day: 31)
+        ) ?? .now
+        customRate = MileageSettings.officialMileageRate(for: date)
+    }
+
+    private var customRateBinding: Binding<Double> {
+        Binding(
+            get: { customRate },
+            set: { rate in
+                customRate = rate
+                MileageSettings.setMileageRate(rate, for: selectedYear)
+            }
+        )
     }
 }

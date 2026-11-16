@@ -30,7 +30,7 @@ final class SettingsCompletionTests: XCTestCase {
             MileageDeductionService.deduction(
                 miles: 10,
                 classification: .business,
-                rate: MileageSettings.mileageRate
+                rate: MileageSettings.mileageRate(for: currentBusiness.startedAt)
             ),
             accuracy: 0.001
         )
@@ -197,6 +197,47 @@ final class SettingsCompletionTests: XCTestCase {
         XCTAssertFalse(feedback.localizedCaseInsensitiveContains("longitude"))
         XCTAssertFalse(feedback.localizedCaseInsensitiveContains("route"))
         XCTAssertFalse(feedback.localizedCaseInsensitiveContains("address"))
+    }
+
+    func testFeedbackValidationTrimsAndLimitsUserInput() throws {
+        XCTAssertEqual(
+            try FeedbackSubmissionService.validatedMessage("  Useful feedback  "),
+            "Useful feedback"
+        )
+        XCTAssertThrowsError(try FeedbackSubmissionService.validatedMessage("Too short")) { error in
+            XCTAssertEqual(error as? FeedbackSubmissionError, .messageTooShort)
+        }
+        XCTAssertThrowsError(
+            try FeedbackSubmissionService.validatedMessage(
+                String(repeating: "a", count: FeedbackSubmissionService.maximumLength + 1)
+            )
+        ) { error in
+            XCTAssertEqual(error as? FeedbackSubmissionError, .messageTooLong)
+        }
+    }
+
+    func testFeedbackSubmissionFailsSafelyWithoutBackendConfiguration() async {
+        let service = FeedbackSubmissionService(configuration: nil)
+        do {
+            try await service.submit("This is valid feedback.")
+            XCTFail("Expected missing feedback endpoint configuration to fail")
+        } catch {
+            XCTAssertEqual(error as? FeedbackSubmissionError, .configurationRequired)
+        }
+    }
+
+    func testSupportReplyEmailIsOptionalAndValidated() throws {
+        XCTAssertNil(try FeedbackSubmissionService.validatedReplyEmail(nil))
+        XCTAssertNil(try FeedbackSubmissionService.validatedReplyEmail("   "))
+        XCTAssertEqual(
+            try FeedbackSubmissionService.validatedReplyEmail(" Person@Example.com "),
+            "person@example.com"
+        )
+        XCTAssertThrowsError(
+            try FeedbackSubmissionService.validatedReplyEmail("not-an-email")
+        ) { error in
+            XCTAssertEqual(error as? FeedbackSubmissionError, .invalidReplyEmail)
+        }
     }
 
     func testReleaseLegalConfigurationDoesNotInventExternalDestinations() {

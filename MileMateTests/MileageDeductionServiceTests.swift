@@ -88,6 +88,31 @@ final class MileageDeductionServiceTests: XCTestCase {
         )
     }
 
+    func testOfficial2026RatesFollowIRSPeriods() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let firstHalf = calendar.date(
+            from: DateComponents(year: 2026, month: 6, day: 30)
+        )!
+        let secondHalf = calendar.date(
+            from: DateComponents(year: 2026, month: 7, day: 1)
+        )!
+
+        XCTAssertEqual(MileageSettings.officialMileageRate(for: firstHalf, calendar: calendar), 0.725)
+        XCTAssertEqual(MileageSettings.officialMileageRate(for: secondHalf, calendar: calendar), 0.76)
+    }
+
+    func testMileageRateOverrideIsScopedToTaxYearAndCanBeRestored() throws {
+        try withTemporaryDefaults { defaults in
+            MileageSettings.setMileageRate(0.81, for: 2026, defaults: defaults)
+            XCTAssertEqual(MileageSettings.mileageRateOverride(for: 2026, defaults: defaults), 0.81)
+            XCTAssertNil(MileageSettings.mileageRateOverride(for: 2025, defaults: defaults))
+
+            MileageSettings.restoreOfficialMileageRate(for: 2026, defaults: defaults)
+            XCTAssertNil(MileageSettings.mileageRateOverride(for: 2026, defaults: defaults))
+        }
+    }
+
     func testPersonalAndUnclassifiedMilesAreExcluded() {
         XCTAssertEqual(MileageDeductionService.deduction(miles: 100, classification: .personal, rate: 0.70), 0)
         XCTAssertEqual(MileageDeductionService.deduction(miles: 100, classification: .unclassified, rate: 0.70), 0)

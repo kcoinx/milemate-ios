@@ -145,7 +145,7 @@ final class MileagePDFRenderer {
             ("BUSINESS TRIPS", "\(report.businessTripCount)"),
             (
                 "IRS MILEAGE RATE",
-                report.selection.mileageRate.formatted(.currency(code: "USD")) + " / mi"
+                report.mileageRateDescription.replacingOccurrences(of: "mile", with: "mi")
             ),
             ("EST. DEDUCTION", report.estimatedDeduction.currencyFormatted)
         ]

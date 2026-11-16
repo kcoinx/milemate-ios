@@ -48,9 +48,28 @@ final class ReportsViewModel {
         MileageReportPreparationService.reportingSummary(
             trips: trips,
             interval: selectedInterval,
-            vehicleID: selectedVehicleID,
-            mileageRate: MileageSettings.mileageRate
+            vehicleID: selectedVehicleID
         )
+    }
+
+    var mileageRateDescription: String {
+        var rates = Set(
+            qualifyingBusinessTrips.map { trip in
+                MileageSettings.mileageRate(for: trip.startedAt)
+            }
+        )
+        if rates.isEmpty {
+            rates.insert(MileageSettings.mileageRate(for: selectedInterval.start))
+            rates.insert(
+                MileageSettings.mileageRate(
+                    for: selectedInterval.end.addingTimeInterval(-1)
+                )
+            )
+        }
+        return rates.sorted().map {
+            $0.formatted(.currency(code: "USD"))
+        }
+        .joined(separator: " – ") + " / mile"
     }
 
     var weeklyMileage: [WeeklyMileage] {
@@ -220,7 +239,8 @@ final class ReportsViewModel {
             taxYear: calendar.component(.year, from: selectedInterval.start),
             vehicleID: selectedVehicleID,
             vehicleLabel: vehicleLabel,
-            mileageRate: MileageSettings.mileageRate
+            mileageRate: MileageSettings.mileageRate(for: selectedInterval.start),
+            usesConfiguredMileageRateSchedule: true
         )
     }
 }

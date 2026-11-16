@@ -544,7 +544,9 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
 
     func testManualTrackingRowActionabilityAndRouting() {
         XCTAssertTrue(ManualTrackingRowState(automaticTrackingEnabled: false).isActionable)
-        XCTAssertFalse(ManualTrackingRowState(automaticTrackingEnabled: true).isActionable)
+        XCTAssertTrue(ManualTrackingRowState(automaticTrackingEnabled: false).isSelected)
+        XCTAssertTrue(ManualTrackingRowState(automaticTrackingEnabled: true).isActionable)
+        XCTAssertFalse(ManualTrackingRowState(automaticTrackingEnabled: true).isSelected)
 
         let (coordinator, _, _) = makeCoordinator()
         let router = AppRouter(

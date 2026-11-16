@@ -60,7 +60,7 @@ enum MileageCSVRenderer {
             let deduction = MileageDeductionService.deduction(
                 miles: trip.distanceMiles,
                 classification: .business,
-                rate: report.selection.mileageRate
+                rate: trip.mileageRate
             )
             let values = [
                 dateFormatter.string(from: trip.startedAt),
@@ -73,7 +73,7 @@ enum MileageCSVRenderer {
                 Trip.Classification.business.rawValue,
                 trip.purpose,
                 trip.vehicle,
-                decimal(report.selection.mileageRate, fractionDigits: 3),
+                decimal(trip.mileageRate, fractionDigits: 3),
                 decimal(deduction, fractionDigits: 2),
                 trip.notes
             ]

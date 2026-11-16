@@ -80,7 +80,8 @@ struct Trip: Identifiable, Hashable, Codable, Sendable {
     var estimatedDeduction: Double {
         MileageDeductionService.deduction(
             miles: distanceMiles,
-            classification: classification
+            classification: classification,
+            rate: MileageSettings.mileageRate(for: startedAt)
         )
     }
 }

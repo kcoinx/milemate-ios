@@ -10,6 +10,12 @@ xcuserdata/
 *.dSYM.zip
 *.dSYM
 
+# Firebase Functions
+functions/node_modules/
+functions/.env
+functions/.env.*
+firebase-debug.log
+
 # Swift Package Manager
 .build/
 .swiftpm/

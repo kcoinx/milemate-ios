@@ -37,6 +37,8 @@
 	<string>AIzaSyAYHmmwnksp8zY9WQfeyEgFtGxglOBCpZc</string>
 	<key>MileMateFirebaseAuthRequestURI</key>
 	<string>https:/milemate-1df6d.firebaseapp.com/_/auth/handler</string>
+	<key>MileMateFeedbackEndpoint</key>
+	<string>https://us-central1-milemate-1df6d.cloudfunctions.net/submitFeedback</string>
 	<key>MileMateGoogleCallbackScheme</key>
 	<string>com.googleusercontent.apps.953592579176-pkujhl6q57dpkdgf2kiv9tk0epebuehn</string>
 	<key>MileMateGoogleClientID</key>

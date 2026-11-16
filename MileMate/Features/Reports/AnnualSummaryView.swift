@@ -35,9 +35,16 @@ final class AnnualSummaryViewModel {
         MileageReportPreparationService.annualSummary(
             trips: trips,
             year: selectedYear,
-            vehicleID: vehicleID,
-            mileageRate: MileageSettings.mileageRate
+            vehicleID: vehicleID
         )
+    }
+
+    var mileageRateDescription: String {
+        if let override = MileageSettings.mileageRateOverride(for: selectedYear) {
+            return override.formatted(.currency(code: "USD")) + " / mile"
+        }
+        return MileageSettings.officialRateDescription(for: selectedYear)
+            .replacingOccurrences(of: " / mi", with: " / mile")
     }
 
     func load() async {
@@ -158,9 +165,7 @@ struct AnnualSummaryView: View {
                     GridRow {
                         metric(
                             "MILEAGE RATE",
-                            value: viewModel.summary.mileageRate.formatted(
-                                .currency(code: "USD")
-                            ) + " / mile"
+                            value: viewModel.mileageRateDescription
                         )
                         metric(
                             "AVERAGE TRIP",
@@ -212,6 +217,7 @@ struct AnnualSummaryView: View {
                     .chartYAxis {
                         AxisMarks(position: .leading)
                     }
+                    .frame(maxWidth: .infinity)
                     .frame(height: 190)
                     .accessibilityLabel(
                         "Monthly business distance for \(plainYear(viewModel.selectedYear)) in \(distanceUnit.distanceLabel.lowercased())"
@@ -231,6 +237,7 @@ struct AnnualSummaryView: View {
                     .accessibilityElement(children: .combine)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

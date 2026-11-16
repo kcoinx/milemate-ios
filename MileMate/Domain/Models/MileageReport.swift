@@ -16,6 +16,7 @@ struct MileageReportSelection: Sendable {
     let vehicleID: UUID?
     let vehicleLabel: String
     let mileageRate: Double
+    var usesConfiguredMileageRateSchedule = false
 }
 
 struct MileageReportTrip: Identifiable, Sendable {
@@ -28,6 +29,7 @@ struct MileageReportTrip: Identifiable, Sendable {
     let purpose: String
     let notes: String
     let vehicle: String
+    let mileageRate: Double
 
     var date: Date { startedAt }
     var durationMinutes: Double {
@@ -50,6 +52,15 @@ struct MileageReportData: Sendable {
     let fileName: String
 
     var businessTripCount: Int { trips.count }
+
+    var mileageRateDescription: String {
+        let rates = Set(trips.map { $0.mileageRate }).sorted()
+        if rates.count == 1, let rate = rates.first {
+            return rate.formatted(.currency(code: "USD")) + " / mile"
+        }
+        return rates.map { $0.formatted(.currency(code: "USD")) }
+            .joined(separator: " – ") + " / mile"
+    }
 }
 
 enum MileageReportPreparationError: LocalizedError, Equatable {
@@ -87,6 +98,9 @@ enum MileageReportPreparationService {
                 for: trip,
                 places: places
             )
+            let rate = selection.usesConfiguredMileageRateSchedule
+                ? MileageSettings.mileageRate(for: trip.startedAt)
+                : selection.mileageRate
             return MileageReportTrip(
                 id: trip.id,
                 startedAt: trip.startedAt,
@@ -96,7 +110,8 @@ enum MileageReportPreparationService {
                 distanceMiles: trip.distanceMiles,
                 purpose: trip.purpose,
                 notes: trip.notes,
-                vehicle: vehicleLabel(for: trip.vehicle)
+                vehicle: vehicleLabel(for: trip.vehicle),
+                mileageRate: rate
             )
         }
         let miles = rows.reduce(0) { $0 + $1.distanceMiles }
@@ -104,7 +119,7 @@ enum MileageReportPreparationService {
             $0 + MileageDeductionService.deduction(
                 miles: $1.distanceMiles,
                 classification: .business,
-                rate: selection.mileageRate
+                rate: $1.mileageRate
             )
         }
 
@@ -227,7 +242,7 @@ enum MileageReportPreparationService {
         trips: [Trip],
         interval: DateInterval,
         vehicleID: UUID?,
-        mileageRate: Double
+        mileageRate: Double? = nil
     ) -> MileageSummary {
         MileageSummaryCalculator.summary(
             for: qualifyingBusinessTrips(
@@ -243,7 +258,7 @@ enum MileageReportPreparationService {
         trips: [Trip],
         year: Int,
         vehicleID: UUID?,
-        mileageRate: Double,
+        mileageRate: Double? = nil,
         calendar: Calendar = .current
     ) -> AnnualMileageSummary {
         let interval = annualInterval(year: year, calendar: calendar)
@@ -300,7 +315,7 @@ enum MileageReportPreparationService {
             result + MileageDeductionService.deduction(
                 miles: trip.distanceMiles,
                 classification: .business,
-                rate: mileageRate
+                rate: mileageRate ?? MileageSettings.mileageRate(for: trip.startedAt)
             )
         }
         let mostActiveMonth = monthly
@@ -312,7 +327,11 @@ enum MileageReportPreparationService {
             businessMiles: businessMiles,
             businessTrips: business.count,
             estimatedDeduction: deduction,
-            mileageRate: mileageRate,
+            mileageRate: mileageRate ?? MileageSettings.mileageRate(
+                for: calendar.date(
+                    from: DateComponents(year: year, month: 12, day: 31)
+                ) ?? .now
+            ),
             averageBusinessTripDistance: business.isEmpty
                 ? 0
                 : businessMiles / Double(business.count),
