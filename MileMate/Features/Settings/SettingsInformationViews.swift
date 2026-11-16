@@ -261,8 +261,8 @@ private struct LegalDocumentSection: Identifiable {
 struct PrivacyPolicyView: View {
     private let sections = [
         LegalDocumentSection(
-            title: "Data MileMate Stores",
-            body: "MileMate stores mileage records on this iPhone, including trip times, distance, route coordinates, start and end descriptions, classification, purpose, notes, vehicle information, Saved Places, auto-categorization rules, and app preferences."
+            title: "Mileage and App Data",
+            body: "MileMate stores mileage records on this iPhone, including trip times, distance, route coordinates, start and end descriptions, classifications, purposes, notes, vehicle information, Saved Places, auto-categorization rules, and app preferences. Signing in does not automatically upload or back up this mileage data to Firebase."
         ),
         LegalDocumentSection(
             title: "Location and Route Data",
@@ -277,12 +277,20 @@ struct PrivacyPolicyView: View {
             body: "If authorized, MileMate uses local notifications for completed automatic trips, trips awaiting review, and the long-running manual-trip safeguard. Notification preferences can be changed in MileMate and system authorization can be changed in iPhone Settings."
         ),
         LegalDocumentSection(
-            title: "Storage and Sharing",
-            body: "MileMate stores its mileage database locally on this device. If you choose to create an account, Apple or Google and MileMate's authentication provider process the information needed to sign you in. Account sign-in does not automatically upload or back up your mileage history. Map and place-search requests may be processed by Apple's MapKit and geocoding services under Apple's applicable terms and privacy practices. MileMate does not use the local mileage database for advertising."
+            title: "Accounts and Authentication",
+            body: "You may use MileMate as a guest or sign in with Apple or Google. Apple or Google and Firebase Authentication process identifiers, authentication tokens, and any name or email address made available for sign-in. MileMate uses that identity to keep local account data separated on this device. Authentication credentials are stored securely for session restoration."
+        ),
+        LegalDocumentSection(
+            title: "Feedback and Support",
+            body: "If you submit feedback or contact support, MileMate sends the category, message, optional reply email address, request identifier, app version, build number, and platform to a Firebase Cloud Function. The submission is stored in Cloud Firestore so it can be reviewed. A one-way keyed value derived from the request's network address is stored temporarily for rate limiting; the raw network address is not stored in the feedback database. Do not include passwords, payment details, or sensitive trip information."
+        ),
+        LegalDocumentSection(
+            title: "Apple Services and Sharing",
+            body: "Map displays, route presentation, address lookup, and place search may be processed by Apple's MapKit and geocoding services under Apple's applicable terms and privacy practices. MileMate does not use mileage records for advertising."
         ),
         LegalDocumentSection(
             title: "Retention and Deletion",
-            body: "Records remain on this device until you delete individual records, use Delete All MileMate Data, or remove the app and its data through iOS. Delete All MileMate Data stops active tracking, removes MileMate-owned local records and restoration state, resets MileMate preferences, and cancels MileMate local notifications."
+            body: "Mileage records remain on this device until you delete individual records, use Delete All MileMate Data, delete the owning account, or remove the app and its data through iOS. Delete All MileMate Data stops active tracking, removes MileMate-owned local records and restoration state, resets MileMate preferences, and cancels MileMate local notifications. Account deletion removes the authentication account and only that account's locally owned data. No automatic deletion period is currently configured for feedback and support submissions; they remain in Firestore until manually removed. Use Contact Support to request help with a submission."
         ),
         LegalDocumentSection(
             title: "Your Permissions and Controls",
@@ -290,14 +298,14 @@ struct PrivacyPolicyView: View {
         ),
         LegalDocumentSection(
             title: "Contact",
-            body: "When the secure feedback service is configured, the in-app Send Feedback form sends only the message you type and basic app diagnostics."
+            body: "Use Contact Support in MileMate for privacy questions, requests, or help with account deletion. A public support contact and hosted policy URL must be supplied by the product owner before this draft is published."
         )
     ]
 
     var body: some View {
         List {
             Section {
-                Text("Effective for the current local-only version of MileMate.")
+                Text("Draft privacy notice for MileMate. Final owner details and a hosted policy URL are required before publication.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 if let url = MileMateReleaseConfiguration.privacyPolicyURL {
@@ -340,8 +348,16 @@ struct TermsOfUseView: View {
             body: "Automatic Classification applies only rules you enable. A matching rule uses the Business or Personal classification you selected. Trips without a matching enabled rule remain Unclassified for review."
         ),
         LegalDocumentSection(
-            title: "Local Data",
-            body: "The current version has no MileMate account or cloud synchronization. Deleting app data or removing the app may permanently remove records that have not been exported or otherwise retained by you."
+            title: "Accounts and Local Mileage Data",
+            body: "MileMate supports guest use and Apple or Google sign-in through Firebase Authentication. Mileage records remain local to this device and are separated by account; signing in does not provide cloud mileage backup. Deleting app data or removing the app may permanently remove records that you have not exported or otherwise retained."
+        ),
+        LegalDocumentSection(
+            title: "Free Trips and MileMate Pro",
+            body: "Eligible users can complete up to 10 free trips before new trip recording is restricted. MileMate Pro Monthly is an auto-renewable subscription and MileMate Pro Lifetime is a non-consumable purchase. Prices and availability are provided by the App Store. A subscription renews unless canceled through Apple at least 24 hours before the end of the current period. Cancellation leaves access active through the paid period. Deleting MileMate or deleting an account does not cancel an App Store subscription; manage or cancel it in Apple's subscription settings."
+        ),
+        LegalDocumentSection(
+            title: "Feedback and Support",
+            body: "Feedback and support messages you choose to submit are stored using Firebase services. An optional reply email may be supplied for support requests. Do not send passwords, payment details, or sensitive trip information."
         ),
         LegalDocumentSection(
             title: "Product Changes and Availability",
@@ -349,14 +365,14 @@ struct TermsOfUseView: View {
         ),
         LegalDocumentSection(
             title: "Provider and Contact",
-            body: "The product owner's formal legal entity name, governing terms, and public support contact have not yet been configured. Those release details must be supplied before these terms are used as the final public legal agreement."
+            body: "The product owner's legal name, public support contact, governing-law terms, and hosted Terms URL must be supplied and reviewed before this draft is published as the final agreement."
         )
     ]
 
     var body: some View {
         List {
             Section {
-                Text("Terms for the current local-only MileMate product.")
+                Text("Draft terms for MileMate. Final owner, contact, governing-law, and hosted URL details are required before publication.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 if let url = MileMateReleaseConfiguration.termsOfUseURL {

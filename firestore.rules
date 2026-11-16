@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // MileMate clients do not access Firestore directly. Feedback and support
+    // submissions are written only by trusted Cloud Functions using Admin SDK.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

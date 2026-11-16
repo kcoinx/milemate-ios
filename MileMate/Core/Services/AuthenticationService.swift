@@ -12,6 +12,10 @@ protocol AuthenticationServicing: Sendable {
     ) async throws -> AuthenticatedAccount
     @MainActor func signInWithGoogle() async throws -> AuthenticatedAccount
     func deleteAccount(_ account: AuthenticatedAccount) async throws
+    func deleteAppleAccount(
+        _ account: AuthenticatedAccount,
+        authorizationCode: String
+    ) async throws
 }
 
 struct FirebaseAuthenticationConfiguration: Sendable {
@@ -19,6 +23,7 @@ struct FirebaseAuthenticationConfiguration: Sendable {
     let authRequestURI: String
     let googleClientID: String?
     let googleCallbackScheme: String?
+    let appleAccountDeletionEndpoint: URL?
 
     static func fromBundle(_ bundle: Bundle = .main) -> FirebaseAuthenticationConfiguration? {
         guard let apiKey = bundle.object(forInfoDictionaryKey: "MileMateFirebaseAPIKey") as? String,
@@ -31,7 +36,10 @@ struct FirebaseAuthenticationConfiguration: Sendable {
             apiKey: apiKey,
             authRequestURI: authRequestURI,
             googleClientID: bundle.object(forInfoDictionaryKey: "MileMateGoogleClientID") as? String,
-            googleCallbackScheme: bundle.object(forInfoDictionaryKey: "MileMateGoogleCallbackScheme") as? String
+            googleCallbackScheme: bundle.object(forInfoDictionaryKey: "MileMateGoogleCallbackScheme") as? String,
+            appleAccountDeletionEndpoint: (
+                bundle.object(forInfoDictionaryKey: "MileMateAppleAccountDeletionEndpoint") as? String
+            ).flatMap(URL.init(string:))
         )
     }
 }
@@ -129,6 +137,48 @@ struct FirebaseAuthenticationService: AuthenticationServicing {
             }
             throw AuthenticationError.provider("MileMate could not delete this account. Check your connection and try again.")
         }
+    }
+
+    func deleteAppleAccount(
+        _ account: AuthenticatedAccount,
+        authorizationCode: String
+    ) async throws {
+        guard account.provider == .apple else {
+            throw AuthenticationError.provider("This account is not signed in with Apple.")
+        }
+        let configuration = try requiredConfiguration()
+        guard let endpoint = configuration.appleAccountDeletionEndpoint,
+              endpoint.scheme == "https",
+              endpoint.host != nil else {
+            throw AuthenticationError.configurationRequired(
+                "Apple account deletion is not configured for this build."
+            )
+        }
+        let idToken = try await currentIDToken(for: account, configuration: configuration)
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONEncoder().encode(
+            AppleDeletionRequest(authorizationCode: authorizationCode)
+        )
+        request.timeoutInterval = 30
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse,
+              200..<300 ~= http.statusCode,
+              (try? JSONDecoder().decode(AppleDeletionResponse.self, from: data).deleted) == true else {
+            throw AuthenticationError.provider(
+                "MileMate could not complete Apple account deletion. Please try again."
+            )
+        }
+    }
+
+    private struct AppleDeletionRequest: Encodable {
+        let authorizationCode: String
+    }
+
+    private struct AppleDeletionResponse: Decodable {
+        let deleted: Bool
     }
 
     private func currentIDToken(

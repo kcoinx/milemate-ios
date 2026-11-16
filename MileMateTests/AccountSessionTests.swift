@@ -559,7 +559,7 @@ final class AccountSessionTests: XCTestCase {
         let repository = AccountTestRepository(trips: [trip])
         let controller = makeController(repository: repository)
         controller.continueAsGuest()
-        await controller.authenticateWithApple(token: "verified-token", rawNonce: "nonce", displayName: nil)
+        await controller.authenticateWithGoogle()
 
         await controller.deleteAccount()
 
@@ -578,7 +578,7 @@ final class AccountSessionTests: XCTestCase {
             authenticationService: AccountTestAuthenticationService(deleteShouldFail: true)
         )
         controller.continueAsGuest()
-        await controller.authenticateWithApple(token: "verified-token", rawNonce: "nonce", displayName: nil)
+        await controller.authenticateWithGoogle()
 
         await controller.deleteAccount()
 
@@ -592,12 +592,31 @@ final class AccountSessionTests: XCTestCase {
         let repository = AccountTestRepository(trips: [testTrip()], deleteAllShouldFail: true)
         let controller = makeController(repository: repository)
         controller.continueAsGuest()
-        await controller.authenticateWithApple(token: "verified-token", rawNonce: "nonce", displayName: nil)
+        await controller.authenticateWithGoogle()
 
         await controller.deleteAccount()
 
         XCTAssertTrue(controller.requiresWelcome)
         XCTAssertNotNil(controller.authenticationError)
+    }
+
+    func testAppleAccountDeletionRequiresFreshAuthorizationBeforeRemovingData() async throws {
+        let trip = testTrip()
+        let repository = AccountTestRepository(trips: [trip])
+        let controller = makeController(repository: repository)
+        controller.continueAsGuest()
+        await controller.authenticateWithApple(
+            token: "verified-token",
+            rawNonce: "nonce",
+            displayName: nil
+        )
+
+        await controller.deleteAccount()
+
+        XCTAssertTrue(controller.isAuthenticated)
+        XCTAssertTrue(controller.presentsAppleDeletionAuthorization)
+        let remainingTrips = try await repository.fetchTrips()
+        XCTAssertEqual(remainingTrips.map { $0.id }, [trip.id])
     }
 
     func testManualAndAutomaticTrackingDoNotStartTripEleven() {
@@ -1002,6 +1021,15 @@ private struct AccountTestAuthenticationService: AuthenticationServicing {
     }
 
     func deleteAccount(_ account: AuthenticatedAccount) async throws {
+        if deleteShouldFail {
+            throw AuthenticationError.provider("Network unavailable")
+        }
+    }
+
+    func deleteAppleAccount(
+        _ account: AuthenticatedAccount,
+        authorizationCode: String
+    ) async throws {
         if deleteShouldFail {
             throw AuthenticationError.provider("Network unavailable")
         }

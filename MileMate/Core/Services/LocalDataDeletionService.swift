@@ -54,6 +54,7 @@ final class LocalDataDeletionService {
         for key in MileMatePreferenceKeys.resettable {
             defaults.removeObject(forKey: key)
         }
+        MileageSettings.removeAllMileageRateOverrides(defaults: defaults)
         TripNotificationSettings.registerDefaults(in: defaults)
         NotificationCenter.default.post(name: .mileageTripsDidChange, object: nil)
         NotificationCenter.default.post(name: .mileageVehiclesDidChange, object: nil)

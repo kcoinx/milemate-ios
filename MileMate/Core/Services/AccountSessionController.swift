@@ -21,6 +21,7 @@ final class AccountSessionController {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private var currentAppleNonce: String?
+    private var appleDeletionUserID: String?
     private var trialRecord: GuestTrialRecord
     private var pendingTrackingAccessRequest = false
     private var sessionGeneration = 0
@@ -40,6 +41,7 @@ final class AccountSessionController {
         }
     }
     var presentsDeletionConfirmation = false
+    var presentsAppleDeletionAuthorization = false
 
     init(
         repository: any MileageRepository,
@@ -233,6 +235,46 @@ final class AccountSessionController {
         request.nonce = Self.sha256(nonce)
     }
 
+    func prepareAppleAccountDeletion(_ request: ASAuthorizationAppleIDRequest) {
+        request.requestedScopes = []
+    }
+
+    func completeAppleAccountDeletion(_ result: Result<ASAuthorization, Error>) {
+        switch result {
+        case .failure(let error):
+            presentsAppleDeletionAuthorization = false
+            appleDeletionUserID = nil
+            if let authorizationError = error as? ASAuthorizationError,
+               authorizationError.code == .canceled {
+                return
+            }
+            authenticationError = error.localizedDescription
+        case .success(let authorization):
+            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+                  let codeData = credential.authorizationCode,
+                  let authorizationCode = String(data: codeData, encoding: .utf8),
+                  !authorizationCode.isEmpty else {
+                presentsAppleDeletionAuthorization = false
+                appleDeletionUserID = nil
+                authenticationError = AuthenticationError.invalidCredential.localizedDescription
+                return
+            }
+            let expectedUserID = appleDeletionUserID
+            presentsAppleDeletionAuthorization = false
+            appleDeletionUserID = nil
+            guard let expectedUserID else {
+                authenticationError = AuthenticationError.invalidCredential.localizedDescription
+                return
+            }
+            Task {
+                await deleteAppleAccount(
+                    authorizationCode: authorizationCode,
+                    expectedUserID: expectedUserID
+                )
+            }
+        }
+    }
+
     func authenticateWithApple(token: String, rawNonce: String, displayName: String?) async {
         await authenticate {
             try await authenticationService.signInWithApple(
@@ -248,6 +290,7 @@ final class AccountSessionController {
     }
 
     func logOut() {
+        guard !isAuthenticating else { return }
         guard validateSessionTransition() else { return }
         clearAuthenticatedSession()
         authenticationError = nil
@@ -258,12 +301,47 @@ final class AccountSessionController {
         try? secureStore.remove(Key.authenticated)
         try? secureStore.set(Data([1]), for: Key.loggedOut)
         presentsUpgrade = false
+        presentsAppleDeletionAuthorization = false
+        appleDeletionUserID = nil
         state = .firstLaunch
         dataScopeProvider.setCurrent(nil)
     }
 
     func deleteAccount() async {
         guard let account else { return }
+        if account.provider == .apple {
+            guard validateSessionTransition() else { return }
+            appleDeletionUserID = account.userID
+            presentsAppleDeletionAuthorization = true
+            return
+        }
+        await performAccountDeletion(account: account) {
+            try await self.authenticationService.deleteAccount(account)
+        }
+    }
+
+    private func deleteAppleAccount(
+        authorizationCode: String,
+        expectedUserID: String
+    ) async {
+        guard let account,
+              account.provider == .apple,
+              account.userID == expectedUserID else {
+            authenticationError = "The signed-in account changed before deletion completed. No local data was deleted."
+            return
+        }
+        await performAccountDeletion(account: account) {
+            try await self.authenticationService.deleteAppleAccount(
+                account,
+                authorizationCode: authorizationCode
+            )
+        }
+    }
+
+    private func performAccountDeletion(
+        account: AuthenticatedAccount,
+        operation: () async throws -> Void
+    ) async {
         guard validateSessionTransition() else { return }
         isAuthenticating = true
         defer { isAuthenticating = false }
@@ -274,7 +352,7 @@ final class AccountSessionController {
                     "MileMate could not verify the local account boundary. No account or mileage data was deleted."
                 )
             }
-            try await authenticationService.deleteAccount(account)
+            try await operation()
             var cleanupError: Error?
             do {
                 try await repository.deleteAllLocalData()

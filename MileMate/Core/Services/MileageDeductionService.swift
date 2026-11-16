@@ -79,6 +79,16 @@ enum MileageSettings {
         }
     }
 
+    static func removeAllMileageRateOverrides(
+        defaults: UserDefaults = .standard
+    ) {
+        for key in defaults.dictionaryRepresentation().keys
+        where key.hasPrefix(annualRateKeyPrefix) {
+            defaults.removeObject(forKey: key)
+        }
+        defaults.removeObject(forKey: rateKey)
+    }
+
     static func officialRateDescription(for year: Int) -> String {
         if year == 2026 {
             return "$0.725 / mi through June, $0.76 / mi beginning July 1"

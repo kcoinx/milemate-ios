@@ -36,7 +36,9 @@
 	<key>MileMateFirebaseAPIKey</key>
 	<string>AIzaSyAYHmmwnksp8zY9WQfeyEgFtGxglOBCpZc</string>
 	<key>MileMateFirebaseAuthRequestURI</key>
-	<string>https:/milemate-1df6d.firebaseapp.com/_/auth/handler</string>
+	<string>https://milemate-1df6d.firebaseapp.com/__/auth/handler</string>
+	<key>MileMateAppleAccountDeletionEndpoint</key>
+	<string>https://us-central1-milemate-1df6d.cloudfunctions.net/deleteAppleAccount</string>
 	<key>MileMateFeedbackEndpoint</key>
 	<string>https://us-central1-milemate-1df6d.cloudfunctions.net/submitFeedback</string>
 	<key>MileMateGoogleCallbackScheme</key>
@@ -48,9 +50,9 @@
 	<key>MileMateProMonthlyProductID</key>
 	<string>com.fikrutibebe.milemate.pro.monthly</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>MileMate uses your location in the background to automatically detect and track work-related drives, even when the app is not open.</string>
+	<string>MileMate uses your location in the background to detect and record drives automatically. You review each trip before deciding whether it is Business or Personal.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>MileMate uses your location to track mileage and display routes for work-related trips.</string>
+	<string>MileMate uses your location to measure mileage, display recorded routes, and help you save frequently visited places.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>MileMate uses Motion &amp; Fitness activity to recognize driving and avoid tracking walking, running, or cycling as trips.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

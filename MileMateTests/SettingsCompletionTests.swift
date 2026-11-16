@@ -140,6 +140,8 @@ final class SettingsCompletionTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
         defaults.set(true, forKey: AutomaticTrackingSettings.enabledKey)
         defaults.set(44.0, forKey: MileageSettings.taxRateKey)
+        MileageSettings.setMileageRate(0.81, for: 2026, defaults: defaults)
+        MileageSettings.setMileageRate(0.79, for: 2025, defaults: defaults)
         UserDefaults.standard.set(Data([1, 2, 3]), forKey: "manualActiveTrip")
         UserDefaults.standard.set(Data([1, 2, 3]), forKey: "automaticActiveTrip")
         UserDefaults.standard.set(Data([1, 2, 3]), forKey: "automaticPendingTrip")
@@ -176,6 +178,8 @@ final class SettingsCompletionTests: XCTestCase {
             MileageSettings.estimatedTaxPercentage(in: defaults),
             MileageSettings.defaultTaxRate
         )
+        XCTAssertNil(MileageSettings.mileageRateOverride(for: 2026, defaults: defaults))
+        XCTAssertNil(MileageSettings.mileageRateOverride(for: 2025, defaults: defaults))
         XCTAssertEqual(automaticLocation.authorizationStatus, locationPermissionBefore)
         XCTAssertEqual(motion.permissionStatus, motionPermissionBefore)
     }

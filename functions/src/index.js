@@ -1,6 +1,7 @@
 "use strict";
 
 const { initializeApp } = require("firebase-admin/app");
+const { getAuth } = require("firebase-admin/auth");
 const { FieldValue, getFirestore } = require("firebase-admin/firestore");
 const { defineSecret } = require("firebase-functions/params");
 const { onRequest } = require("firebase-functions/v2/https");
@@ -11,10 +12,23 @@ const {
   validateFeedbackPayload,
 } = require("./feedback");
 const { persistSubmission } = require("./submissionStore");
+const {
+  AppleAccountDeletionError,
+  appleClientSecret,
+  bearerToken,
+  exchangeAuthorizationCode,
+  revokeAppleToken,
+  validateDeletionPayload,
+  verifyAppleIdentityToken,
+} = require("./appleAccountDeletion");
 
 initializeApp();
 
 const rateLimitSalt = defineSecret("FEEDBACK_RATE_LIMIT_SALT");
+const appleTeamID = defineSecret("APPLE_TEAM_ID");
+const appleKeyID = defineSecret("APPLE_KEY_ID");
+const appleClientID = defineSecret("APPLE_CLIENT_ID");
+const applePrivateKey = defineSecret("APPLE_PRIVATE_KEY");
 
 exports.submitFeedback = onRequest(
   {
@@ -75,6 +89,83 @@ exports.submitFeedback = onRequest(
     } catch {
       console.error("Support submission persistence failed.");
       response.status(500).json({ stored: false, code: "storage-failed" });
+    }
+  },
+);
+
+exports.deleteAppleAccount = onRequest(
+  {
+    region: "us-central1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    maxInstances: 5,
+    cors: false,
+    secrets: [appleTeamID, appleKeyID, appleClientID, applePrivateKey],
+  },
+  async (request, response) => {
+    response.set("Cache-Control", "no-store");
+    response.set("X-Content-Type-Options", "nosniff");
+    if (request.method !== "POST") {
+      response.set("Allow", "POST");
+      response.status(405).json({ deleted: false, code: "method-not-allowed" });
+      return;
+    }
+    if (!isJSONContentType(request.get("content-type"))) {
+      response.status(415).json({ deleted: false, code: "unsupported-media-type" });
+      return;
+    }
+
+    try {
+      const firebaseToken = bearerToken(request.get("authorization"));
+      const { authorizationCode } = validateDeletionPayload(
+        request.body,
+        request.rawBody?.length ?? 0,
+      );
+      const auth = getAuth();
+      const verifiedToken = await auth.verifyIdToken(firebaseToken, true);
+      const user = await auth.getUser(verifiedToken.uid);
+      const appleProvider = user.providerData.find((provider) =>
+        provider.providerId === "apple.com");
+      if (!appleProvider?.uid) {
+        throw new AppleAccountDeletionError("apple-account-required", 403);
+      }
+
+      const clientID = appleClientID.value().trim();
+      const clientSecret = appleClientSecret({
+        teamID: appleTeamID.value(),
+        keyID: appleKeyID.value(),
+        clientID,
+        privateKey: applePrivateKey.value(),
+      });
+      const appleTokens = await exchangeAuthorizationCode({
+        authorizationCode,
+        clientID,
+        clientSecret,
+        fetchImpl: fetch,
+      });
+      const appleIdentity = await verifyAppleIdentityToken({
+        identityToken: appleTokens.id_token,
+        clientID,
+      });
+      if (appleIdentity.sub !== appleProvider.uid) {
+        throw new AppleAccountDeletionError("account-mismatch", 403);
+      }
+
+      await revokeAppleToken({
+        refreshToken: appleTokens.refresh_token,
+        clientID,
+        clientSecret,
+        fetchImpl: fetch,
+      });
+      await auth.deleteUser(verifiedToken.uid);
+      response.status(200).json({ deleted: true });
+    } catch (error) {
+      if (error instanceof AppleAccountDeletionError) {
+        response.status(error.status).json({ deleted: false, code: error.code });
+        return;
+      }
+      console.error("Apple account deletion failed without exposing account data.");
+      response.status(500).json({ deleted: false, code: "deletion-failed" });
     }
   },
 );

@@ -321,7 +321,7 @@ struct SettingsView: View {
             Section {
                 Button("Log Out") { accountSession.logOut() }
                     .frame(minHeight: 44)
-                    .disabled(accountActionsDisabled)
+                    .disabled(accountSession.isAuthenticating || accountActionsDisabled)
                     .accessibilityHint("Returns to the MileMate welcome and sign-in screen")
             } header: {
                 Text("Session")
@@ -434,6 +434,10 @@ struct SettingsView: View {
         } message: {
             Text(accountDeletionConfirmationMessage)
         }
+        .sheet(isPresented: $accountSession.presentsAppleDeletionAuthorization) {
+            AppleAccountDeletionAuthorizationView(accountSession: accountSession)
+                .presentationDetents([.medium])
+        }
         .alert(
             "Account Action Failed",
             isPresented: Binding(
@@ -532,10 +536,7 @@ struct SettingsView: View {
     }
 
     private var accountDeletionConfirmationMessage: String {
-        if accountSession.account?.provider == .apple {
-            return "Deleting an Apple account requires secure Apple authorization revocation. MileMate will only complete deletion when that revocation service is configured."
-        }
-        return "This permanently deletes your authentication account and only its locally owned MileMate data. Other accounts and guest trips are not affected."
+        "This permanently deletes your authentication account and only its locally owned MileMate data. Other accounts and guest trips are not affected. Deleting your account does not cancel an App Store subscription; manage billing in Subscription & Billing."
     }
 
     private func accountInitials(_ account: AuthenticatedAccount) -> String {
@@ -714,6 +715,48 @@ struct SettingsView: View {
             destination()
         } label: {
             settingLabel(title, icon: icon, tint: tint)
+        }
+    }
+}
+
+private struct AppleAccountDeletionAuthorizationView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Bindable var accountSession: AccountSessionController
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: AppTheme.Spacing.large) {
+                Image(systemName: "person.crop.circle.badge.minus")
+                    .font(.system(size: 40, weight: .semibold))
+                    .foregroundStyle(.red)
+                Text("Confirm Account Deletion")
+                    .font(.title2.weight(.bold))
+                Text("Apple requires a fresh authorization before MileMate can revoke Apple access and permanently delete your account.")
+                    .foregroundStyle(AppTheme.Color.textSecondary)
+                    .multilineTextAlignment(.center)
+                SignInWithAppleButton(.continue) { request in
+                    accountSession.prepareAppleAccountDeletion(request)
+                } onCompletion: { result in
+                    accountSession.completeAppleAccountDeletion(result)
+                }
+                .signInWithAppleButtonStyle(.black)
+                .frame(maxWidth: .infinity)
+                .frame(height: AuthenticationButtonMetrics.height)
+                .clipShape(Capsule())
+                .disabled(accountSession.isAuthenticating)
+                Text("Deleting your account does not cancel an App Store subscription.")
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.Color.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(AppTheme.Spacing.xLarge)
+            .navigationTitle("Delete Account")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
         }
     }
 }

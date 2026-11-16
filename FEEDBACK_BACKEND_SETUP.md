@@ -18,6 +18,12 @@ The last command must print `milemate-1df6d`. Stop if it prints another project.
 
 The default Firestore database must exist in `nam5`. Production-mode client rules must continue denying direct access to `supportSubmissions` and `_feedbackRateLimits`. The Cloud Function writes through Firebase Admin and does not require client access.
 
+The repository's `firestore.rules` file denies every direct client read and write. Review it before any future rules deployment, then deploy only with explicit approval:
+
+```powershell
+firebase deploy --only firestore:rules --project milemate-1df6d
+```
+
 Configure a Firestore TTL policy for collection group `_feedbackRateLimits` using the `expiresAt` field. This removes expired rate-limit records automatically.
 
 ## 3. Configure the one required secret
