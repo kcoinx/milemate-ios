@@ -1,4 +1,5 @@
 import CoreLocation
+import UIKit
 import XCTest
 @testable import MileMate
 
@@ -7,6 +8,68 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
     private let enabledKey = AutomaticTrackingSettings.enabledKey
     private let minimumDistanceKey = AutomaticTrackingSettings.minimumDistanceKey
     private let pendingTripKey = "automaticPendingTrip"
+
+    func testPassiveMonitoringArmsWhileTripEligibilityIsPendingWithoutStartingTrip() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, location, motion) = makeCoordinator(canStartNewTrip: { false })
+
+        coordinator.startIfEnabled()
+
+        XCTAssertTrue(location.isLowPowerMonitoring)
+        XCTAssertTrue(motion.isUpdating)
+        motion.send(activity(.automotive, confidence: .high))
+        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertFalse(location.isPreciseTracking)
+    }
+
+    func testLocationBackgroundLaunchRearmsPassiveMonitoringWithoutDuplicateRegistration() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, location, motion) = makeCoordinator(canStartNewTrip: { false })
+
+        coordinator.handleLocationBackgroundLaunch()
+        coordinator.handleLocationBackgroundLaunch()
+
+        XCTAssertTrue(location.isLowPowerMonitoring)
+        XCTAssertTrue(motion.isUpdating)
+        XCTAssertEqual(location.lowPowerStartCount, 1)
+        XCTAssertEqual(motion.startUpdatesCount, 1)
+    }
+
+    func testSessionScopeChangeStopsAndRearmsPassiveMonitoring() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let scopeProvider = LocalDataScopeProvider()
+        let (coordinator, location, motion) = makeCoordinator(scopeProvider: scopeProvider)
+
+        coordinator.startIfEnabled()
+        XCTAssertFalse(location.isLowPowerMonitoring)
+
+        scopeProvider.setCurrent(.authenticated(userID: "replacement-account"))
+        coordinator.handleSessionScopeChange()
+        XCTAssertTrue(location.isLowPowerMonitoring)
+        XCTAssertTrue(motion.isUpdating)
+
+        scopeProvider.setCurrent(nil)
+        coordinator.handleSessionScopeChange()
+        XCTAssertFalse(location.isLowPowerMonitoring)
+        XCTAssertFalse(motion.isUpdating)
+        XCTAssertEqual(coordinator.state, .disabled)
+    }
+
+    func testBackgroundRefreshUnavailableIsReportedWithoutBlockingForegroundMonitoring() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, location, _) = makeCoordinator(
+            backgroundRefreshStatusProvider: { .denied }
+        )
+
+        coordinator.startIfEnabled()
+
+        XCTAssertTrue(coordinator.backgroundRefreshUnavailable)
+        XCTAssertTrue(location.isLowPowerMonitoring)
+    }
 
     func testMediumOrHighConfidenceAutomotiveActivityStartsResilientDetection() {
         enableAutomaticTracking()
@@ -743,7 +806,11 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
     private func makeCoordinator(
         stopInterval: TimeInterval = 180,
         detectionTimeout: TimeInterval = 180,
-        scopeProvider: LocalDataScopeProvider? = nil
+        scopeProvider: LocalDataScopeProvider? = nil,
+        canStartNewTrip: @escaping @MainActor () -> Bool = { true },
+        backgroundRefreshStatusProvider: @escaping @MainActor () -> UIBackgroundRefreshStatus = {
+            .available
+        }
     ) -> (
         AutomaticTripCoordinator,
         MockAutomaticLocationService,
@@ -757,7 +824,9 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
             motionService: motion,
             repository: MockMileageRepository(),
             notificationService: MockTripNotificationService(),
+            canStartNewTrip: canStartNewTrip,
             dataScopeProvider: scopeProvider,
+            backgroundRefreshStatusProvider: backgroundRefreshStatusProvider,
             stopInterval: stopInterval,
             detectionTimeout: detectionTimeout,
             isManualTrackingActive: { false }

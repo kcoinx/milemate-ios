@@ -660,7 +660,7 @@ final class AccountSessionTests: XCTestCase {
         automatic.startIfEnabled()
         XCTAssertEqual(automatic.state, .idle)
         XCTAssertFalse(automaticLocation.isPreciseTracking)
-        XCTAssertFalse(automaticLocation.isLowPowerMonitoring)
+        XCTAssertTrue(automaticLocation.isLowPowerMonitoring)
         XCTAssertFalse(controller.presentsUpgrade)
     }
 

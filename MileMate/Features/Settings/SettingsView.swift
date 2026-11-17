@@ -153,6 +153,18 @@ struct SettingsView: View {
                         icon: "figure.walk.motion",
                         isSufficient: automaticTripCoordinator.motionPermissionStatus == .authorized
                     )
+                    if automaticTripCoordinator.backgroundRefreshUnavailable {
+                        Label {
+                            Text("Background App Refresh is unavailable. Automatic detection may not relaunch MileMate after the app is closed. Low Power Mode can disable Background App Refresh and reduce reliability; enabling it does not guarantee every drive will be detected.")
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                        }
+                        .font(.footnote)
+                        .foregroundStyle(AppTheme.Color.textSecondary)
+                        .accessibilityLabel("Background App Refresh unavailable")
+                        .accessibilityHint("Low Power Mode can disable Background App Refresh and reduce automatic detection reliability")
+                    }
                     if TrackingPermissionAction(
                         readiness: automaticTripCoordinator.trackingReadiness
                     ) != nil {

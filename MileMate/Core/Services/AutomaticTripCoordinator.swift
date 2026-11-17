@@ -1,6 +1,7 @@
 @preconcurrency import CoreLocation
 import Foundation
 import Observation
+import UIKit
 
 enum AutomaticTrackingSettings {
     static let enabledKey = "automaticTrackingEnabled"
@@ -84,6 +85,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     private let tripDidSave: @MainActor (Trip) -> Void
     private let isManualTrackingActive: @MainActor () -> Bool
     private let dataScopeProvider: LocalDataScopeProvider?
+    private let backgroundRefreshStatusProvider: @MainActor () -> UIBackgroundRefreshStatus
     private let stopIntervalOverride: TimeInterval?
     private let detectionTimeout: TimeInterval
     private var processor = LocationSampleProcessor()
@@ -124,6 +126,9 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         canStartNewTrip: @escaping @MainActor () -> Bool = { true },
         tripDidSave: @escaping @MainActor (Trip) -> Void = { _ in },
         dataScopeProvider: LocalDataScopeProvider? = nil,
+        backgroundRefreshStatusProvider: @escaping @MainActor () -> UIBackgroundRefreshStatus = {
+            UIApplication.shared.backgroundRefreshStatus
+        },
         stopInterval: TimeInterval? = nil,
         detectionTimeout: TimeInterval = 180,
         isManualTrackingActive: @escaping @MainActor () -> Bool
@@ -135,6 +140,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         self.canStartNewTrip = canStartNewTrip
         self.tripDidSave = tripDidSave
         self.dataScopeProvider = dataScopeProvider
+        self.backgroundRefreshStatusProvider = backgroundRefreshStatusProvider
         self.stopIntervalOverride = stopInterval
         self.detectionTimeout = detectionTimeout
         self.isManualTrackingActive = isManualTrackingActive
@@ -177,6 +183,14 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
 
     var preciseLocationAvailable: Bool {
         locationService.preciseLocationAvailable
+    }
+
+    var backgroundRefreshStatus: UIBackgroundRefreshStatus {
+        backgroundRefreshStatusProvider()
+    }
+
+    var backgroundRefreshUnavailable: Bool {
+        backgroundRefreshStatus != .available
     }
 
     var hasProtectedTripState: Bool {
@@ -223,25 +237,74 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             TrackingDiagnostics.log("automatic tracking disabled; detector not started")
             return
         }
+        guard dataScopeProvider?.current != nil else {
+            stopDetection()
+            state = .disabled
+            TrackingDiagnostics.log("automatic tracking waiting for an active guest or account scope")
+            return
+        }
         if state == .tracking || isFinalizingTrip { return }
         if pendingTrip != nil {
             state = .reviewing
             return
         }
-        guard canStartNewTrip() else {
-            if state == .detecting { resetToIdle() }
-            state = .idle
-            return
+        requestLocationAuthorizationIfNeeded()
+        let passiveMonitoringArmed = armPassiveMonitoringIfPossible()
+        if !passiveMonitoringArmed, trackingReadiness != .ready {
+            state = .permissionRequired
         }
         guard state != .detecting else { return }
-
-        requestLocationAuthorizationIfNeeded()
-
-        if locationService.authorizationStatus == CLAuthorizationStatus.authorizedAlways {
-            locationService.startLowPowerMonitoring()
-            startMotionMonitoring()
+        if !canStartNewTrip(), state != .permissionRequired {
             state = .idle
         }
+    }
+
+    /// Recreates the battery-efficient wake path without granting permission to
+    /// begin or persist a trip. Eligibility remains enforced by motion/location
+    /// callbacks and again before tracking is confirmed.
+    @discardableResult
+    func armPassiveMonitoringIfPossible() -> Bool {
+        guard AutomaticTrackingSettings.isEnabled,
+              dataScopeProvider?.current != nil else {
+            return false
+        }
+        guard locationService.authorizationStatus == .authorizedAlways,
+              locationService.backgroundCapabilityAvailable,
+              locationService.significantLocationMonitoringAvailable,
+              motionService.activityMonitoringAvailable else {
+            return false
+        }
+        switch motionService.permissionStatus {
+        case .denied, .restricted, .unavailable:
+            return false
+        case .notDetermined, .authorized:
+            break
+        }
+        locationService.startLowPowerMonitoring()
+        startMotionMonitoring()
+        switch state {
+        case .disabled, .permissionRequired, .failed:
+            state = trackingReadiness == .ready ? .idle : .permissionRequired
+        case .idle, .detecting, .tracking, .reviewing:
+            break
+        }
+        return true
+    }
+
+    func handleLocationBackgroundLaunch() {
+        TrackingDiagnostics.log("location-triggered background launch received")
+        startIfEnabled()
+    }
+
+    func handleSessionScopeChange() {
+        guard !hasProtectedTripState else { return }
+        pendingLowPowerSamples.removeAll()
+        if dataScopeProvider?.current == nil {
+            stopDetection()
+            state = .disabled
+            return
+        }
+        startIfEnabled()
     }
 
     func setEnabled(_ enabled: Bool) {
@@ -346,8 +409,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             requestedAlwaysAuthorization = true
             locationService.requestAlwaysAuthorization()
         case CLAuthorizationStatus.authorizedAlways:
-            locationService.startLowPowerMonitoring()
-            state = .idle
+            _ = armPassiveMonitoringIfPossible()
         case CLAuthorizationStatus.denied, CLAuthorizationStatus.restricted:
             state = .permissionRequired
         @unknown default:
@@ -375,9 +437,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             }
             switch status {
             case CLAuthorizationStatus.authorizedAlways:
-                locationService.startLowPowerMonitoring()
-                startMotionMonitoring()
-                state = .idle
+                _ = armPassiveMonitoringIfPossible()
             case CLAuthorizationStatus.authorizedWhenInUse where !requestedAlwaysAuthorization:
                 requestedAlwaysAuthorization = true
                 locationService.requestAlwaysAuthorization()
@@ -847,9 +907,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             activeTripID = nil
         }
         if AutomaticTrackingSettings.isEnabled {
-            startMotionMonitoring()
-            locationService.startLowPowerMonitoring()
-            state = .idle
+            state = armPassiveMonitoringIfPossible() ? .idle : .permissionRequired
         } else {
             state = .disabled
         }

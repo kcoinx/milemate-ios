@@ -19,6 +19,7 @@ protocol AutomaticLocationService: AnyObject {
 @MainActor
 final class CoreAutomaticLocationService: NSObject, AutomaticLocationService, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
+    private var isMonitoringSignificantChanges = false
     var eventHandler: ((LocationServiceEvent) -> Void)?
 
     override init() {
@@ -59,12 +60,16 @@ final class CoreAutomaticLocationService: NSObject, AutomaticLocationService, CL
             TrackingDiagnostics.log("significant-location monitoring unavailable")
             return
         }
+        guard !isMonitoringSignificantChanges else { return }
         manager.startMonitoringSignificantLocationChanges()
+        isMonitoringSignificantChanges = true
         TrackingDiagnostics.log("significant-location monitoring started")
     }
 
     func stopLowPowerMonitoring() {
+        guard isMonitoringSignificantChanges else { return }
         manager.stopMonitoringSignificantLocationChanges()
+        isMonitoringSignificantChanges = false
     }
 
     @discardableResult
@@ -140,6 +145,7 @@ final class MockAutomaticLocationService: AutomaticLocationService {
     var eventHandler: ((LocationServiceEvent) -> Void)?
     private(set) var isLowPowerMonitoring = false
     private(set) var isPreciseTracking = false
+    private(set) var lowPowerStartCount = 0
 
     func requestWhenInUseAuthorization() {
         eventHandler?(.authorizationChanged(authorizationStatus))
@@ -149,7 +155,11 @@ final class MockAutomaticLocationService: AutomaticLocationService {
         eventHandler?(.authorizationChanged(authorizationStatus))
     }
 
-    func startLowPowerMonitoring() { isLowPowerMonitoring = true }
+    func startLowPowerMonitoring() {
+        guard !isLowPowerMonitoring else { return }
+        isLowPowerMonitoring = true
+        lowPowerStartCount += 1
+    }
     func stopLowPowerMonitoring() { isLowPowerMonitoring = false }
     @discardableResult
     func startPreciseTracking() -> Bool {

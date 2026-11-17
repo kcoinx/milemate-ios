@@ -100,6 +100,10 @@ final class AccountSessionController {
 
     var remainingGuestTrips: Int { trialRecord.remainingTripCount }
 
+    var activeDataScopeIdentifier: String? {
+        Self.localDataScope(for: state)?.identifier
+    }
+
     var requiresGuestUpgrade: Bool {
         guard !requiresWelcome,
               proEntitlementProvider.isEntitlementReady,

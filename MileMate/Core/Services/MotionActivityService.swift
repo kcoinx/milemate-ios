@@ -43,6 +43,7 @@ protocol MotionActivityService: AnyObject {
 @MainActor
 final class CoreMotionActivityService: MotionActivityService {
     private let manager = CMMotionActivityManager()
+    private var isUpdating = false
     var eventHandler: ((MotionActivitySample) -> Void)?
 
     var permissionStatus: MotionPermissionStatus {
@@ -71,6 +72,8 @@ final class CoreMotionActivityService: MotionActivityService {
 
     func startUpdates() {
         guard CMMotionActivityManager.isActivityAvailable() else { return }
+        guard !isUpdating else { return }
+        isUpdating = true
         manager.startActivityUpdates(to: .main) { [weak self] activity in
             guard let activity else { return }
             let sample = MotionActivitySample(
@@ -85,7 +88,9 @@ final class CoreMotionActivityService: MotionActivityService {
     }
 
     func stopUpdates() {
+        guard isUpdating else { return }
         manager.stopActivityUpdates()
+        isUpdating = false
     }
 
     func refreshRecentActivity(since date: Date) {
@@ -135,10 +140,15 @@ final class MockMotionActivityService: MotionActivityService {
     var activityMonitoringAvailable = true
     var eventHandler: ((MotionActivitySample) -> Void)?
     private(set) var isUpdating = false
+    private(set) var startUpdatesCount = 0
     private(set) var recentActivityRefreshCount = 0
     var recentActivity: MotionActivitySample?
 
-    func startUpdates() { isUpdating = true }
+    func startUpdates() {
+        guard !isUpdating else { return }
+        isUpdating = true
+        startUpdatesCount += 1
+    }
     func stopUpdates() { isUpdating = false }
     func refreshRecentActivity(since date: Date) {
         recentActivityRefreshCount += 1

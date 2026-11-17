@@ -23,6 +23,9 @@ struct MileMateApp: App {
         notificationDelegate.reviewQueueTapHandler = {
             dependencies.router.showReviewQueue()
         }
+        notificationDelegate.locationLaunchHandler = {
+            dependencies.automaticTripCoordinator.handleLocationBackgroundLaunch()
+        }
     }
 
     var body: some Scene {

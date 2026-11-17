@@ -36,6 +36,9 @@ struct MileMateRootView: View {
                 dependencies.automaticTripCoordinator.startIfEnabled()
             }
         }
+        .onChange(of: accountSession.activeDataScopeIdentifier) { _, _ in
+            dependencies.automaticTripCoordinator.handleSessionScopeChange()
+        }
         .sheet(isPresented: $accountSession.presentsUpgrade) {
             ProPaywallView(purchaseManager: dependencies.purchaseManager)
         }

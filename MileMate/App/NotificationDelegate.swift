@@ -19,12 +19,21 @@ final class NotificationDelegate: NSObject, UIApplicationDelegate {
         get { routeHandler.reviewQueueTapHandler }
         set { routeHandler.reviewQueueTapHandler = newValue }
     }
+    var locationLaunchHandler: (@MainActor () -> Void)? {
+        get { routeHandler.locationLaunchHandler }
+        set { routeHandler.locationLaunchHandler = newValue }
+    }
 
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = userNotificationDelegate
+        if launchOptions?[.location] != nil {
+            Task { @MainActor [routeHandler] in
+                routeHandler.handleLocationLaunch()
+            }
+        }
         return true
     }
 }
@@ -34,6 +43,7 @@ private final class NotificationRouteHandler {
     var tripTapHandler: (@MainActor (UUID) -> Void)?
     var activeTripTapHandler: (@MainActor () -> Void)?
     var reviewQueueTapHandler: (@MainActor () -> Void)?
+    var locationLaunchHandler: (@MainActor () -> Void)?
 
     func route(to tripID: UUID) {
         tripTapHandler?(tripID)
@@ -45,6 +55,10 @@ private final class NotificationRouteHandler {
 
     func routeToReviewQueue() {
         reviewQueueTapHandler?()
+    }
+
+    func handleLocationLaunch() {
+        locationLaunchHandler?()
     }
 }
 
