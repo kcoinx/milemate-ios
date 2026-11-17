@@ -565,6 +565,86 @@ final class MileageReportExportTests: XCTestCase {
         XCTAssertEqual(summary.businessMiles, 3, accuracy: 0.001)
     }
 
+    func testReportRangeSummaryReconcilesAllClassificationsAndVehicleFilter() {
+        let suiteName = "ReportRangeSummaryTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        MileageSettings.setMileageRate(0.70, for: 2026, defaults: defaults)
+        defaults.set(25.0, forKey: MileageSettings.taxRateKey)
+
+        let calendar = Calendar(identifier: .gregorian)
+        let start = calendar.date(from: DateComponents(year: 2026, month: 8, day: 1))!
+        let end = calendar.date(from: DateComponents(year: 2026, month: 9, day: 1))!
+        let vehicle = Vehicle(nickname: "Work Car")
+        func selectedTrip(
+            day: Int,
+            classification: Trip.Classification,
+            miles: Double
+        ) -> Trip {
+            var value = trip(
+                date: calendar.date(
+                    from: DateComponents(year: 2026, month: 8, day: day)
+                )!,
+                classification: classification,
+                miles: miles
+            )
+            value.vehicle = vehicle.snapshot
+            return value
+        }
+        var otherVehicle = selectedTrip(day: 5, classification: .business, miles: 50)
+        otherVehicle.vehicle = Vehicle(nickname: "Other Car").snapshot
+        let trips = [
+            selectedTrip(day: 2, classification: .business, miles: 10),
+            selectedTrip(day: 3, classification: .personal, miles: 5),
+            selectedTrip(day: 4, classification: .unclassified, miles: 2),
+            selectedTrip(day: 6, classification: .business, miles: 0),
+            otherVehicle,
+            trip(date: end, classification: .business, miles: 100)
+        ]
+
+        let summary = ReportRangeSummaryCalculator.summary(
+            trips: trips,
+            interval: DateInterval(start: start, end: end),
+            vehicleID: vehicle.id,
+            defaults: defaults
+        )
+
+        XCTAssertEqual(summary.businessMiles, 10, accuracy: 0.001)
+        XCTAssertEqual(summary.personalMiles, 5, accuracy: 0.001)
+        XCTAssertEqual(summary.unclassifiedMiles, 2, accuracy: 0.001)
+        XCTAssertEqual(summary.totalMiles, 17, accuracy: 0.001)
+        XCTAssertEqual(summary.estimatedDeduction, 7, accuracy: 0.001)
+        XCTAssertEqual(summary.estimatedTaxSavings, 1.75, accuracy: 0.001)
+    }
+
+    func testReportRangeSummaryUsesDateSpecificRatesForBusinessOnly() {
+        let suiteName = "ReportRangeRateTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let calendar = Calendar(identifier: .gregorian)
+        let start = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!
+        let end = calendar.date(from: DateComponents(year: 2027, month: 1, day: 1))!
+        let january = calendar.date(from: DateComponents(year: 2026, month: 1, day: 15))!
+        let july = calendar.date(from: DateComponents(year: 2026, month: 7, day: 15))!
+
+        let summary = ReportRangeSummaryCalculator.summary(
+            trips: [
+                trip(date: january, classification: .business, miles: 10),
+                trip(date: july, classification: .business, miles: 10),
+                trip(date: july, classification: .personal, miles: 20),
+                trip(date: july, classification: .unclassified, miles: 30)
+            ],
+            interval: DateInterval(start: start, end: end),
+            vehicleID: nil,
+            defaults: defaults,
+            taxPercentage: 20
+        )
+
+        XCTAssertEqual(summary.estimatedDeduction, 14.85, accuracy: 0.001)
+        XCTAssertEqual(summary.estimatedTaxSavings, 2.97, accuracy: 0.001)
+        XCTAssertEqual(summary.totalMiles, 70, accuracy: 0.001)
+    }
+
     func testEmptyCustomRangeProducesHonestZeroSummary() {
         let summary = MileageReportPreparationService.reportingSummary(
             trips: [],

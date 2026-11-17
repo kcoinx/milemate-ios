@@ -1,6 +1,68 @@
 import Foundation
 import Observation
 
+struct ReportRangeSummary: Equatable, Sendable {
+    let businessMiles: Double
+    let personalMiles: Double
+    let unclassifiedMiles: Double
+    let totalMiles: Double
+    let estimatedDeduction: Double
+    let estimatedTaxSavings: Double
+}
+
+enum ReportRangeSummaryCalculator {
+    static func summary(
+        trips: [Trip],
+        interval: DateInterval,
+        vehicleID: UUID?,
+        defaults: UserDefaults = .standard,
+        taxPercentage: Double? = nil
+    ) -> ReportRangeSummary {
+        let selectedTrips = MileageReportPreparationService.filteredTrips(
+            trips,
+            interval: interval,
+            vehicleID: vehicleID,
+            classifications: Set(Trip.Classification.allCases)
+        )
+        let miles: (Trip.Classification) -> Double = { classification in
+            selectedTrips
+                .filter { trip in trip.classification == classification }
+                .reduce(0) { total, trip in total + max(trip.distanceMiles, 0) }
+        }
+        let businessMiles = miles(.business)
+        let personalMiles = miles(.personal)
+        let unclassifiedMiles = miles(.unclassified)
+        let deduction = selectedTrips
+            .filter { trip in
+                MileageReportPreparationService.isQualifyingBusinessTrip(trip)
+            }
+            .reduce(0) { total, trip in
+                total + MileageDeductionService.deduction(
+                    miles: trip.distanceMiles,
+                    classification: trip.classification,
+                    rate: MileageSettings.mileageRate(
+                        for: trip.startedAt,
+                        defaults: defaults
+                    )
+                )
+            }
+        let configuredTaxPercentage = taxPercentage
+            ?? MileageSettings.estimatedTaxPercentage(in: defaults)
+
+        return ReportRangeSummary(
+            businessMiles: businessMiles,
+            personalMiles: personalMiles,
+            unclassifiedMiles: unclassifiedMiles,
+            totalMiles: businessMiles + personalMiles + unclassifiedMiles,
+            estimatedDeduction: deduction,
+            estimatedTaxSavings: MileageDeductionService.estimatedTaxSavings(
+                deduction: deduction,
+                taxPercentage: configuredTaxPercentage
+            )
+        )
+    }
+}
+
 @MainActor
 @Observable
 final class ReportsViewModel {
@@ -50,6 +112,20 @@ final class ReportsViewModel {
             interval: selectedInterval,
             vehicleID: selectedVehicleID
         )
+    }
+
+    var rangeSummary: ReportRangeSummary {
+        ReportRangeSummaryCalculator.summary(
+            trips: trips,
+            interval: selectedInterval,
+            vehicleID: selectedVehicleID
+        )
+    }
+
+    var estimatedTaxRateDescription: String {
+        MileageSettings.estimatedTaxPercentage.formatted(
+            .number.precision(.fractionLength(0...1))
+        ) + "%"
     }
 
     var mileageRateDescription: String {

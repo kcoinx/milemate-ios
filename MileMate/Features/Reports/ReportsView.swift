@@ -52,7 +52,8 @@ struct ReportsView: View {
                 }
 
                 vehiclePicker
-                monthlySummary
+                rangeSummary
+                estimatedValueCards
                 mileageChart
                 if viewModel.selectedVehicleID == nil && viewModel.vehicleBreakdown.count > 1 {
                     vehicleBreakdown
@@ -156,7 +157,7 @@ struct ReportsView: View {
         }
     }
 
-    private var monthlySummary: some View {
+    private var rangeSummary: some View {
         AppCard {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
                 HStack(alignment: .top) {
@@ -165,8 +166,11 @@ struct ReportsView: View {
                             .font(.caption.weight(.bold))
                             .tracking(1.1)
                             .foregroundStyle(AppTheme.Color.textSecondary)
-                        Text(viewModel.period == .custom ? "Custom Summary" : "Monthly Summary")
+                        Text("Mileage Summary")
                             .font(.appTitle)
+                        Text(viewModel.reportSelection.vehicleLabel)
+                            .font(.subheadline)
+                            .foregroundStyle(AppTheme.Color.textSecondary)
                     }
                     Spacer()
                     Image(systemName: "chart.bar.doc.horizontal.fill")
@@ -176,45 +180,40 @@ struct ReportsView: View {
                         .background(AppTheme.Color.brand.opacity(0.12), in: Circle())
                 }
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("BUSINESS \(distanceUnit.distanceLabel.uppercased())")
-                        .font(.caption.weight(.semibold))
-                        .tracking(0.8)
-                        .foregroundStyle(AppTheme.Color.textSecondary)
-                    Text(viewModel.summary.businessMiles.milesFormatted)
-                        .font(.system(size: 44, weight: .bold, design: .rounded))
-                        .foregroundStyle(AppTheme.Color.brand)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                }
-
                 Divider()
 
-                Grid(alignment: .leading, horizontalSpacing: AppTheme.Spacing.xLarge) {
-                    GridRow {
-                        reportMetric(
-                            "ESTIMATED DEDUCTION",
-                            value: viewModel.summary.estimatedDeduction.currencyFormatted
-                        )
-                        reportMetric(
-                            "BUSINESS TRIPS",
-                            value: "\(viewModel.summary.tripCount)"
-                        )
-                    }
-                    GridRow {
-                        reportMetric(
-                            "IRS RATE",
-                            value: viewModel.mileageRateDescription,
-                            isReference: true
-                        )
-                        Color.clear
-                    }
+                LazyVGrid(
+                    columns: [
+                        GridItem(.adaptive(minimum: 128), spacing: AppTheme.Spacing.large)
+                    ],
+                    alignment: .leading,
+                    spacing: AppTheme.Spacing.large
+                ) {
+                    summaryMileageMetric(
+                        "Business \(distanceUnit.distanceLabel)",
+                        value: viewModel.rangeSummary.businessMiles.milesFormatted,
+                        tint: AppTheme.Color.brand
+                    )
+                    summaryMileageMetric(
+                        "Personal \(distanceUnit.distanceLabel)",
+                        value: viewModel.rangeSummary.personalMiles.milesFormatted
+                    )
+                    summaryMileageMetric(
+                        "Total \(distanceUnit.distanceLabel)",
+                        value: viewModel.rangeSummary.totalMiles.milesFormatted,
+                        emphasized: true
+                    )
+                    summaryMileageMetric(
+                        "Unclassified \(distanceUnit.distanceLabel)",
+                        value: viewModel.rangeSummary.unclassifiedMiles.milesFormatted,
+                        tint: AppTheme.Color.warning
+                    )
                 }
 
                 Label(
-                    viewModel.summary.businessMiles > 0
-                        ? "Estimated deduction is based on your business distance and configured per-mile rate."
-                        : "Only Business trips contribute to your estimated deduction.",
+                    viewModel.rangeSummary.unclassifiedMiles > 0
+                        ? "Unclassified distance is included in Total, but not in Business or Personal distance."
+                        : "Total distance is the sum of Business, Personal, and Unclassified distance.",
                     systemImage: "info.circle"
                 )
                 .font(.footnote)
@@ -222,7 +221,30 @@ struct ReportsView: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .accessibilityElement(children: .combine)
+    }
+
+    private var estimatedValueCards: some View {
+        LazyVGrid(
+            columns: [
+                GridItem(.adaptive(minimum: 150), spacing: AppTheme.Spacing.large)
+            ],
+            spacing: AppTheme.Spacing.large
+        ) {
+            estimatedValueCard(
+                title: "Estimated Deduction",
+                value: viewModel.rangeSummary.estimatedDeduction.currencyFormatted,
+                detail: "Business distance × \(viewModel.mileageRateDescription)",
+                icon: "dollarsign.circle.fill",
+                tint: AppTheme.Color.brand
+            )
+            estimatedValueCard(
+                title: "Estimated Tax Savings",
+                value: viewModel.rangeSummary.estimatedTaxSavings.currencyFormatted,
+                detail: "\(viewModel.estimatedTaxRateDescription) estimate of deduction",
+                icon: "chart.line.uptrend.xyaxis.circle.fill",
+                tint: AppTheme.Color.positive
+            )
+        }
     }
 
     private var quickActions: some View {
@@ -482,29 +504,59 @@ struct ReportsView: View {
         DistanceUnit(rawValue: distanceUnitRaw) ?? DistanceUnitSettings.defaultUnit()
     }
 
-    private func reportMetric(
+    private func summaryMileageMetric(
         _ title: String,
         value: String,
-        isReference: Bool = false
+        tint: Color = AppTheme.Color.textPrimary,
+        emphasized: Bool = false
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.caption2.weight(.semibold))
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(AppTheme.Color.textSecondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Text(value)
-                .font(
-                    isReference
-                        ? .subheadline.weight(.semibold).monospacedDigit()
-                        : .headline.weight(.semibold).monospacedDigit()
-                )
-                .foregroundStyle(AppTheme.Color.textPrimary)
+                .font(.title3.weight(emphasized ? .bold : .semibold).monospacedDigit())
+                .foregroundStyle(tint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+    }
+
+    private func estimatedValueCard(
+        title: String,
+        value: String,
+        detail: String,
+        icon: String,
+        tint: Color
+    ) -> some View {
+        AppCard {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.medium) {
+                Image(systemName: icon)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(tint)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppTheme.Color.textSecondary)
+                Text(value)
+                    .font(.title2.bold().monospacedDigit())
+                    .foregroundStyle(AppTheme.Color.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .contentTransition(.numericText())
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title), \(value). \(detail)")
     }
 
     private var summaryPeriodTitle: String {
