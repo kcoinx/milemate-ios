@@ -38,9 +38,11 @@ struct ReportsView: View {
     }
 
     var body: some View {
+        @Bindable var bindableViewModel = viewModel
+
         ScrollView {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
-                Picker("Reporting period", selection: $viewModel.period) {
+                Picker("Reporting period", selection: $bindableViewModel.period) {
                     ForEach(ReportsViewModel.Period.allCases, id: \.self) {
                         Text($0.rawValue).tag($0)
                     }
@@ -475,6 +477,7 @@ struct ReportsView: View {
                 }
             }
         }
+        .id(viewModel.chartGrouping)
     }
 
     private func handleChartTap(

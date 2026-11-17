@@ -491,6 +491,31 @@ final class MileageReportExportTests: XCTestCase {
     }
 
     @MainActor
+    func testEmptyReportChartHeadingUpdatesWhenPeriodChanges() async {
+        let viewModel = ReportsViewModel(
+            repository: ReportsChartTestRepository(trips: [], vehicles: [])
+        )
+        await viewModel.load()
+        XCTAssertTrue(viewModel.chartMileage.isEmpty)
+
+        viewModel.period = .month
+        XCTAssertEqual(viewModel.chartHeading, "Business distance by week")
+        viewModel.period = .quarter
+        XCTAssertEqual(viewModel.chartHeading, "Business distance by month")
+        viewModel.period = .year
+        XCTAssertEqual(viewModel.chartHeading, "Business distance by month")
+
+        viewModel.period = .custom
+        let start = Calendar.current.startOfDay(for: .now)
+        viewModel.setCustomStartDate(start)
+        viewModel.setCustomEndDate(
+            Calendar.current.date(byAdding: .day, value: 6, to: start)!
+        )
+        XCTAssertEqual(viewModel.chartHeading, "Business distance by day")
+        XCTAssertTrue(viewModel.chartMileage.isEmpty)
+    }
+
+    @MainActor
     func testReportChartUsesBusinessTripsWithinDateAndVehicleFilters() async {
         let calendar = Calendar(identifier: .gregorian)
         let start = calendar.date(from: DateComponents(year: 2026, month: 8, day: 1))!

@@ -66,7 +66,7 @@ enum ReportRangeSummaryCalculator {
 @MainActor
 @Observable
 final class ReportsViewModel {
-    enum ChartGrouping: String, Equatable, Sendable {
+    enum ChartGrouping: String, Equatable, Hashable, Sendable {
         case day
         case week
         case month
