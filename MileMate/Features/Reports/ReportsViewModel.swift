@@ -66,11 +66,35 @@ enum ReportRangeSummaryCalculator {
 @MainActor
 @Observable
 final class ReportsViewModel {
-    struct WeeklyMileage: Identifiable {
-        let weekStart: Date
+    enum ChartGrouping: String, Equatable, Sendable {
+        case day
+        case week
+        case month
+
+        var calendarComponent: Calendar.Component {
+            switch self {
+            case .day: .day
+            case .week: .weekOfYear
+            case .month: .month
+            }
+        }
+
+        var displayName: String { rawValue }
+
+        var frequencyDescription: String {
+            switch self {
+            case .day: "daily"
+            case .week: "weekly"
+            case .month: "monthly"
+            }
+        }
+    }
+
+    struct ChartMileage: Identifiable {
+        let interval: DateInterval
         let miles: Double
 
-        var id: Date { weekStart }
+        var id: Date { interval.start }
     }
 
     struct VehicleMileage: Identifiable {
@@ -148,25 +172,54 @@ final class ReportsViewModel {
         .joined(separator: " – ") + " / mile"
     }
 
-    var weeklyMileage: [WeeklyMileage] {
+    var chartGrouping: ChartGrouping {
+        switch period {
+        case .month:
+            return .week
+        case .quarter, .year:
+            return .month
+        case .custom:
+            let dayCount = max(
+                Calendar.current.dateComponents(
+                    [.day],
+                    from: selectedInterval.start,
+                    to: selectedInterval.end
+                ).day ?? 1,
+                1
+            )
+            if dayCount <= 14 { return .day }
+            if dayCount <= 120 { return .week }
+            return .month
+        }
+    }
+
+    var chartHeading: String {
+        "Business distance by \(chartGrouping.displayName)"
+    }
+
+    var chartMileage: [ChartMileage] {
         let calendar = Calendar.current
         let grouped = Dictionary(grouping: qualifyingBusinessTrips) {
-            calendar.dateInterval(of: .weekOfYear, for: $0.startedAt)?.start
+            calendar.dateInterval(
+                of: chartGrouping.calendarComponent,
+                for: $0.startedAt
+            )?.start
                 ?? calendar.startOfDay(for: $0.startedAt)
         }
-        return grouped.map { weekStart, trips in
-            WeeklyMileage(
-                weekStart: weekStart,
+        return grouped.compactMap { bucketStart, trips in
+            guard let interval = chartInterval(containing: bucketStart) else { return nil }
+            return ChartMileage(
+                interval: interval,
                 miles: trips.reduce(0) { $0 + $1.distanceMiles }
             )
         }
-        .sorted { $0.weekStart < $1.weekStart }
+        .sorted { $0.interval.start < $1.interval.start }
     }
 
-    func businessWeek(containing date: Date) -> DateInterval? {
+    func chartInterval(containing date: Date) -> DateInterval? {
         let calendar = Calendar.current
         guard let interval = calendar.dateInterval(
-            of: .weekOfYear,
+            of: chartGrouping.calendarComponent,
             for: date
         ) else {
             return nil
@@ -179,6 +232,24 @@ final class ReportsViewModel {
             clippedInterval.contains(trip.startedAt)
         }
         return hasTrips ? clippedInterval : nil
+    }
+
+    func chartAxisLabel(for date: Date) -> String {
+        switch chartGrouping {
+        case .day, .week:
+            return date.formatted(.dateTime.month(.abbreviated).day())
+        case .month:
+            let spansMultipleYears = Calendar.current.component(
+                .year,
+                from: selectedInterval.start
+            ) != Calendar.current.component(
+                .year,
+                from: selectedInterval.end.addingTimeInterval(-1)
+            )
+            return spansMultipleYears
+                ? date.formatted(.dateTime.month(.abbreviated).year(.twoDigits))
+                : date.formatted(.dateTime.month(.abbreviated))
+        }
     }
 
     func load() async {

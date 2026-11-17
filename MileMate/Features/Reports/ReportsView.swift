@@ -405,11 +405,14 @@ struct ReportsView: View {
     private var mileageChart: some View {
         AppCard {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
-                SectionHeader(title: "Business distance by week")
+                SectionHeader(title: viewModel.chartHeading)
 
-                if viewModel.weeklyMileage.isEmpty {
+                if viewModel.chartMileage.isEmpty {
                     Label {
-                        Text("Record and classify business trips to see weekly mileage.")
+                        Text(
+                            "Record and classify business trips to see "
+                                + "\(viewModel.chartGrouping.frequencyDescription) distance."
+                        )
                             .foregroundStyle(AppTheme.Color.textSecondary)
                     } icon: {
                         Image(systemName: "chart.bar.xaxis")
@@ -418,18 +421,26 @@ struct ReportsView: View {
                     .frame(maxWidth: .infinity, minHeight: 120)
                     .accessibilityElement(children: .combine)
                 } else {
-                    Chart(viewModel.weeklyMileage) { item in
+                    Chart(viewModel.chartMileage) { item in
                         BarMark(
-                            x: .value("Week", item.weekStart, unit: .weekOfYear),
+                            x: .value(
+                                viewModel.chartGrouping.displayName.capitalized,
+                                item.interval.start,
+                                unit: viewModel.chartGrouping.calendarComponent
+                            ),
                             y: .value("Business distance", item.miles.distanceValue(unit: distanceUnit))
                         )
                         .foregroundStyle(AppTheme.Color.brand.gradient)
                         .cornerRadius(5)
                     }
                     .chartXAxis {
-                        AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                        AxisMarks(values: .automatic(desiredCount: 5)) { value in
                             AxisGridLine().foregroundStyle(AppTheme.Color.divider.opacity(0.3))
-                            AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                            AxisValueLabel {
+                                if let date = value.as(Date.self) {
+                                    Text(viewModel.chartAxisLabel(for: date))
+                                }
+                            }
                         }
                     }
                     .chartYAxis {
@@ -438,6 +449,8 @@ struct ReportsView: View {
                             AxisValueLabel()
                         }
                     }
+                    .chartXAxisLabel(viewModel.chartGrouping.displayName.capitalized)
+                    .chartYAxisLabel(distanceUnit.distanceLabel)
                     .chartOverlay { proxy in
                         GeometryReader { geometry in
                             Rectangle()
@@ -456,7 +469,9 @@ struct ReportsView: View {
                         }
                     }
                     .frame(height: 190)
-                    .accessibilityLabel("Business distance by week in \(distanceUnit.distanceLabel.lowercased())")
+                    .accessibilityLabel(
+                        "\(viewModel.chartHeading) in \(distanceUnit.distanceLabel.lowercased())"
+                    )
                 }
             }
         }
@@ -473,7 +488,7 @@ struct ReportsView: View {
         guard plotX >= 0,
               plotX <= frame.width,
               let date = proxy.value(atX: plotX, as: Date.self),
-              let interval = viewModel.businessWeek(containing: date) else {
+              let interval = viewModel.chartInterval(containing: date) else {
             return
         }
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {

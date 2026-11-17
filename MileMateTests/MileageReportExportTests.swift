@@ -437,7 +437,7 @@ final class MileageReportExportTests: XCTestCase {
     }
 
     @MainActor
-    func testReportWeekSelectionRequiresBusinessTrips() async {
+    func testReportChartSelectionRequiresBusinessTrips() async {
         let viewModel = ReportsViewModel(repository: MockMileageRepository())
         await viewModel.load()
         let businessTrip = MockData.trips.first { trip in
@@ -456,11 +456,86 @@ final class MileageReportExportTests: XCTestCase {
 
         XCTAssertNotNil(
             businessTrip.flatMap { trip in
-                viewModel.businessWeek(containing: trip.startedAt)
+                viewModel.chartInterval(containing: trip.startedAt)
             }
         )
-        XCTAssertNil(viewModel.businessWeek(containing: dateBeforeSelectedPeriod))
-        XCTAssertNil(viewModel.businessWeek(containing: dateAfterSelectedPeriod))
+        XCTAssertNil(viewModel.chartInterval(containing: dateBeforeSelectedPeriod))
+        XCTAssertNil(viewModel.chartInterval(containing: dateAfterSelectedPeriod))
+    }
+
+    @MainActor
+    func testReportChartGroupingFollowsSelectedPeriodAndCustomRangeLength() {
+        let viewModel = ReportsViewModel(repository: MockMileageRepository())
+        let calendar = Calendar.current
+
+        viewModel.period = .month
+        XCTAssertEqual(viewModel.chartGrouping, .week)
+        XCTAssertEqual(viewModel.chartHeading, "Business distance by week")
+
+        viewModel.period = .quarter
+        XCTAssertEqual(viewModel.chartGrouping, .month)
+        viewModel.period = .year
+        XCTAssertEqual(viewModel.chartGrouping, .month)
+
+        viewModel.period = .custom
+        let start = calendar.startOfDay(for: .now)
+        viewModel.setCustomStartDate(start)
+        viewModel.setCustomEndDate(calendar.date(byAdding: .day, value: 13, to: start)!)
+        XCTAssertEqual(viewModel.chartGrouping, .day)
+
+        viewModel.setCustomEndDate(calendar.date(byAdding: .day, value: 30, to: start)!)
+        XCTAssertEqual(viewModel.chartGrouping, .week)
+
+        viewModel.setCustomEndDate(calendar.date(byAdding: .day, value: 180, to: start)!)
+        XCTAssertEqual(viewModel.chartGrouping, .month)
+    }
+
+    @MainActor
+    func testReportChartUsesBusinessTripsWithinDateAndVehicleFilters() async {
+        let calendar = Calendar(identifier: .gregorian)
+        let start = calendar.date(from: DateComponents(year: 2026, month: 8, day: 1))!
+        let vehicle = Vehicle(nickname: "Work Car")
+        let otherVehicle = Vehicle(nickname: "Other Car")
+        func chartTrip(
+            day: Int,
+            classification: Trip.Classification,
+            miles: Double,
+            vehicle: Vehicle
+        ) -> Trip {
+            var value = trip(
+                date: calendar.date(
+                    from: DateComponents(year: 2026, month: 8, day: day)
+                )!,
+                classification: classification,
+                miles: miles
+            )
+            value.vehicle = vehicle.snapshot
+            return value
+        }
+        let repository = ReportsChartTestRepository(
+            trips: [
+                chartTrip(day: 2, classification: .business, miles: 8, vehicle: vehicle),
+                chartTrip(day: 3, classification: .personal, miles: 20, vehicle: vehicle),
+                chartTrip(day: 4, classification: .unclassified, miles: 30, vehicle: vehicle),
+                chartTrip(day: 5, classification: .business, miles: 40, vehicle: otherVehicle),
+                chartTrip(day: 20, classification: .business, miles: 50, vehicle: vehicle)
+            ],
+            vehicles: [vehicle, otherVehicle]
+        )
+        let viewModel = ReportsViewModel(repository: repository)
+        viewModel.period = .custom
+        viewModel.setCustomStartDate(start)
+        viewModel.setCustomEndDate(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 10))!
+        )
+        viewModel.selectedVehicleID = vehicle.id
+        await viewModel.load()
+
+        XCTAssertEqual(viewModel.chartGrouping, .day)
+        XCTAssertEqual(viewModel.chartMileage.count, 1)
+        XCTAssertEqual(viewModel.chartMileage.first?.miles, 8)
+        XCTAssertNotNil(viewModel.chartInterval(containing: start.addingTimeInterval(86_400)))
+        XCTAssertNil(viewModel.chartInterval(containing: start.addingTimeInterval(2 * 86_400)))
     }
 
     @MainActor
@@ -720,4 +795,19 @@ final class MileageReportExportTests: XCTestCase {
             purpose: "Client meeting"
         )
     }
+}
+
+private struct ReportsChartTestRepository: MileageRepository {
+    let trips: [Trip]
+    let vehicles: [Vehicle]
+
+    func fetchTrips() async throws -> [Trip] { trips }
+    func fetchSummary() async throws -> MileageSummary {
+        MileageSummaryCalculator.summary(for: trips)
+    }
+    func fetchProfile() async throws -> UserProfile { MockData.profile }
+    func fetchVehicles() async throws -> [Vehicle] { vehicles }
+    func save(_ trip: Trip) async throws {}
+    func update(_ trip: Trip) async throws {}
+    func delete(_ trip: Trip) async throws {}
 }
