@@ -182,11 +182,25 @@ struct ReportsView: View {
                         .background(AppTheme.Color.brand.opacity(0.12), in: Circle())
                 }
 
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Total \(distanceUnit.distanceLabel)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppTheme.Color.textSecondary)
+                    Text(viewModel.rangeSummary.totalMiles.milesFormatted)
+                        .font(.system(size: 38, weight: .bold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(AppTheme.Color.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
+                        .contentTransition(.numericText())
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+
                 Divider()
 
                 LazyVGrid(
                     columns: [
-                        GridItem(.adaptive(minimum: 128), spacing: AppTheme.Spacing.large)
+                        GridItem(.adaptive(minimum: 110), spacing: AppTheme.Spacing.large)
                     ],
                     alignment: .leading,
                     spacing: AppTheme.Spacing.large
@@ -199,11 +213,6 @@ struct ReportsView: View {
                     summaryMileageMetric(
                         "Personal \(distanceUnit.distanceLabel)",
                         value: viewModel.rangeSummary.personalMiles.milesFormatted
-                    )
-                    summaryMileageMetric(
-                        "Total \(distanceUnit.distanceLabel)",
-                        value: viewModel.rangeSummary.totalMiles.milesFormatted,
-                        emphasized: true
                     )
                     summaryMileageMetric(
                         "Unclassified \(distanceUnit.distanceLabel)",
@@ -525,8 +534,7 @@ struct ReportsView: View {
     private func summaryMileageMetric(
         _ title: String,
         value: String,
-        tint: Color = AppTheme.Color.textPrimary,
-        emphasized: Bool = false
+        tint: Color = AppTheme.Color.textPrimary
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
@@ -535,7 +543,7 @@ struct ReportsView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Text(value)
-                .font(.title3.weight(emphasized ? .bold : .semibold).monospacedDigit())
+                .font(.title3.weight(.semibold).monospacedDigit())
                 .foregroundStyle(tint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
