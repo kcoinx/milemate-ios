@@ -241,6 +241,20 @@ struct DashboardView: View {
                 yearToDateSummary
             }
 
+            if automaticTripCoordinator.state == .tracking {
+                Button {
+                    automaticTripCoordinator.endActiveTripForReview()
+                } label: {
+                    Label("End & Review", systemImage: "stop.circle.fill")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 50)
+                        .background(.white, in: Capsule())
+                        .foregroundStyle(AppTheme.Color.brand)
+                }
+                .accessibilityHint("Stops automatic recording and opens this trip for review")
+            }
+
             if !automaticTrackingEnabled || tripCoordinator.state == .tracking {
                 Button {
                     if tripCoordinator.state == .tracking {

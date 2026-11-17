@@ -71,6 +71,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         let automotiveConfidence: MotionConfidence?
         let highestObservedSpeed: Double
         let isTracking: Bool
+        let lastCredibleDrivingActivityAt: Date?
         let candidateStopStartedAt: Date?
         let motionStopEvidence: Bool?
         let lowSpeedStopEvidence: Bool?
@@ -100,6 +101,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     private var requestedAlwaysAuthorization = false
     private var legacyPendingMigrationStarted = false
     private var candidateStopStartedAt: Date?
+    private var lastCredibleDrivingActivityAt: Date?
     private var motionStopEvidence = false
     private var lowSpeedStopEvidence = false
     private var pendingLowPowerSamples: [LocationSample] = []
@@ -377,6 +379,18 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         resetToIdle()
     }
 
+    /// Safely converts the active automatic trip into the existing review flow.
+    /// This is intentionally available even when automatic finalization is waiting
+    /// for an inactivity deadline, so a user is never trapped in an active trip.
+    func endActiveTripForReview() {
+        guard stageActiveTripForReview(
+            endedAt: lastCredibleDrivingActivityAt ?? .now,
+            failureMessage: "MileMate couldn't prepare this trip for review. Your active trip remains saved for recovery."
+        ) else { return }
+        TrackingDiagnostics.log("automatic trip ended by user and preserved for review")
+        reverseGeocodePendingTrip()
+    }
+
     func prepareForLocalDataDeletion() {
         stopDetection()
         pendingTrip = nil
@@ -392,6 +406,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         candidateStartedAt = nil
         detectionStartedAt = nil
         candidateStopStartedAt = nil
+        lastCredibleDrivingActivityAt = nil
         pendingLowPowerSamples.removeAll()
         state = .disabled
     }
@@ -544,7 +559,9 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
                 automotiveConfidence = activity.confidence
             }
             TrackingDiagnostics.log("automotive movement accepted as detection evidence")
-            cancelStopCountdown()
+            if state != .tracking {
+                cancelStopCountdown()
+            }
             if state == .idle {
                 beginDetecting()
             } else if case .failed = state {
@@ -590,6 +607,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         elapsedTime = 0
         detectionStartedAt = .now
         candidateStartedAt = nil
+        lastCredibleDrivingActivityAt = nil
         highestObservedSpeed = 0
         state = .detecting
         TrackingDiagnostics.log(
@@ -629,6 +647,19 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         var rejectionCounts: [String: Int] = [:]
         for sample in samples {
             let reportsStationarySpeed = sample.speed >= 0 && sample.speed < 1.5
+            let reportsUnknownSpeed = sample.speed < 0
+            if state == .tracking, reportsStationarySpeed || reportsUnknownSpeed {
+                scheduleStopCountdown(lowSpeedEvidence: true)
+                rejectionCounts[reportsUnknownSpeed ? "unknownSpeedWhileTracking" : "stationarySpeed", default: 0] += 1
+                continue
+            }
+            if state == .tracking,
+               candidateStopStartedAt != nil,
+               sample.speed < Self.minimumDrivingSpeed {
+                scheduleStopCountdown(lowSpeedEvidence: true)
+                rejectionCounts["belowCredibleDrivingSpeed", default: 0] += 1
+                continue
+            }
             let processingResult = processor.processWithResult(sample)
             guard processingResult == .accepted else {
                 if state == .tracking, reportsStationarySpeed {
@@ -639,9 +670,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
                 continue
             }
             if state == .tracking {
-                reportsStationarySpeed
-                    ? scheduleStopCountdown(lowSpeedEvidence: true)
-                    : cancelStopCountdown()
+                recordCredibleDrivingActivity(at: sample.timestamp)
             }
             if sample.speed >= 0 {
                 highestObservedSpeed = max(highestObservedSpeed, sample.speed)
@@ -679,11 +708,13 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         detectionTimeoutTask?.cancel()
         detectionTimeoutTask = nil
         state = .tracking
+        lastCredibleDrivingActivityAt = processor.acceptedSamples.last?.timestamp ?? .now
         TrackingDiagnostics.log(
             "automatic tracking confirmed; acceptedSamples=\(processor.acceptedSamples.count); movementMeters=\(Int(distanceMeters)); highestSpeedMetersPerSecond=\(highestObservedSpeed.formatted(.number.precision(.fractionLength(1))))"
         )
         TripFeedback.started()
         persistActiveTrip()
+        scheduleInactivityDeadline()
         elapsedTask?.cancel()
         elapsedTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -706,23 +737,34 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             "candidate stop active; motionEvidence=\(self.motionStopEvidence); lowSpeedEvidence=\(self.lowSpeedStopEvidence)"
         )
         persistActiveTrip()
-        guard stopTask == nil else { return }
-        let elapsed = Date().timeIntervalSince(candidateStopStartedAt ?? .now)
-        let remaining = max(stopInterval - elapsed, 0)
+        scheduleInactivityDeadline()
+    }
+
+    private func recordCredibleDrivingActivity(at timestamp: Date) {
+        lastCredibleDrivingActivityAt = max(lastCredibleDrivingActivityAt ?? timestamp, timestamp)
+        cancelStopCountdown(rescheduleInactivityDeadline: false)
+        persistActiveTrip()
+        scheduleInactivityDeadline()
+    }
+
+    private func scheduleInactivityDeadline() {
+        guard state == .tracking else { return }
+        stopTask?.cancel()
+        let lastActivity = lastCredibleDrivingActivityAt
+            ?? processor.acceptedSamples.last?.timestamp
+            ?? candidateStartedAt
+            ?? .now
+        lastCredibleDrivingActivityAt = lastActivity
+        let remaining = max(stopInterval - Date().timeIntervalSince(lastActivity), 0)
         stopTask = Task { [weak self] in
             guard let self else { return }
             try? await Task.sleep(for: .seconds(remaining))
             guard !Task.isCancelled, self.state == .tracking else { return }
-            if !(self.motionStopEvidence && self.lowSpeedStopEvidence) {
-                let grace = min(TimeInterval(60), max(self.stopInterval / 3, 0.01))
-                try? await Task.sleep(for: .seconds(grace))
-                guard !Task.isCancelled, self.state == .tracking else { return }
-            }
             self.finishAutomaticTrip()
         }
     }
 
-    private func cancelStopCountdown() {
+    private func cancelStopCountdown(rescheduleInactivityDeadline: Bool = true) {
         let hadCandidateStop = candidateStopStartedAt != nil
         stopTask?.cancel()
         stopTask = nil
@@ -732,7 +774,12 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         if hadCandidateStop {
             TrackingDiagnostics.log("candidate stop canceled because driving evidence resumed")
         }
-        if state == .tracking { persistActiveTrip() }
+        if state == .tracking {
+            persistActiveTrip()
+            if rescheduleInactivityDeadline {
+                scheduleInactivityDeadline()
+            }
+        }
     }
 
     private func finishAutomaticTrip() {
@@ -740,7 +787,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         guard let ownerScopeIdentifier = activeOwnerScopeIdentifier else { return }
         let route = currentRoute
         let miles = distanceMiles
-        let stoppedAt = candidateStopStartedAt ?? .now
+        let stoppedAt = candidateStopStartedAt ?? lastCredibleDrivingActivityAt ?? .now
         stopPreciseSession()
         clearPersistedActiveTrip()
 
@@ -886,7 +933,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         elapsedTask = nil
         detectionTimeoutTask?.cancel()
         detectionTimeoutTask = nil
-        cancelStopCountdown()
+        cancelStopCountdown(rescheduleInactivityDeadline: false)
         automotiveConfirmed = false
         automotiveConfidence = nil
     }
@@ -899,6 +946,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         distanceMeters = 0
         elapsedTime = 0
         candidateStartedAt = nil
+        lastCredibleDrivingActivityAt = nil
         detectionStartedAt = nil
         pendingLowPowerSamples.removeAll()
         highestObservedSpeed = 0
@@ -928,6 +976,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             automotiveConfidence: automotiveConfidence,
             highestObservedSpeed: highestObservedSpeed,
             isTracking: state == .tracking,
+            lastCredibleDrivingActivityAt: lastCredibleDrivingActivityAt,
             candidateStopStartedAt: candidateStopStartedAt,
             motionStopEvidence: motionStopEvidence,
             lowSpeedStopEvidence: lowSpeedStopEvidence,
@@ -963,6 +1012,10 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         automotiveConfidence = envelope.automotiveConfidence
         highestObservedSpeed = envelope.highestObservedSpeed
         candidateStopStartedAt = envelope.candidateStopStartedAt
+        lastCredibleDrivingActivityAt = envelope.lastCredibleDrivingActivityAt
+            ?? envelope.candidateStopStartedAt
+            ?? envelope.samples.last?.timestamp
+            ?? envelope.tripStartedAt
         motionStopEvidence = envelope.motionStopEvidence ?? false
         lowSpeedStopEvidence = envelope.lowSpeedStopEvidence ?? false
         elapsedTime = Date().timeIntervalSince(candidateStartedAt ?? envelope.startedAt)
@@ -975,12 +1028,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         startMotionMonitoring()
         if envelope.isTracking {
             startElapsedTimer()
-            if candidateStopStartedAt != nil {
-                scheduleStopCountdown(
-                    motionEvidence: motionStopEvidence,
-                    lowSpeedEvidence: lowSpeedStopEvidence
-                )
-            }
+            scheduleInactivityDeadline()
         }
         if !envelope.isTracking {
             detectionTimeoutTask?.cancel()
@@ -1084,16 +1132,26 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     }
 
     private func interruptActiveTripForPermissionLoss() {
+        guard stageActiveTripForReview(
+            endedAt: .now,
+            failureMessage: "Location permission changed. Your active trip remains saved for recovery."
+        ) else { return }
+        TrackingDiagnostics.log("automatic trip interrupted by location permission change and preserved for review")
+        reverseGeocodePendingTrip()
+    }
+
+    @discardableResult
+    private func stageActiveTripForReview(endedAt: Date, failureMessage: String) -> Bool {
         guard state == .tracking,
               let startedAt = candidateStartedAt,
               let ownerScopeIdentifier = activeOwnerScopeIdentifier else {
-            return
+            return false
         }
         let route = currentRoute
         let trip = Trip(
             id: activeTripID ?? UUID(),
             startedAt: startedAt,
-            endedAt: .now,
+            endedAt: max(endedAt, startedAt),
             originName: "Unknown location",
             destinationName: "Unknown location",
             distanceMiles: distanceMiles,
@@ -1105,8 +1163,8 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         )
         guard persistPendingTrip(trip, ownerScopeIdentifier: ownerScopeIdentifier) else {
             stopDetection()
-            state = .failed("Location permission changed. Your active trip remains saved for recovery.")
-            return
+            state = .failed(failureMessage)
+            return false
         }
         pendingTrip = trip
         pendingOwnerScopeIdentifier = ownerScopeIdentifier
@@ -1116,12 +1174,12 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         distanceMeters = 0
         elapsedTime = 0
         candidateStartedAt = nil
+        lastCredibleDrivingActivityAt = nil
         detectionStartedAt = nil
         activeOwnerScopeIdentifier = nil
         activeTripID = nil
         state = .reviewing
-        TrackingDiagnostics.log("automatic trip interrupted by location permission change and preserved for review")
-        reverseGeocodePendingTrip()
+        return true
     }
 
     private func cancelDetectionForPermissionLoss() {
@@ -1131,6 +1189,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         distanceMeters = 0
         elapsedTime = 0
         candidateStartedAt = nil
+        lastCredibleDrivingActivityAt = nil
         detectionStartedAt = nil
         activeOwnerScopeIdentifier = nil
         activeTripID = nil
@@ -1147,6 +1206,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         pendingOwnerScopeIdentifier = nil
         activeOwnerScopeIdentifier = nil
         activeTripID = nil
+        lastCredibleDrivingActivityAt = nil
         isFinalizingTrip = false
         state = AutomaticTrackingSettings.isEnabled ? .idle : .disabled
     }

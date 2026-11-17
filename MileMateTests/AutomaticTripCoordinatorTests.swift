@@ -703,7 +703,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .tracking)
 
         motion.send(activity(.stationary, confidence: .high))
-        try? await Task.sleep(for: .milliseconds(50))
+        try? await Task.sleep(for: .milliseconds(80))
 
         XCTAssertEqual(coordinator.state, .idle)
         XCTAssertNil(coordinator.pendingTrip)
@@ -726,7 +726,106 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         XCTAssertNil(coordinator.pendingTrip)
     }
 
-    func testAutomotiveResumptionCancelsCandidateStop() async {
+    func testTrackingExpiresWithoutFurtherLocationOrMotionCallbacks() async {
+        enableAutomaticTracking(minimumDistance: 0.30)
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, location, motion) = makeCoordinator(stopInterval: 0.02)
+
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .high))
+        location.send(drivingSamples(latitudeDelta: 0.005))
+        XCTAssertEqual(coordinator.state, .tracking)
+
+        let didExpire = await waitUntil { coordinator.state == .idle }
+        XCTAssertTrue(didExpire)
+        XCTAssertFalse(coordinator.hasProtectedTripState)
+    }
+
+    func testRestoredTrackingUsesPersistedDrivingActivityDeadline() async throws {
+        enableAutomaticTracking(minimumDistance: 0.30)
+        defer { clearAutomaticTrackingState() }
+        let scope = testScopeProvider()
+        let (coordinator, location, motion) = makeCoordinator(
+            stopInterval: 0.2,
+            scopeProvider: scope
+        )
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .high))
+        location.send(drivingSamples(latitudeDelta: 0.005))
+
+        let data = try XCTUnwrap(UserDefaults.standard.data(forKey: "automaticActiveTrip"))
+        var envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        envelope["lastCredibleDrivingActivityAt"] = Date(timeIntervalSinceNow: -60).timeIntervalSinceReferenceDate
+        UserDefaults.standard.set(
+            try JSONSerialization.data(withJSONObject: envelope),
+            forKey: "automaticActiveTrip"
+        )
+
+        let restored = makeCoordinator(stopInterval: 0.2, scopeProvider: scope).0
+
+        let restoredTripExpired = await waitUntil { restored.state == .idle }
+        XCTAssertTrue(restoredTripExpired)
+        XCTAssertFalse(restored.hasProtectedTripState)
+    }
+
+    func testStationaryAndUnknownSpeedSamplesDoNotAddMileageOrExtendTrip() async {
+        enableAutomaticTracking(minimumDistance: 0.30)
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, location, motion) = makeCoordinator(stopInterval: 0.04)
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .high))
+        location.send(drivingSamples(latitudeDelta: 0.005))
+        let distance = coordinator.distanceMeters
+        let now = Date()
+
+        location.send([
+            LocationSample(
+                latitude: 37.785,
+                longitude: -122.4194,
+                horizontalAccuracy: 8,
+                timestamp: now.addingTimeInterval(0.01),
+                speed: -1
+            ),
+            LocationSample(
+                latitude: 37.786,
+                longitude: -122.4194,
+                horizontalAccuracy: 8,
+                timestamp: now.addingTimeInterval(0.02),
+                speed: 0.4
+            )
+        ])
+
+        XCTAssertEqual(coordinator.distanceMeters, distance, accuracy: 0.001)
+        let didExpire = await waitUntil { coordinator.state == .idle }
+        XCTAssertTrue(didExpire)
+    }
+
+    func testEndAndReviewPreservesTripAndReleasesProtectionAfterDiscard() {
+        enableAutomaticTracking(minimumDistance: 0.30)
+        defer { clearAutomaticTrackingState() }
+        let scope = testScopeProvider(userID: "end-review-owner")
+        let (coordinator, location, motion) = makeCoordinator(scopeProvider: scope)
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .high))
+        location.send(drivingSamples(latitudeDelta: 0.005))
+        let route = coordinator.currentRoute
+        let distance = coordinator.distanceMiles
+
+        coordinator.endActiveTripForReview()
+
+        XCTAssertEqual(coordinator.state, .reviewing)
+        XCTAssertEqual(coordinator.pendingTrip?.route, route)
+        XCTAssertEqual(coordinator.pendingTrip?.distanceMiles ?? -1, distance, accuracy: 0.000_001)
+        XCTAssertTrue(coordinator.hasProtectedTripState)
+
+        let restored = makeCoordinator(scopeProvider: scope).0
+        XCTAssertEqual(restored.pendingTrip?.id, coordinator.pendingTrip?.id)
+        restored.discardPendingTrip()
+        XCTAssertFalse(restored.hasProtectedTripState)
+        XCTAssertEqual(restored.state, .idle)
+    }
+
+    func testCredibleDrivingResetsInactivityDeadline() async {
         enableAutomaticTracking(minimumDistance: 0.30)
         defer { clearAutomaticTrackingState() }
         let (coordinator, location, motion) = makeCoordinator(stopInterval: 0.03)
@@ -736,14 +835,22 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         location.send(drivingSamples(latitudeDelta: 0.005))
         motion.send(activity(.stationary, confidence: .high))
         try? await Task.sleep(for: .milliseconds(15))
-        motion.send(activity(.automotive, confidence: .high))
-        try? await Task.sleep(for: .milliseconds(60))
+        let resumedAt = Date().addingTimeInterval(0.02)
+        location.send([
+            LocationSample(
+                latitude: 37.7819,
+                longitude: -122.4194,
+                horizontalAccuracy: 8,
+                timestamp: resumedAt,
+                speed: 12
+            )
+        ])
+        try? await Task.sleep(for: .milliseconds(15))
 
         XCTAssertEqual(coordinator.state, .tracking)
 
-        motion.send(activity(.stationary, confidence: .high))
-        try? await Task.sleep(for: .milliseconds(80))
-        XCTAssertEqual(coordinator.state, .idle)
+        let didExpire = await waitUntil { coordinator.state == .idle }
+        XCTAssertTrue(didExpire)
     }
 
     func testReviewPermissionsRouteOpensSettings() {
