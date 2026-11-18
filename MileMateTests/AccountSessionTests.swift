@@ -723,6 +723,9 @@ final class AccountSessionTests: XCTestCase {
     }
 
     func testManualAndAutomaticTrackingDoNotStartTripEleven() {
+        let recoveryState = AutomaticRecoveryDefaultsSnapshot()
+        recoveryState.clear()
+        defer { recoveryState.restore() }
         let repository = AccountTestRepository()
         let controller = makeController(repository: repository)
         controller.continueAsGuest()
@@ -752,12 +755,18 @@ final class AccountSessionTests: XCTestCase {
         }
         UserDefaults.standard.set(true, forKey: enabledKey)
         let automaticLocation = MockAutomaticLocationService()
+        guard let guestID = controller.guest?.guestID else {
+            XCTFail("Guest session was not established")
+            return
+        }
+        let automaticScope = LocalDataScopeProvider(scope: .guest(id: guestID))
         let automatic = AutomaticTripCoordinator(
             locationService: automaticLocation,
             motionService: MockMotionActivityService(),
             repository: repository,
             notificationService: AccountTestNotificationService(),
             canStartNewTrip: { controller.canStartAutomaticTracking },
+            dataScopeProvider: automaticScope,
             isManualTrackingActive: { false }
         )
         automatic.startIfEnabled()
@@ -768,6 +777,9 @@ final class AccountSessionTests: XCTestCase {
     }
 
     func testDismissedPaywallStaysDismissedAcrossAutomaticStartupAndCallbacks() async {
+        let recoveryState = AutomaticRecoveryDefaultsSnapshot()
+        recoveryState.clear()
+        defer { recoveryState.restore() }
         let controller = makeController()
         controller.continueAsGuest()
         await controller.reconcileGuestTrial()
@@ -783,12 +795,18 @@ final class AccountSessionTests: XCTestCase {
         UserDefaults.standard.set(true, forKey: enabledKey)
         let location = MockAutomaticLocationService()
         let motion = MockMotionActivityService()
+        guard let guestID = controller.guest?.guestID else {
+            XCTFail("Guest session was not established")
+            return
+        }
+        let automaticScope = LocalDataScopeProvider(scope: .guest(id: guestID))
         let automatic = AutomaticTripCoordinator(
             locationService: location,
             motionService: motion,
             repository: AccountTestRepository(),
             notificationService: AccountTestNotificationService(),
             canStartNewTrip: { controller.canStartAutomaticTracking },
+            dataScopeProvider: automaticScope,
             isManualTrackingActive: { false }
         )
         automatic.startIfEnabled()
@@ -814,6 +832,9 @@ final class AccountSessionTests: XCTestCase {
     }
 
     func testReconciliationAndLifecycleAutomaticStartupRemainSilentWhenExhausted() async {
+        let recoveryState = AutomaticRecoveryDefaultsSnapshot()
+        recoveryState.clear()
+        defer { recoveryState.restore() }
         let trips = (0..<10).map { _ in testTrip() }
         let controller = makeController(repository: AccountTestRepository(trips: trips))
         let enabledKey = AutomaticTrackingSettings.enabledKey
@@ -826,15 +847,21 @@ final class AccountSessionTests: XCTestCase {
             }
         }
         UserDefaults.standard.set(true, forKey: enabledKey)
+        controller.continueAsGuest()
+        guard let guestID = controller.guest?.guestID else {
+            XCTFail("Guest session was not established")
+            return
+        }
+        let automaticScope = LocalDataScopeProvider(scope: .guest(id: guestID))
         let automatic = AutomaticTripCoordinator(
             locationService: MockAutomaticLocationService(),
             motionService: MockMotionActivityService(),
             repository: AccountTestRepository(),
             notificationService: AccountTestNotificationService(),
             canStartNewTrip: { controller.canStartAutomaticTracking },
+            dataScopeProvider: automaticScope,
             isManualTrackingActive: { false }
         )
-        controller.continueAsGuest()
         automatic.startIfEnabled()
 
         await controller.reconcileGuestTrial()
@@ -1092,6 +1119,29 @@ final class AccountSessionTests: XCTestCase {
             classification: classification,
             purpose: "Client Meeting"
         )
+    }
+}
+
+private struct AutomaticRecoveryDefaultsSnapshot {
+    private let activeTrip = UserDefaults.standard.data(forKey: "automaticActiveTrip")
+    private let pendingTrip = UserDefaults.standard.data(forKey: "automaticPendingTrip")
+
+    func clear() {
+        UserDefaults.standard.removeObject(forKey: "automaticActiveTrip")
+        UserDefaults.standard.removeObject(forKey: "automaticPendingTrip")
+    }
+
+    func restore() {
+        if let activeTrip {
+            UserDefaults.standard.set(activeTrip, forKey: "automaticActiveTrip")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "automaticActiveTrip")
+        }
+        if let pendingTrip {
+            UserDefaults.standard.set(pendingTrip, forKey: "automaticPendingTrip")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "automaticPendingTrip")
+        }
     }
 }
 

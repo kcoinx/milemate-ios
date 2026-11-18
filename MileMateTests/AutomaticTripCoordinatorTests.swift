@@ -75,6 +75,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         enableAutomaticTracking()
         defer { clearAutomaticTrackingState() }
         let (coordinator, _, motion) = makeCoordinator()
+        defer { coordinator.prepareForLocalDataDeletion() }
 
         coordinator.startIfEnabled()
         motion.send(activity(.walking, confidence: .high))
@@ -88,6 +89,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         enableAutomaticTracking()
         defer { clearAutomaticTrackingState() }
         let (coordinator, location, motion) = makeCoordinator()
+        defer { coordinator.prepareForLocalDataDeletion() }
 
         coordinator.startIfEnabled()
         motion.send(activity(.automotive, confidence: .medium))
@@ -110,6 +112,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         enableAutomaticTracking()
         defer { clearAutomaticTrackingState() }
         let (coordinator, location, motion) = makeCoordinator()
+        defer { coordinator.prepareForLocalDataDeletion() }
         motion.recentActivity = activity(.automotive, confidence: .medium)
 
         coordinator.startIfEnabled()
@@ -184,6 +187,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         enableAutomaticTracking()
         defer { clearAutomaticTrackingState() }
         let (coordinator, _, motion) = makeCoordinator()
+        defer { coordinator.prepareForLocalDataDeletion() }
 
         coordinator.startIfEnabled()
         motion.send(activity(.automotive, confidence: .medium))
@@ -196,6 +200,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         enableAutomaticTracking()
         defer { clearAutomaticTrackingState() }
         let (coordinator, location, motion) = makeCoordinator()
+        defer { coordinator.prepareForLocalDataDeletion() }
 
         coordinator.startIfEnabled()
         motion.send(activity(.automotive, confidence: .low))
@@ -209,6 +214,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         enableAutomaticTracking()
         defer { clearAutomaticTrackingState() }
         let (coordinator, location, motion) = makeCoordinator()
+        defer { coordinator.prepareForLocalDataDeletion() }
 
         coordinator.startIfEnabled()
         motion.send(activity(.automotive, confidence: .high))
@@ -221,6 +227,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         enableAutomaticTracking()
         defer { clearAutomaticTrackingState() }
         let (coordinator, location, motion) = makeCoordinator()
+        defer { coordinator.prepareForLocalDataDeletion() }
         let now = Date()
 
         coordinator.startIfEnabled()
@@ -267,6 +274,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         enableAutomaticTracking()
         defer { clearAutomaticTrackingState() }
         let (coordinator, location, motion) = makeCoordinator()
+        defer { coordinator.prepareForLocalDataDeletion() }
 
         coordinator.startIfEnabled()
         motion.send(activity(.automotive, confidence: .medium))
@@ -284,6 +292,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         enableAutomaticTracking()
         defer { clearAutomaticTrackingState() }
         let (coordinator, location, motion) = makeCoordinator()
+        defer { coordinator.prepareForLocalDataDeletion() }
 
         coordinator.startIfEnabled()
         motion.send(activity(.automotive, confidence: .high))
@@ -303,22 +312,26 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         defer { clearAutomaticTrackingState() }
         let detectingScope = testScopeProvider()
         let (detecting, _, detectingMotion) = makeCoordinator(scopeProvider: detectingScope)
+        defer { detecting.prepareForLocalDataDeletion() }
         detecting.startIfEnabled()
         detectingMotion.send(activity(.automotive, confidence: .medium))
 
         let (restoredDetecting, _, _) = makeCoordinator(scopeProvider: detectingScope)
+        defer { restoredDetecting.prepareForLocalDataDeletion() }
         XCTAssertEqual(restoredDetecting.state, .detecting)
 
         clearAutomaticTrackingState()
         enableAutomaticTracking()
         let trackingScope = testScopeProvider()
         let (tracking, trackingLocation, trackingMotion) = makeCoordinator(scopeProvider: trackingScope)
+        defer { tracking.prepareForLocalDataDeletion() }
         tracking.startIfEnabled()
         trackingMotion.send(activity(.automotive, confidence: .medium))
         trackingLocation.send(drivingSamples(latitudeDelta: 0.005))
         XCTAssertEqual(tracking.state, .tracking)
 
         let (restoredTracking, _, _) = makeCoordinator(scopeProvider: trackingScope)
+        defer { restoredTracking.prepareForLocalDataDeletion() }
         XCTAssertEqual(restoredTracking.state, .tracking)
     }
 
@@ -327,6 +340,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         defer { clearAutomaticTrackingState() }
         let originalScope = testScopeProvider(userID: "original-owner")
         let (tracking, location, motion) = makeCoordinator(scopeProvider: originalScope)
+        defer { tracking.prepareForLocalDataDeletion() }
         tracking.startIfEnabled()
         motion.send(activity(.automotive, confidence: .medium))
         location.send(drivingSamples(latitudeDelta: 0.005))
@@ -505,7 +519,7 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         coordinator.startIfEnabled()
         motion.send(activity(.automotive, confidence: .high))
 
-        XCTAssertEqual(coordinator.state, .disabled)
+        XCTAssertEqual(coordinator.state, .permissionRequired)
         XCTAssertEqual(coordinator.trackingReadiness, .locationPermissionRequired)
         XCTAssertFalse(location.isPreciseTracking)
     }
@@ -703,9 +717,11 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .tracking)
 
         motion.send(activity(.stationary, confidence: .high))
-        try? await Task.sleep(for: .milliseconds(80))
+        let didFinish = await waitUntil {
+            coordinator.state == .idle && !coordinator.hasProtectedTripState
+        }
 
-        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertTrue(didFinish)
         XCTAssertNil(coordinator.pendingTrip)
     }
 
@@ -720,9 +736,11 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .tracking)
 
         motion.send(activity(.stationary, confidence: .high))
-        try? await Task.sleep(for: .milliseconds(50))
+        let didFinish = await waitUntil {
+            coordinator.state == .idle && !coordinator.hasProtectedTripState
+        }
 
-        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertTrue(didFinish)
         XCTAssertNil(coordinator.pendingTrip)
     }
 
@@ -736,7 +754,9 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         location.send(drivingSamples(latitudeDelta: 0.005))
         XCTAssertEqual(coordinator.state, .tracking)
 
-        let didExpire = await waitUntil { coordinator.state == .idle }
+        let didExpire = await waitUntil {
+            coordinator.state == .idle && !coordinator.hasProtectedTripState
+        }
         XCTAssertTrue(didExpire)
         XCTAssertFalse(coordinator.hasProtectedTripState)
     }
@@ -756,14 +776,15 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         let data = try XCTUnwrap(UserDefaults.standard.data(forKey: "automaticActiveTrip"))
         var envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         envelope["lastCredibleDrivingActivityAt"] = Date(timeIntervalSinceNow: -60).timeIntervalSinceReferenceDate
-        UserDefaults.standard.set(
-            try JSONSerialization.data(withJSONObject: envelope),
-            forKey: "automaticActiveTrip"
-        )
+        let restoredEnvelope = try JSONSerialization.data(withJSONObject: envelope)
+        coordinator.prepareForLocalDataDeletion()
+        UserDefaults.standard.set(restoredEnvelope, forKey: "automaticActiveTrip")
 
         let restored = makeCoordinator(stopInterval: 0.2, scopeProvider: scope).0
 
-        let restoredTripExpired = await waitUntil { restored.state == .idle }
+        let restoredTripExpired = await waitUntil {
+            restored.state == .idle && !restored.hasProtectedTripState
+        }
         XCTAssertTrue(restoredTripExpired)
         XCTAssertFalse(restored.hasProtectedTripState)
     }
@@ -796,7 +817,9 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         ])
 
         XCTAssertEqual(coordinator.distanceMeters, distance, accuracy: 0.001)
-        let didExpire = await waitUntil { coordinator.state == .idle }
+        let didExpire = await waitUntil {
+            coordinator.state == .idle && !coordinator.hasProtectedTripState
+        }
         XCTAssertTrue(didExpire)
     }
 
@@ -849,7 +872,9 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(coordinator.state, .tracking)
 
-        let didExpire = await waitUntil { coordinator.state == .idle }
+        let didExpire = await waitUntil {
+            coordinator.state == .idle && !coordinator.hasProtectedTripState
+        }
         XCTAssertTrue(didExpire)
     }
 
