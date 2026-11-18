@@ -101,15 +101,15 @@ struct ProPaywallView: View {
                 if hasPro { dismiss() }
             }
             .alert(
-                "Purchase Unavailable",
+                purchaseManager.presentedAlertTitle,
                 isPresented: Binding(
-                    get: { purchaseManager.errorMessage != nil },
-                    set: { if !$0 { purchaseManager.errorMessage = nil } }
+                    get: { purchaseManager.presentedAlertMessage != nil },
+                    set: { if !$0 { purchaseManager.dismissPresentedAlert() } }
                 )
             ) {
-                Button("OK", role: .cancel) { purchaseManager.errorMessage = nil }
+                Button("OK", role: .cancel) { purchaseManager.dismissPresentedAlert() }
             } message: {
-                Text(purchaseManager.errorMessage ?? "")
+                Text(purchaseManager.presentedAlertMessage ?? "")
             }
         }
     }
@@ -212,15 +212,15 @@ struct SubscriptionBillingView: View {
         }
         .task { await purchaseManager.prepare() }
         .alert(
-            "Purchase Unavailable",
+            purchaseManager.presentedAlertTitle,
             isPresented: Binding(
-                get: { purchaseManager.errorMessage != nil },
-                set: { if !$0 { purchaseManager.errorMessage = nil } }
+                get: { purchaseManager.presentedAlertMessage != nil },
+                set: { if !$0 { purchaseManager.dismissPresentedAlert() } }
             )
         ) {
-            Button("OK", role: .cancel) { purchaseManager.errorMessage = nil }
+            Button("OK", role: .cancel) { purchaseManager.dismissPresentedAlert() }
         } message: {
-            Text(purchaseManager.errorMessage ?? "")
+            Text(purchaseManager.presentedAlertMessage ?? "")
         }
     }
 

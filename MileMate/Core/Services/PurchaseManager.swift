@@ -101,10 +101,14 @@ final class PurchaseManager: ProEntitlementProviding {
     private(set) var hasMonthlySubscription = false
     var errorMessage: String?
     var statusMessage: String?
+    private(set) var restoreAlertTitle: String?
+    private(set) var restoreAlertMessage: String?
 
     var hasProAccess: Bool { plan.hasProAccess }
     var hasLifetimeAccess: Bool { plan == .lifetime }
     var isConfigured: Bool { configuration != nil }
+    var presentedAlertTitle: String { restoreAlertTitle ?? "Purchase Unavailable" }
+    var presentedAlertMessage: String? { restoreAlertMessage ?? errorMessage }
 
     init(
         configuration: StoreKitProductConfiguration? = .fromBundle(),
@@ -223,32 +227,89 @@ final class PurchaseManager: ProEntitlementProviding {
         isRestoring = true
         errorMessage = nil
         statusMessage = nil
+        restoreAlertTitle = nil
+        restoreAlertMessage = nil
         defer { isRestoring = false }
+        guard configuration != nil else {
+            presentRestoreFailure(PurchaseManagerError.configurationMissing)
+            return
+        }
+
+        let previouslyVerifiedPlan = plan
+        let previouslyHadMonthlySubscription = hasMonthlySubscription
+        if let currentSnapshot = await refreshEntitlements(
+            forceFresh: true,
+            allowWhileRestoring: true,
+            applyResult: false
+        ), currentSnapshot.plan.hasProAccess,
+           !currentSnapshot.encounteredUnverifiedManagedTransaction {
+            apply(currentSnapshot)
+            isEntitlementReady = true
+            Self.logger.info("Restore satisfied by a current verified MileMate Pro entitlement")
+            presentRestoreSuccess(for: currentSnapshot.plan)
+            return
+        }
+
         do {
             try await appStoreSync()
-            await refreshEntitlements(forceFresh: true, allowWhileRestoring: true)
-            statusMessage = hasProAccess
-                ? "MileMate Pro has been restored."
-                : "No active MileMate Pro purchase was found."
+            guard let restoredSnapshot = await refreshEntitlements(
+                forceFresh: true,
+                allowWhileRestoring: true,
+                applyResult: true
+            ) else {
+                throw PurchaseManagerError.productUnavailable
+            }
+            if restoredSnapshot.encounteredUnverifiedManagedTransaction {
+                throw PurchaseManagerError.unverifiedTransaction
+            }
+            if restoredSnapshot.plan.hasProAccess {
+                presentRestoreSuccess(for: restoredSnapshot.plan)
+            } else {
+                presentNoPurchasesFound()
+            }
         } catch {
-            errorMessage = error.localizedDescription
+            let storeError = error as NSError
+            Self.logger.error(
+                "Restore synchronization failed: domain=\(storeError.domain, privacy: .public), code=\(storeError.code)"
+            )
+            plan = previouslyVerifiedPlan
+            hasMonthlySubscription = previouslyHadMonthlySubscription
+            if isUserCancellation(error) {
+                restoreAlertTitle = "Restore Canceled"
+                restoreAlertMessage = "No changes were made to your MileMate Pro access."
+            } else {
+                presentRestoreFailure(error, preserving: previouslyVerifiedPlan)
+            }
         }
+    }
+
+    func dismissPresentedAlert() {
+        restoreAlertTitle = nil
+        restoreAlertMessage = nil
+        errorMessage = nil
     }
 
     func refreshEntitlements() async {
         guard !isRestoring else { return }
-        await refreshEntitlements(forceFresh: false, allowWhileRestoring: false)
+        _ = await refreshEntitlements(
+            forceFresh: false,
+            allowWhileRestoring: false,
+            applyResult: true
+        )
     }
 
     private func refreshEntitlements(
         forceFresh: Bool,
-        allowWhileRestoring: Bool
-    ) async {
+        allowWhileRestoring: Bool,
+        applyResult: Bool = true
+    ) async -> StoreKitEntitlementSnapshot? {
         guard let configuration else {
-            plan = .free
-            hasMonthlySubscription = false
-            isEntitlementReady = true
-            return
+            if applyResult {
+                plan = .free
+                hasMonthlySubscription = false
+                isEntitlementReady = true
+            }
+            return nil
         }
 
         if forceFresh, let existingTask = entitlementRefreshTask {
@@ -258,13 +319,15 @@ final class PurchaseManager: ProEntitlementProviding {
         } else if let existingTask = entitlementRefreshTask,
                   let existingID = entitlementRefreshID {
             let snapshot = await existingTask.value
-            guard entitlementRefreshID == existingID else { return }
+            guard entitlementRefreshID == existingID else { return nil }
             entitlementRefreshTask = nil
             entitlementRefreshID = nil
-            guard allowWhileRestoring || !isRestoring else { return }
-            apply(snapshot)
-            isEntitlementReady = true
-            return
+            guard allowWhileRestoring || !isRestoring else { return nil }
+            if applyResult {
+                apply(snapshot)
+                isEntitlementReady = true
+            }
+            return snapshot
         }
 
         let refreshID = UUID()
@@ -273,12 +336,60 @@ final class PurchaseManager: ProEntitlementProviding {
         entitlementRefreshID = refreshID
         entitlementRefreshTask = task
         let snapshot = await task.value
-        guard entitlementRefreshID == refreshID else { return }
+        guard entitlementRefreshID == refreshID else { return nil }
         entitlementRefreshTask = nil
         entitlementRefreshID = nil
-        guard allowWhileRestoring || !isRestoring else { return }
-        apply(snapshot)
-        isEntitlementReady = true
+        guard allowWhileRestoring || !isRestoring else { return nil }
+        if applyResult {
+            apply(snapshot)
+            isEntitlementReady = true
+        }
+        return snapshot
+    }
+
+    private func presentRestoreSuccess(for restoredPlan: ProPlan) {
+        restoreAlertTitle = "Purchases Restored"
+        switch restoredPlan {
+        case .monthly:
+            restoreAlertMessage = "Your MileMate Pro subscription is active."
+        case .lifetime:
+            restoreAlertMessage = "Your MileMate Pro Lifetime purchase is active."
+        case .free:
+            presentNoPurchasesFound()
+            return
+        }
+        statusMessage = restoreAlertMessage
+    }
+
+    private func presentNoPurchasesFound() {
+        restoreAlertTitle = "No Purchases Found"
+        restoreAlertMessage = "No active MileMate Pro purchases were found for this Apple Account."
+        statusMessage = restoreAlertMessage
+    }
+
+    private func presentRestoreFailure(_ error: Error, preserving previousPlan: ProPlan = .free) {
+        errorMessage = error.localizedDescription
+        restoreAlertTitle = "Unable to Restore Purchases"
+        if previousPlan.hasProAccess {
+            restoreAlertMessage = "Your existing MileMate Pro access remains active, but purchases couldn't be synchronized with Apple. \(error.localizedDescription)"
+        } else {
+            restoreAlertMessage = "MileMate couldn't synchronize purchases with Apple. \(error.localizedDescription)"
+        }
+    }
+
+    private func isUserCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let storeKitError = error as? StoreKitError,
+           case .userCancelled = storeKitError {
+            return true
+        }
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain,
+           nsError.code == NSURLErrorUserCancelledAuthentication {
+            return true
+        }
+        return nsError.domain == SKErrorDomain &&
+            nsError.code == SKError.Code.paymentCancelled.rawValue
     }
 
     private func apply(_ snapshot: StoreKitEntitlementSnapshot) {
@@ -377,7 +488,10 @@ final class PurchaseManager: ProEntitlementProviding {
                 guard isManagedProduct(transaction.productID) else { continue }
                 await transaction.finish()
                 if transaction.revocationDate != nil {
-                    await refreshEntitlements(forceFresh: true, allowWhileRestoring: true)
+                    _ = await refreshEntitlements(
+                        forceFresh: true,
+                        allowWhileRestoring: true
+                    )
                 } else {
                     await refreshEntitlements()
                 }
