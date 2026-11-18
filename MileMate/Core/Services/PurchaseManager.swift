@@ -35,6 +35,12 @@ struct StoreKitProductConfiguration: Equatable, Sendable {
     }
 }
 
+struct StoreKitEntitlementSnapshot: Equatable, Sendable {
+    let plan: ProPlan
+    let hasMonthlySubscription: Bool
+    let encounteredUnverifiedManagedTransaction: Bool
+}
+
 @MainActor
 protocol ProEntitlementProviding: AnyObject {
     var hasProAccess: Bool { get }
@@ -79,7 +85,11 @@ final class PurchaseManager: ProEntitlementProviding {
     )
 
     private let configuration: StoreKitProductConfiguration?
+    private let appStoreSync: @MainActor () async throws -> Void
+    private let entitlementLoader: @MainActor (StoreKitProductConfiguration) async -> StoreKitEntitlementSnapshot
     private var updatesTask: Task<Void, Never>?
+    private var entitlementRefreshTask: Task<StoreKitEntitlementSnapshot, Never>?
+    private var entitlementRefreshID: UUID?
 
     private(set) var plan: ProPlan = .free
     private(set) var monthlyProduct: Product?
@@ -96,14 +106,30 @@ final class PurchaseManager: ProEntitlementProviding {
     var hasLifetimeAccess: Bool { plan == .lifetime }
     var isConfigured: Bool { configuration != nil }
 
-    init(configuration: StoreKitProductConfiguration? = .fromBundle()) {
+    init(
+        configuration: StoreKitProductConfiguration? = .fromBundle(),
+        appStoreSync: @escaping @MainActor () async throws -> Void = {
+            try await AppStore.sync()
+        },
+        entitlementLoader: @escaping @MainActor (StoreKitProductConfiguration) async -> StoreKitEntitlementSnapshot = {
+            await PurchaseManager.loadVerifiedEntitlements(configuration: $0)
+        },
+        automaticallyPrepares: Bool = true,
+        observesTransactionUpdates: Bool = true
+    ) {
         self.configuration = configuration
-        updatesTask = Task { [weak self] in
-            guard let self else { return }
-            await self.observeTransactionUpdates()
+        self.appStoreSync = appStoreSync
+        self.entitlementLoader = entitlementLoader
+        if observesTransactionUpdates {
+            updatesTask = Task { [weak self] in
+                guard let self else { return }
+                await self.observeTransactionUpdates()
+            }
         }
-        Task { [weak self] in
-            await self?.prepare()
+        if automaticallyPrepares {
+            Task { [weak self] in
+                await self?.prepare()
+            }
         }
     }
 
@@ -199,8 +225,8 @@ final class PurchaseManager: ProEntitlementProviding {
         statusMessage = nil
         defer { isRestoring = false }
         do {
-            try await AppStore.sync()
-            await refreshEntitlements()
+            try await appStoreSync()
+            await refreshEntitlements(forceFresh: true, allowWhileRestoring: true)
             statusMessage = hasProAccess
                 ? "MileMate Pro has been restored."
                 : "No active MileMate Pro purchase was found."
@@ -210,29 +236,92 @@ final class PurchaseManager: ProEntitlementProviding {
     }
 
     func refreshEntitlements() async {
-        defer { isEntitlementReady = true }
+        guard !isRestoring else { return }
+        await refreshEntitlements(forceFresh: false, allowWhileRestoring: false)
+    }
+
+    private func refreshEntitlements(
+        forceFresh: Bool,
+        allowWhileRestoring: Bool
+    ) async {
         guard let configuration else {
             plan = .free
             hasMonthlySubscription = false
+            isEntitlementReady = true
             return
         }
 
+        if forceFresh, let existingTask = entitlementRefreshTask {
+            _ = await existingTask.value
+            entitlementRefreshTask = nil
+            entitlementRefreshID = nil
+        } else if let existingTask = entitlementRefreshTask,
+                  let existingID = entitlementRefreshID {
+            let snapshot = await existingTask.value
+            guard entitlementRefreshID == existingID else { return }
+            entitlementRefreshTask = nil
+            entitlementRefreshID = nil
+            guard allowWhileRestoring || !isRestoring else { return }
+            apply(snapshot)
+            isEntitlementReady = true
+            return
+        }
+
+        let refreshID = UUID()
+        let loader = entitlementLoader
+        let task = Task { await loader(configuration) }
+        entitlementRefreshID = refreshID
+        entitlementRefreshTask = task
+        let snapshot = await task.value
+        guard entitlementRefreshID == refreshID else { return }
+        entitlementRefreshTask = nil
+        entitlementRefreshID = nil
+        guard allowWhileRestoring || !isRestoring else { return }
+        apply(snapshot)
+        isEntitlementReady = true
+    }
+
+    private func apply(_ snapshot: StoreKitEntitlementSnapshot) {
+        if snapshot.encounteredUnverifiedManagedTransaction,
+           snapshot.plan == .free,
+           plan.hasProAccess {
+            errorMessage = PurchaseManagerError.unverifiedTransaction.localizedDescription
+            return
+        }
+        plan = snapshot.plan
+        hasMonthlySubscription = snapshot.hasMonthlySubscription
+    }
+
+    static func loadVerifiedEntitlements(
+        configuration: StoreKitProductConfiguration
+    ) async -> StoreKitEntitlementSnapshot {
         var monthlyExpiration: Date?
         var hasActiveMonthly = false
         var ownsLifetime = false
+        var encounteredUnverifiedManagedTransaction = false
         for await result in Transaction.currentEntitlements {
-            guard case .verified(let transaction) = result,
-                  transaction.revocationDate == nil else {
-                continue
-            }
-            if transaction.productID == configuration.lifetimeProductID {
-                ownsLifetime = true
-            } else if transaction.productID == configuration.monthlyProductID {
-                hasActiveMonthly = true
-                monthlyExpiration = transaction.expirationDate
+            switch result {
+            case .verified(let transaction):
+                guard transaction.productID == configuration.monthlyProductID ||
+                        transaction.productID == configuration.lifetimeProductID,
+                      transaction.revocationDate == nil else {
+                    continue
+                }
+                if transaction.productID == configuration.lifetimeProductID {
+                    ownsLifetime = true
+                } else {
+                    hasActiveMonthly = true
+                    monthlyExpiration = transaction.expirationDate
+                }
+            case .unverified(let transaction, _):
+                if transaction.productID == configuration.monthlyProductID ||
+                    transaction.productID == configuration.lifetimeProductID {
+                    encounteredUnverifiedManagedTransaction = true
+                }
             }
         }
 
+        let plan: ProPlan
         if ownsLifetime {
             plan = .lifetime
         } else if hasActiveMonthly {
@@ -240,7 +329,11 @@ final class PurchaseManager: ProEntitlementProviding {
         } else {
             plan = .free
         }
-        hasMonthlySubscription = hasActiveMonthly
+        return StoreKitEntitlementSnapshot(
+            plan: plan,
+            hasMonthlySubscription: hasActiveMonthly,
+            encounteredUnverifiedManagedTransaction: encounteredUnverifiedManagedTransaction
+        )
     }
 
     private func purchase(_ product: Product?) async {
@@ -283,7 +376,11 @@ final class PurchaseManager: ProEntitlementProviding {
             case .verified(let transaction):
                 guard isManagedProduct(transaction.productID) else { continue }
                 await transaction.finish()
-                await refreshEntitlements()
+                if transaction.revocationDate != nil {
+                    await refreshEntitlements(forceFresh: true, allowWhileRestoring: true)
+                } else {
+                    await refreshEntitlements()
+                }
             case .unverified(let transaction, _):
                 guard isManagedProduct(transaction.productID) else { continue }
                 errorMessage = PurchaseManagerError.unverifiedTransaction.localizedDescription

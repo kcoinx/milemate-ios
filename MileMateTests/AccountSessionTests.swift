@@ -473,6 +473,109 @@ final class AccountSessionTests: XCTestCase {
         XCTAssertNotNil(purchaseManager.errorMessage)
     }
 
+    func testFailedRestorePreservesVerifiedMonthlyEntitlement() async {
+        let expiration = Date.now.addingTimeInterval(86_400)
+        let harness = StoreKitEntitlementHarness(
+            snapshots: [.monthly(expirationDate: expiration)]
+        )
+        let manager = makePurchaseManager(harness: harness)
+        await manager.refreshEntitlements()
+        harness.syncError = StoreKitTestError.unavailable
+
+        await manager.restorePurchases()
+
+        XCTAssertEqual(manager.plan, .monthly(expirationDate: expiration))
+        XCTAssertTrue(manager.hasProAccess)
+        XCTAssertTrue(manager.hasMonthlySubscription)
+        XCTAssertNotNil(manager.errorMessage)
+        XCTAssertFalse(manager.isRestoring)
+    }
+
+    func testLifecycleRefreshDuringFailedRestoreCannotDowngradePro() async {
+        let harness = StoreKitEntitlementHarness(snapshots: [.monthly(expirationDate: nil)])
+        let manager = makePurchaseManager(harness: harness)
+        await manager.refreshEntitlements()
+        harness.syncDelay = .milliseconds(40)
+        harness.syncError = StoreKitTestError.unavailable
+
+        let restore = Task { await manager.restorePurchases() }
+        while !manager.isRestoring { await Task.yield() }
+        await manager.refreshEntitlements()
+        await restore.value
+
+        XCTAssertEqual(manager.plan, .monthly(expirationDate: nil))
+        XCTAssertEqual(harness.entitlementLoadCount, 1)
+        XCTAssertNotNil(manager.errorMessage)
+    }
+
+    func testSuccessfulRestoreForcesFreshVerifiedEntitlementScan() async {
+        let expiration = Date.now.addingTimeInterval(86_400)
+        let harness = StoreKitEntitlementHarness(
+            snapshots: [
+                .free,
+                .monthly(expirationDate: expiration)
+            ]
+        )
+        let manager = makePurchaseManager(harness: harness)
+        await manager.refreshEntitlements()
+
+        await manager.restorePurchases()
+
+        XCTAssertEqual(manager.plan, .monthly(expirationDate: expiration))
+        XCTAssertEqual(harness.entitlementLoadCount, 2)
+        XCTAssertEqual(manager.statusMessage, "MileMate Pro has been restored.")
+    }
+
+    func testOverlappingEntitlementRefreshesUseOneStoreKitScan() async {
+        let harness = StoreKitEntitlementHarness(snapshots: [.monthly(expirationDate: nil)])
+        harness.entitlementDelay = .milliseconds(40)
+        let manager = makePurchaseManager(harness: harness)
+
+        let first = Task { await manager.refreshEntitlements() }
+        await Task.yield()
+        let second = Task { await manager.refreshEntitlements() }
+        await first.value
+        await second.value
+
+        XCTAssertEqual(harness.entitlementLoadCount, 1)
+        XCTAssertEqual(manager.plan, .monthly(expirationDate: nil))
+    }
+
+    func testAuthoritativeEmptyEntitlementScanRevokesExpiredOrRefundedProAccess() async {
+        let harness = StoreKitEntitlementHarness(
+            snapshots: [.monthly(expirationDate: nil), .free]
+        )
+        let manager = makePurchaseManager(harness: harness)
+        await manager.refreshEntitlements()
+        XCTAssertTrue(manager.hasProAccess)
+
+        await manager.refreshEntitlements()
+
+        XCTAssertEqual(manager.plan, .free)
+        XCTAssertFalse(manager.hasProAccess)
+    }
+
+    func testUnverifiedEntitlementDoesNotGrantOrTemporarilyRevokePro() async {
+        let harness = StoreKitEntitlementHarness(
+            snapshots: [
+                .monthly(expirationDate: nil),
+                .unverified
+            ]
+        )
+        let manager = makePurchaseManager(harness: harness)
+        await manager.refreshEntitlements()
+        await manager.refreshEntitlements()
+
+        XCTAssertEqual(manager.plan, .monthly(expirationDate: nil))
+        XCTAssertNotNil(manager.errorMessage)
+
+        let freeHarness = StoreKitEntitlementHarness(snapshots: [.unverified])
+        let freeManager = makePurchaseManager(harness: freeHarness)
+        await freeManager.refreshEntitlements()
+        XCTAssertEqual(freeManager.plan, .free)
+        XCTAssertFalse(freeManager.hasProAccess)
+    }
+
     func testGuestUpgradePreservesTripsAndRestoresAuthenticatedSession() async throws {
         let trip = testTrip()
         let repository = AccountTestRepository(trips: [trip])
@@ -951,6 +1054,21 @@ final class AccountSessionTests: XCTestCase {
         )
     }
 
+    private func makePurchaseManager(
+        harness: StoreKitEntitlementHarness
+    ) -> PurchaseManager {
+        PurchaseManager(
+            configuration: StoreKitProductConfiguration(
+                monthlyProductID: "com.fikrutibebe.milemate.pro.monthly",
+                lifetimeProductID: "com.fikrutibebe.milemate.pro.lifetime"
+            ),
+            appStoreSync: { try await harness.sync() },
+            entitlementLoader: { _ in await harness.loadEntitlements() },
+            automaticallyPrepares: false,
+            observesTransactionUpdates: false
+        )
+    }
+
     private func waitForGuestReconciliation(_ controller: AccountSessionController) async {
         for _ in 0..<100 where controller.isReconcilingGuestTrial {
             try? await Task.sleep(for: .milliseconds(1))
@@ -974,6 +1092,62 @@ final class AccountSessionTests: XCTestCase {
             classification: classification,
             purpose: "Client Meeting"
         )
+    }
+}
+
+private extension StoreKitEntitlementSnapshot {
+    static func monthly(expirationDate: Date?) -> Self {
+        StoreKitEntitlementSnapshot(
+            plan: .monthly(expirationDate: expirationDate),
+            hasMonthlySubscription: true,
+            encounteredUnverifiedManagedTransaction: false
+        )
+    }
+
+    static let free = StoreKitEntitlementSnapshot(
+        plan: .free,
+        hasMonthlySubscription: false,
+        encounteredUnverifiedManagedTransaction: false
+    )
+
+    static let unverified = StoreKitEntitlementSnapshot(
+        plan: .free,
+        hasMonthlySubscription: false,
+        encounteredUnverifiedManagedTransaction: true
+    )
+}
+
+private enum StoreKitTestError: Error {
+    case unavailable
+}
+
+@MainActor
+private final class StoreKitEntitlementHarness {
+    private var snapshots: [StoreKitEntitlementSnapshot]
+    private(set) var entitlementLoadCount = 0
+    var entitlementDelay: Duration?
+    var syncDelay: Duration?
+    var syncError: Error?
+
+    init(snapshots: [StoreKitEntitlementSnapshot]) {
+        self.snapshots = snapshots
+    }
+
+    func loadEntitlements() async -> StoreKitEntitlementSnapshot {
+        entitlementLoadCount += 1
+        if let entitlementDelay {
+            try? await Task.sleep(for: entitlementDelay)
+        }
+        guard !snapshots.isEmpty else { return .free }
+        if snapshots.count == 1 { return snapshots[0] }
+        return snapshots.removeFirst()
+    }
+
+    func sync() async throws {
+        if let syncDelay {
+            try await Task.sleep(for: syncDelay)
+        }
+        if let syncError { throw syncError }
     }
 }
 
