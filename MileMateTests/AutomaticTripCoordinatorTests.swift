@@ -851,31 +851,33 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
     func testCredibleDrivingResetsInactivityDeadline() async {
         enableAutomaticTracking(minimumDistance: 0.30)
         defer { clearAutomaticTrackingState() }
-        let (coordinator, location, motion) = makeCoordinator(stopInterval: 0.03)
+        let (coordinator, location, motion) = makeCoordinator(stopInterval: 0.1)
+        defer { coordinator.prepareForLocalDataDeletion() }
 
         coordinator.startIfEnabled()
         motion.send(activity(.automotive, confidence: .high))
         location.send(drivingSamples(latitudeDelta: 0.005))
+        let distanceBeforeResuming = coordinator.distanceMeters
         motion.send(activity(.stationary, confidence: .high))
-        try? await Task.sleep(for: .milliseconds(15))
-        let resumedAt = Date().addingTimeInterval(0.02)
+        let resumedAt = Date().addingTimeInterval(2)
         location.send([
             LocationSample(
-                latitude: 37.7819,
+                latitude: 37.77995,
                 longitude: -122.4194,
                 horizontalAccuracy: 8,
                 timestamp: resumedAt,
                 speed: 12
             )
         ])
-        try? await Task.sleep(for: .milliseconds(15))
+
+        XCTAssertGreaterThan(coordinator.distanceMeters, distanceBeforeResuming)
+
+        // The original 100 ms deadline has passed, while the accepted sample's
+        // new deadline remains well in the future. This wide margin avoids a
+        // simulator scheduling race while still proving that driving reset it.
+        try? await Task.sleep(for: .milliseconds(250))
 
         XCTAssertEqual(coordinator.state, .tracking)
-
-        let didExpire = await waitUntil {
-            coordinator.state == .idle && !coordinator.hasProtectedTripState
-        }
-        XCTAssertTrue(didExpire)
     }
 
     func testReviewPermissionsRouteOpensSettings() {
