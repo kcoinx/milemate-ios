@@ -1241,6 +1241,11 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         activeTripID = nil
         pendingLowPowerSamples.removeAll()
         highestObservedSpeed = 0
+        if AutomaticTrackingSettings.isEnabled, dataScopeProvider?.current != nil {
+            state = .idle
+        } else {
+            state = .disabled
+        }
     }
 
     private func reverseGeocodePendingTrip() {
