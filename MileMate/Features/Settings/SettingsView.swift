@@ -531,9 +531,9 @@ struct SettingsView: View {
             break
         }
         switch automaticTripCoordinator.state {
-        case .detecting, .tracking, .reviewing:
+        case .tracking, .reviewing:
             return true
-        case .disabled, .idle, .permissionRequired, .failed:
+        case .disabled, .idle, .detecting, .permissionRequired, .failed:
             return false
         }
     }

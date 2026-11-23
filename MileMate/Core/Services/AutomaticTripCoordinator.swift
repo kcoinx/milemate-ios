@@ -108,6 +108,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     private var activeOwnerScopeIdentifier: String?
     private var pendingOwnerScopeIdentifier: String?
     private var activeTripID: UUID?
+    private var hasConfirmedActiveTrip = false
     private(set) var isFinalizingTrip = false
 
     private(set) var state: State = .disabled
@@ -196,7 +197,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
     }
 
     var hasProtectedTripState: Bool {
-        activeOwnerScopeIdentifier != nil ||
+        hasConfirmedActiveTrip ||
             pendingOwnerScopeIdentifier != nil ||
             pendingTrip != nil ||
             isFinalizingTrip
@@ -300,6 +301,9 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
 
     func handleSessionScopeChange() {
         guard !hasProtectedTripState else { return }
+        if state == .detecting || activeOwnerScopeIdentifier != nil {
+            clearUnconfirmedDetection()
+        }
         pendingLowPowerSamples.removeAll()
         if dataScopeProvider?.current == nil {
             stopDetection()
@@ -319,7 +323,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         if enabled {
             startIfEnabled()
         } else {
-            stopDetection()
+            clearUnconfirmedDetection()
             pendingTrip = nil
             clearPersistedPendingTrip()
             state = .disabled
@@ -397,6 +401,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         pendingOwnerScopeIdentifier = nil
         activeOwnerScopeIdentifier = nil
         activeTripID = nil
+        hasConfirmedActiveTrip = false
         isFinalizingTrip = false
         clearPersistedPendingTrip()
         clearPersistedActiveTrip()
@@ -610,6 +615,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         lastCredibleDrivingActivityAt = nil
         highestObservedSpeed = 0
         state = .detecting
+        hasConfirmedActiveTrip = false
         TrackingDiagnostics.log(
             "automatic detector entered detecting; timeout=\(Int(detectionTimeout)) seconds"
         )
@@ -708,6 +714,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         detectionTimeoutTask?.cancel()
         detectionTimeoutTask = nil
         state = .tracking
+        hasConfirmedActiveTrip = true
         lastCredibleDrivingActivityAt = processor.acceptedSamples.last?.timestamp ?? .now
         TrackingDiagnostics.log(
             "automatic tracking confirmed; acceptedSamples=\(processor.acceptedSamples.count); movementMeters=\(Int(distanceMeters)); highestSpeedMetersPerSecond=\(highestObservedSpeed.formatted(.number.precision(.fractionLength(1))))"
@@ -954,6 +961,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
             activeOwnerScopeIdentifier = nil
             activeTripID = nil
         }
+        hasConfirmedActiveTrip = false
         if AutomaticTrackingSettings.isEnabled {
             state = armPassiveMonitoringIfPossible() ? .idle : .permissionRequired
         } else {
@@ -1000,6 +1008,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         }
         activeOwnerScopeIdentifier = ownerScopeIdentifier
         activeTripID = envelope.tripID ?? UUID()
+        hasConfirmedActiveTrip = envelope.isTracking
         guard trackingReadiness == .ready else {
             state = .permissionRequired
             return
@@ -1178,6 +1187,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         detectionStartedAt = nil
         activeOwnerScopeIdentifier = nil
         activeTripID = nil
+        hasConfirmedActiveTrip = false
         state = .reviewing
         return true
     }
@@ -1193,6 +1203,7 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         detectionStartedAt = nil
         activeOwnerScopeIdentifier = nil
         activeTripID = nil
+        hasConfirmedActiveTrip = false
         pendingLowPowerSamples.removeAll()
         state = .permissionRequired
         TrackingDiagnostics.log("unconfirmed automatic detection canceled after location permission change")
@@ -1206,9 +1217,30 @@ final class AutomaticTripCoordinator: TripReviewCoordinating {
         pendingOwnerScopeIdentifier = nil
         activeOwnerScopeIdentifier = nil
         activeTripID = nil
+        hasConfirmedActiveTrip = false
         lastCredibleDrivingActivityAt = nil
         isFinalizingTrip = false
         state = AutomaticTrackingSettings.isEnabled ? .idle : .disabled
+    }
+
+    /// Detection has not yet produced a trip. It is safe to discard this
+    /// transient state when the user changes modes or account scopes.
+    private func clearUnconfirmedDetection() {
+        guard !hasConfirmedActiveTrip,
+              pendingTrip == nil,
+              !isFinalizingTrip else { return }
+        stopDetection()
+        clearPersistedActiveTrip()
+        processor.reset()
+        distanceMeters = 0
+        elapsedTime = 0
+        candidateStartedAt = nil
+        lastCredibleDrivingActivityAt = nil
+        detectionStartedAt = nil
+        activeOwnerScopeIdentifier = nil
+        activeTripID = nil
+        pendingLowPowerSamples.removeAll()
+        highestObservedSpeed = 0
     }
 
     private func reverseGeocodePendingTrip() {

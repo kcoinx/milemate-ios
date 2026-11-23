@@ -753,6 +753,104 @@ final class AccountSessionTests: XCTestCase {
         XCTAssertEqual(remainingTrips?.count, 1)
     }
 
+    func testUnconfirmedAutomaticDetectionAllowsLogout() async {
+        let recoveryState = AutomaticRecoveryDefaultsSnapshot()
+        recoveryState.clear()
+        let originalEnabled = UserDefaults.standard.object(forKey: AutomaticTrackingSettings.enabledKey)
+        UserDefaults.standard.set(true, forKey: AutomaticTrackingSettings.enabledKey)
+        defer {
+            recoveryState.restore()
+            if let originalEnabled {
+                UserDefaults.standard.set(originalEnabled, forKey: AutomaticTrackingSettings.enabledKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: AutomaticTrackingSettings.enabledKey)
+            }
+        }
+        let repository = AccountTestRepository()
+        let scopeProvider = LocalDataScopeProvider()
+        let controller = AccountSessionController(
+            repository: repository,
+            dataScopeProvider: scopeProvider,
+            secureStore: InMemoryAccountStore(),
+            authenticationService: AccountTestAuthenticationService()
+        )
+        controller.continueAsGuest()
+        await controller.authenticateWithGoogle()
+        let motion = MockMotionActivityService()
+        let coordinator = AutomaticTripCoordinator(
+            locationService: MockAutomaticLocationService(),
+            motionService: motion,
+            repository: repository,
+            notificationService: AccountTestNotificationService(),
+            dataScopeProvider: scopeProvider,
+            isManualTrackingActive: { false }
+        )
+        defer { coordinator.prepareForLocalDataDeletion() }
+        controller.configureSessionTransitionGuard { !coordinator.hasProtectedTripState }
+        coordinator.startIfEnabled()
+        motion.send(
+            MotionActivitySample(kind: .automotive, confidence: .medium, timestamp: .now)
+        )
+        XCTAssertEqual(coordinator.state, .detecting)
+
+        controller.logOut()
+        coordinator.handleSessionScopeChange()
+
+        XCTAssertTrue(controller.requiresWelcome)
+        XCTAssertNil(controller.authenticationError)
+        XCTAssertEqual(coordinator.state, .disabled)
+        XCTAssertFalse(coordinator.hasProtectedTripState)
+    }
+
+    func testUnconfirmedAutomaticDetectionAllowsAccountDeletion() async {
+        let recoveryState = AutomaticRecoveryDefaultsSnapshot()
+        recoveryState.clear()
+        let originalEnabled = UserDefaults.standard.object(forKey: AutomaticTrackingSettings.enabledKey)
+        UserDefaults.standard.set(true, forKey: AutomaticTrackingSettings.enabledKey)
+        defer {
+            recoveryState.restore()
+            if let originalEnabled {
+                UserDefaults.standard.set(originalEnabled, forKey: AutomaticTrackingSettings.enabledKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: AutomaticTrackingSettings.enabledKey)
+            }
+        }
+        let repository = AccountTestRepository(trips: [testTrip()])
+        let scopeProvider = LocalDataScopeProvider()
+        let controller = AccountSessionController(
+            repository: repository,
+            dataScopeProvider: scopeProvider,
+            secureStore: InMemoryAccountStore(),
+            authenticationService: AccountTestAuthenticationService()
+        )
+        controller.continueAsGuest()
+        await controller.authenticateWithGoogle()
+        let motion = MockMotionActivityService()
+        let coordinator = AutomaticTripCoordinator(
+            locationService: MockAutomaticLocationService(),
+            motionService: motion,
+            repository: repository,
+            notificationService: AccountTestNotificationService(),
+            dataScopeProvider: scopeProvider,
+            isManualTrackingActive: { false }
+        )
+        defer { coordinator.prepareForLocalDataDeletion() }
+        controller.configureSessionTransitionGuard { !coordinator.hasProtectedTripState }
+        coordinator.startIfEnabled()
+        motion.send(
+            MotionActivitySample(kind: .automotive, confidence: .medium, timestamp: .now)
+        )
+        XCTAssertEqual(coordinator.state, .detecting)
+
+        await controller.deleteAccount()
+        coordinator.handleSessionScopeChange()
+
+        XCTAssertTrue(controller.requiresWelcome)
+        XCTAssertNil(controller.authenticationError)
+        XCTAssertEqual(coordinator.state, .disabled)
+        XCTAssertFalse(coordinator.hasProtectedTripState)
+    }
+
     func testAccountDeletionReturnsToWelcomeAndDeletesOwnedLocalTripHistory() async throws {
         let trip = testTrip()
         let repository = AccountTestRepository(trips: [trip])

@@ -85,6 +85,105 @@ final class AutomaticTripCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .detecting)
     }
 
+    func testUnconfirmedDetectionCanSwitchBackToManualAndRestartAutomaticMode() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, location, motion) = makeCoordinator()
+        defer { coordinator.prepareForLocalDataDeletion() }
+
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .medium))
+        XCTAssertEqual(coordinator.state, .detecting)
+        XCTAssertFalse(coordinator.hasProtectedTripState)
+        coordinator.appDidEnterBackground()
+
+        coordinator.setEnabled(false)
+
+        XCTAssertEqual(coordinator.state, .disabled)
+        XCTAssertFalse(location.isPreciseTracking)
+        XCTAssertFalse(location.isLowPowerMonitoring)
+        XCTAssertFalse(motion.isUpdating)
+        XCTAssertNil(UserDefaults.standard.data(forKey: "automaticActiveTrip"))
+
+        coordinator.setEnabled(true)
+
+        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertTrue(location.isLowPowerMonitoring)
+        XCTAssertTrue(motion.isUpdating)
+        XCTAssertFalse(coordinator.hasProtectedTripState)
+
+        for _ in 0..<2 {
+            motion.send(activity(.automotive, confidence: .medium))
+            XCTAssertEqual(coordinator.state, .detecting)
+            XCTAssertFalse(coordinator.hasProtectedTripState)
+            coordinator.setEnabled(false)
+            XCTAssertEqual(coordinator.state, .disabled)
+            coordinator.setEnabled(true)
+            XCTAssertEqual(coordinator.state, .idle)
+        }
+    }
+
+    func testRestoredUnconfirmedDetectionCanSwitchToManual() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let scope = testScopeProvider()
+        let (original, _, motion) = makeCoordinator(scopeProvider: scope)
+        defer { original.prepareForLocalDataDeletion() }
+        original.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .medium))
+        XCTAssertEqual(original.state, .detecting)
+
+        let restored = makeCoordinator(scopeProvider: scope).0
+        defer { restored.prepareForLocalDataDeletion() }
+        XCTAssertEqual(restored.state, .detecting)
+        XCTAssertFalse(restored.hasProtectedTripState)
+
+        restored.setEnabled(false)
+
+        XCTAssertEqual(restored.state, .disabled)
+        XCTAssertNil(UserDefaults.standard.data(forKey: "automaticActiveTrip"))
+    }
+
+    func testConfirmedAutomaticTripStillBlocksModeChange() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let (coordinator, location, motion) = makeCoordinator()
+        defer { coordinator.prepareForLocalDataDeletion() }
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .high))
+        location.send(drivingSamples(latitudeDelta: 0.005))
+        XCTAssertEqual(coordinator.state, .tracking)
+        XCTAssertTrue(coordinator.hasProtectedTripState)
+
+        coordinator.setEnabled(false)
+
+        XCTAssertEqual(coordinator.state, .tracking)
+        XCTAssertTrue(AutomaticTrackingSettings.isEnabled)
+        XCTAssertTrue(coordinator.hasProtectedTripState)
+    }
+
+    func testAccountScopeChangeCancelsUnconfirmedDetectionBeforeRearming() {
+        enableAutomaticTracking()
+        defer { clearAutomaticTrackingState() }
+        let scope = testScopeProvider(userID: "first-account")
+        let (coordinator, location, motion) = makeCoordinator(scopeProvider: scope)
+        defer { coordinator.prepareForLocalDataDeletion() }
+
+        coordinator.startIfEnabled()
+        motion.send(activity(.automotive, confidence: .medium))
+        XCTAssertEqual(coordinator.state, .detecting)
+
+        scope.setCurrent(.authenticated(userID: "second-account"))
+        coordinator.handleSessionScopeChange()
+
+        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertFalse(location.isPreciseTracking)
+        XCTAssertTrue(location.isLowPowerMonitoring)
+        XCTAssertTrue(motion.isUpdating)
+        XCTAssertNil(UserDefaults.standard.data(forKey: "automaticActiveTrip"))
+        XCTAssertFalse(coordinator.hasProtectedTripState)
+    }
+
     func testForegroundDetectionToleratesDelayedFirstUsableGPSSample() {
         enableAutomaticTracking()
         defer { clearAutomaticTrackingState() }
